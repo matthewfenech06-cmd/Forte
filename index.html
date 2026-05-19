@@ -214,10 +214,19 @@ select.inp{appearance:none}
 
 <!-- FEED -->
 <div id="feed-screen" class="screen">
-  <div class="topbar">
-    <div class="topbar-title">forte<span style="color:var(--accent)">.</span></div>
-    <div class="topbar-actions">
-      <button class="icon-btn" onclick="toggleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+  <div style="padding:16px 20px 10px;position:sticky;top:0;background:var(--bg);z-index:10">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-family:var(--fd);font-size:24px;font-weight:800;letter-spacing:-1px">forte<span style="color:var(--accent)">.</span></div>
+      <div style="display:flex;gap:8px">
+        <button class="icon-btn" onclick="toggleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+        <button class="icon-btn" onclick="showScreen('search')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+        <button class="icon-btn" onclick="openNotifications()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+      </div>
+    </div>
+    <!-- Search bar -->
+    <div style="position:relative" onclick="showScreen('search')">
+      <div style="background:var(--bg3);border-radius:12px;padding:10px 16px 10px 40px;font-size:14px;color:var(--text3);cursor:pointer">Search users, workouts, recipes...</div>
+      <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text3)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     </div>
   </div>
   <div style="padding:20px 20px 0" class="fade-up">
@@ -548,6 +557,43 @@ select.inp{appearance:none}
 </div>
 
 
+
+<!-- SEARCH SCREEN -->
+<div id="search-screen" class="screen">
+  <div style="padding:16px 20px 10px;position:sticky;top:0;background:var(--bg);z-index:10">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="showScreen('feed')" style="background:none;border:none;color:var(--text2);cursor:pointer;padding:4px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <div style="position:relative;flex:1">
+        <input class="inp" id="main-search-inp" placeholder="Search..." autofocus
+          style="padding:10px 16px 10px 38px;border-radius:12px"
+          oninput="handleMainSearch(this.value)">
+        <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text3)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <button id="search-clear-btn" onclick="clearMainSearch()" style="display:none;position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
+      </div>
+    </div>
+    <!-- Search filter tabs -->
+    <div style="display:flex;gap:8px;margin-top:12px;overflow-x:auto;padding-bottom:2px">
+      <button class="search-tab active" onclick="setSearchTab(this,'people')" style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;background:var(--accent);color:#0a0a0a;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">People</button>
+      <button class="search-tab" onclick="setSearchTab(this,'workouts')" style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">Workouts</button>
+      <button class="search-tab" onclick="setSearchTab(this,'recipes')" style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">Recipes</button>
+      <button class="search-tab" onclick="setSearchTab(this,'leagues')" style="padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">Leagues</button>
+    </div>
+  </div>
+
+  <!-- SEARCH RESULTS -->
+  <div id="search-results-main" style="padding:0 20px">
+    <!-- Default: show suggested people -->
+    <div id="search-default">
+      <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin:16px 0 10px">Suggested people</div>
+      <div id="suggested-users"></div>
+      <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin:20px 0 10px">Trending workouts</div>
+      <div id="trending-workouts"></div>
+    </div>
+    <div id="search-results-list" style="display:none"></div>
+  </div>
+</div>
 
 <!-- RECIPES SCREEN -->
 <div id="recipes-screen" class="screen">
@@ -1187,6 +1233,7 @@ function showScreen(name){
   }
   if(name==='leagues'){loadLeagues();}
   if(name==='recipes'){loadRecipes('all');}
+  if(name==='search'){initSearchScreen();}
   if(name==='friends')loadFriends();
 }
 
@@ -3104,6 +3151,188 @@ function renderExLibItems(exs){
       <div><div class="ex-item-name">${e.name}</div><div class="ex-item-type">${e.muscle_group} · ${e.exercise_type||'Strength'}</div></div>
       <div class="ex-add-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
     </div>`).join('')||'<div class="empty-state"><p>No exercises found</p></div>';
+}
+
+
+// ─── SEARCH & SOCIAL ──────────────────────────────────────
+let searchTab = 'people';
+let searchTimer = null;
+let followingIds = new Set();
+
+async function initSearchScreen(){
+  document.getElementById('main-search-inp').value = '';
+  document.getElementById('search-results-list').style.display = 'none';
+  document.getElementById('search-default').style.display = 'block';
+  document.getElementById('search-clear-btn').style.display = 'none';
+  loadSuggestedUsers();
+  loadTrendingWorkouts();
+  loadFollowingIds();
+  setTimeout(()=>{
+    const inp = document.getElementById('main-search-inp');
+    if(inp) inp.focus();
+  }, 300);
+}
+
+async function loadFollowingIds(){
+  if(!user) return;
+  const{data} = await sb.from('friendships').select('addressee_id').eq('requester_id', user.id);
+  followingIds = new Set((data||[]).map(f => f.addressee_id));
+}
+
+async function loadSuggestedUsers(){
+  const el = document.getElementById('suggested-users');
+  if(!el) return;
+  // Get active users with most points
+  const{data} = await sb.from('profiles').select('id,username,full_name,avatar_url,points,streak').neq('id', user?.id||'').order('points',{ascending:false}).limit(6);
+  if(!data||!data.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">No users yet</div>';return;}
+  el.innerHTML = data.map(u => userSearchCard(u)).join('');
+}
+
+async function loadTrendingWorkouts(){
+  const el = document.getElementById('trending-workouts');
+  if(!el) return;
+  const{data} = await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)').eq('profiles.is_private', false).order('likes_count',{ascending:false}).limit(4);
+  if(!data||!data.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">No posts yet</div>';return;}
+  el.innerHTML = data.map(p => {
+    const u = p.profiles||{};
+    return `<div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer" onclick="openPost('${p.id}')">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        ${avatarEl(u,32)}
+        <div>
+          <div style="font-size:13px;font-weight:600">${u.full_name||u.username||'User'}</div>
+          <div style="font-size:11px;color:var(--text3)">@${u.username||''}</div>
+        </div>
+      </div>
+      ${p.media_url&&p.media_type==='image'?`<img src="${p.media_url}" style="width:100%;height:160px;object-fit:cover;border-radius:8px;margin-bottom:8px">`:''}
+      <div style="font-size:14px;font-weight:600">${p.workouts?.title||'Workout'}</div>
+      ${p.caption?`<div style="font-size:13px;color:var(--text2);margin-top:4px">${p.caption}</div>`:''}
+      <div style="display:flex;gap:14px;margin-top:8px">
+        <div style="font-size:12px;color:var(--text3)">❤️ ${p.likes_count||0}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setSearchTab(el, tab){
+  document.querySelectorAll('.search-tab').forEach(b=>{
+    b.style.background='var(--bg3)';b.style.color='var(--text2)';
+  });
+  el.style.background='var(--accent)';el.style.color='#0a0a0a';
+  searchTab = tab;
+  const q = document.getElementById('main-search-inp').value;
+  if(q.length >= 2) doSearch(q, tab);
+  else {
+    document.getElementById('search-results-list').style.display='none';
+    document.getElementById('search-default').style.display='block';
+  }
+}
+
+function handleMainSearch(q){
+  const clearBtn = document.getElementById('search-clear-btn');
+  if(clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+  clearTimeout(searchTimer);
+  if(!q){
+    document.getElementById('search-results-list').style.display='none';
+    document.getElementById('search-default').style.display='block';
+    return;
+  }
+  document.getElementById('search-default').style.display='none';
+  document.getElementById('search-results-list').style.display='block';
+  document.getElementById('search-results-list').innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">Searching...</div>';
+  searchTimer = setTimeout(()=>doSearch(q, searchTab), 400);
+}
+
+function clearMainSearch(){
+  document.getElementById('main-search-inp').value='';
+  handleMainSearch('');
+}
+
+async function doSearch(q, tab){
+  const el = document.getElementById('search-results-list');
+  if(!el) return;
+  if(tab === 'people'){
+    const{data} = await sb.from('profiles').select('id,username,full_name,avatar_url,points,streak').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id', user?.id||'').limit(15);
+    if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No users found for "'+q+'"</div>';return;}
+    el.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600">'+data.length+' results</div>' + data.map(u => userSearchCard(u)).join('');
+  } else if(tab === 'workouts'){
+    const{data} = await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)').ilike('workouts.title', '%'+q+'%').limit(10);
+    if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No workouts found</div>';return;}
+    el.innerHTML = data.filter(p=>p.workouts).map(p=>{
+      const u=p.profiles||{};
+      return `<div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer" onclick="openPost('${p.id}')">
+        <div style="display:flex;align-items:center;gap:10px">
+          ${avatarEl(u,32)}
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600">${p.workouts?.title||'Workout'}</div>
+            <div style="font-size:12px;color:var(--text3)">@${u.username||''} · ❤️ ${p.likes_count||0}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } else if(tab === 'recipes'){
+    const{data} = await sb.from('recipes').select('*,profiles!recipes_user_id_fkey(username,full_name,avatar_url)').ilike('title','%'+q+'%').eq('is_private',false).limit(10);
+    if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No recipes found</div>';return;}
+    el.innerHTML = data.map(r => `
+      <div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer;display:flex;gap:12px;align-items:center" onclick="viewRecipe('${r.id}')">
+        <div style="width:48px;height:48px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">${r.image_url?`<img src="${r.image_url}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`:'🍽️'}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600">${r.title}</div>
+          <div style="font-size:12px;color:var(--text3)">@${r.profiles?.username||''} · ${r.calories||0} kcal</div>
+        </div>
+      </div>`).join('');
+  } else if(tab === 'leagues'){
+    const{data} = await sb.from('leagues').select('*').ilike('name','%'+q+'%').eq('is_private',false).limit(10);
+    if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No leagues found</div>';return;}
+    el.innerHTML = await Promise.all(data.map(l=>renderLeagueCard(l,true))).then(cards=>cards.join(''));
+  }
+}
+
+function userSearchCard(u){
+  const isFollowing = followingIds.has(u.id);
+  const isMe = user && u.id === user.id;
+  return `<div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px">
+    <div onclick="viewProfile('${u.id}')" style="cursor:pointer;display:flex;align-items:center;gap:12px;flex:1">
+      ${avatarEl(u, 44)}
+      <div>
+        <div style="font-size:15px;font-weight:600">${u.full_name||u.username}</div>
+        <div style="font-size:12px;color:var(--text3)">@${u.username}</div>
+        <div style="display:flex;gap:10px;margin-top:3px">
+          <span style="font-size:11px;color:var(--accent);font-weight:600">${u.points||0} pts</span>
+          <span style="font-size:11px;color:var(--text3)">🔥 ${u.streak||0}</span>
+        </div>
+      </div>
+    </div>
+    ${isMe?'':`<button onclick="toggleFollow('${u.id}',this)" style="background:${isFollowing?'var(--bg3)':'var(--accent)'};border:${isFollowing?'1.5px solid var(--border)':'none'};border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;color:${isFollowing?'var(--text2)':'#0a0a0a'};cursor:pointer;white-space:nowrap;flex-shrink:0">${isFollowing?'Following':'Follow'}</button>`}
+  </div>`;
+}
+
+async function toggleFollow(userId, btn){
+  if(!user) return showToast('Sign in first');
+  const isFollowing = followingIds.has(userId);
+  if(isFollowing){
+    // Unfollow
+    await sb.from('friendships').delete().eq('requester_id', user.id).eq('addressee_id', userId);
+    followingIds.delete(userId);
+    btn.textContent = 'Follow';
+    btn.style.background = 'var(--accent)';
+    btn.style.color = '#0a0a0a';
+    btn.style.border = 'none';
+    showToast('Unfollowed');
+  } else {
+    // Follow
+    await sb.from('friendships').insert({requester_id: user.id, addressee_id: userId, status: 'accepted'});
+    followingIds.add(userId);
+    btn.textContent = 'Following';
+    btn.style.background = 'var(--bg3)';
+    btn.style.color = 'var(--text2)';
+    btn.style.border = '1.5px solid var(--border)';
+    showToast('Following! 👋');
+  }
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────
+function openNotifications(){
+  showToast('Notifications coming soon!');
 }
 
 // ─── UTILS ──────────────────────────────────────────────
