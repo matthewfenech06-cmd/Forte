@@ -9882,6 +9882,49 @@ recalcMacros = function(){
 };
 
 setTimeout(compactFoodBaseValues, 700);
+  /* =========================================================
+   FORTE FOOD MODAL ORDER FIX
+   - Moves "Your Serving Totals" above "Per 100g / Base Values"
+   Paste above init();
+   ========================================================= */
+
+function moveServingTotalsAboveBaseValues(){
+  const servingTotals = document.getElementById('serving-totals');
+  const baseCalInput = document.getElementById('food-cal-base');
+
+  if(!servingTotals || !baseCalInput) return;
+
+  const baseGrid = baseCalInput.closest('div[style*="grid-template-columns"]');
+
+  const baseLabel = [...document.querySelectorAll('div')]
+    .find(el => el.textContent?.trim()?.toLowerCase() === 'per 100g / base values');
+
+  if(baseLabel && baseLabel.parentNode){
+    baseLabel.parentNode.insertBefore(servingTotals, baseLabel);
+    servingTotals.style.marginBottom = '14px';
+    servingTotals.style.marginTop = '4px';
+  }else if(baseGrid && baseGrid.parentNode){
+    baseGrid.parentNode.insertBefore(servingTotals, baseGrid);
+    servingTotals.style.marginBottom = '14px';
+    servingTotals.style.marginTop = '4px';
+  }
+}
+
+/* Run when food modal opens */
+const oldMoveTotalsOpenAddFood = openAddFood;
+openAddFood = function(meal){
+  oldMoveTotalsOpenAddFood(meal);
+  setTimeout(moveServingTotalsAboveBaseValues, 50);
+};
+
+/* Run after a food is selected */
+const oldMoveTotalsFillFoodForm = fillFoodForm;
+fillFoodForm = function(name, cal, pro, carb, fat, servingAmt, servingUnit){
+  oldMoveTotalsFillFoodForm(name, cal, pro, carb, fat, servingAmt, servingUnit);
+  setTimeout(moveServingTotalsAboveBaseValues, 50);
+};
+
+setTimeout(moveServingTotalsAboveBaseValues, 700);
 init();
 </script>
 
