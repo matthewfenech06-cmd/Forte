@@ -9425,6 +9425,362 @@ chatMessageHtml = function(m){
     </div>
   `;
 };
+  /* =========================================================
+   FORTE FOOD LOGGING + LOCKED MACROS FIX
+   - Calories/macros cannot be manually edited
+   - Serving amount updates calories/macros instantly
+   - Animated macro numbers
+   - Safer saveFood with proper error message
+   Paste above init();
+   ========================================================= */
+
+let forteSelectedFoodBase = null;
+
+function forteFoodToast(msg){
+  if(typeof forteToast === 'function') return forteToast(msg);
+  if(typeof safeToast === 'function') return safeToast(msg);
+  if(typeof showToast === 'function') return showToast(msg);
+  alert(msg);
+}
+
+async function forteFoodUser(){
+  if(typeof getCurrentUserSafe === 'function'){
+    return await getCurrentUserSafe();
+  }
+  const { data:{ user } } = await sb.auth.getUser();
+  return user;
+}
+
+function forteNum(v){
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function forteRound1(v){
+  return Math.round(v * 10) / 10;
+}
+
+function forteFoodFactor(){
+  const amount = forteNum(document.getElementById('food-serving-amount')?.value) || 100;
+  const unit = document.getElementById('food-serving-unit')?.value || 'g';
+
+  const unitMap = {
+    g: 1,
+    ml: 1,
+    oz: 28.35,
+    cup: 240,
+    tbsp: 15,
+    tsp: 5,
+    serving: 100,
+    piece: 100
+  };
+
+  return {
+    amount,
+    unit,
+    grams: amount * (unitMap[unit] || 1),
+    factor: (amount * (unitMap[unit] || 1)) / 100
+  };
+}
+
+function animateFoodNumber(id, newValue, suffix = ''){
+  const el = document.getElementById(id);
+  if(!el) return;
+
+  const oldRaw = String(el.textContent || '0').replace(/[^\d.-]/g, '');
+  const oldVal = parseFloat(oldRaw) || 0;
+  const endVal = parseFloat(newValue) || 0;
+
+  const duration = 260;
+  const start = performance.now();
+
+  function frame(now){
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const current = oldVal + (endVal - oldVal) * eased;
+
+    if(Number.isInteger(endVal)){
+      el.textContent = Math.round(current) + suffix;
+    }else{
+      el.textContent = forteRound1(current) + suffix;
+    }
+
+    if(p < 1) requestAnimationFrame(frame);
+    else el.textContent = endVal + suffix;
+  }
+
+  requestAnimationFrame(frame);
+}
+
+function lockFoodMacroInputs(){
+  const ids = ['food-cal-base','food-pro-base','food-carb-base','food-fat-base'];
+
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+
+    el.readOnly = true;
+    el.setAttribute('readonly', 'readonly');
+
+    el.style.opacity = '.65';
+    el.style.cursor = 'not-allowed';
+    el.style.background = 'var(--bg4)';
+    el.style.color = 'var(--text2)';
+
+    el.onkeydown = function(e){
+      e.preventDefault();
+      return false;
+    };
+
+    el.onpaste = function(e){
+      e.preventDefault();
+      return false;
+    };
+
+    el.oninput = function(){
+      if(!forteSelectedFoodBase) return;
+      document.getElementById('food-cal-base').value = forteSelectedFoodBase.cal;
+      document.getElementById('food-pro-base').value = forteSelectedFoodBase.pro;
+      document.getElementById('food-carb-base').value = forteSelectedFoodBase.carb;
+      document.getElementById('food-fat-base').value = forteSelectedFoodBase.fat;
+      recalcMacros();
+    };
+  });
+}
+
+function unlockFoodSearchOnly(){
+  const name = document.getElementById('food-name');
+  if(name) name.readOnly = false;
+
+  lockFoodMacroInputs();
+}
+
+function resetFoodBaseSelection(){
+  forteSelectedFoodBase = null;
+
+  ['food-name','food-search-inp'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+
+  ['food-cal-base','food-pro-base','food-carb-base','food-fat-base'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+
+  const amount = document.getElementById('food-serving-amount');
+  if(amount) amount.value = '100';
+
+  const unit = document.getElementById('food-serving-unit');
+  if(unit) unit.value = 'g';
+
+  recalcMacros();
+}
+
+/* Override fillFoodForm so every searched/scanned food becomes locked */
+const forteOldFillFoodForm = typeof fillFoodForm === 'function' ? fillFoodForm : null;
+
+fillFoodForm = function(name, cal, pro, carb, fat, servingAmt, servingUnit){
+  forteSelectedFoodBase = {
+    name: name || 'Food',
+    cal: Math.round(forteNum(cal)),
+    pro: forteRound1(forteNum(pro)),
+    carb: forteRound1(forteNum(carb)),
+    fat: forteRound1(forteNum(fat))
+  };
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if(el) el.value = val;
+  };
+
+  setVal('food-name', forteSelectedFoodBase.name);
+  setVal('food-cal-base', forteSelectedFoodBase.cal);
+  setVal('food-pro-base', forteSelectedFoodBase.pro);
+  setVal('food-carb-base', forteSelectedFoodBase.carb);
+  setVal('food-fat-base', forteSelectedFoodBase.fat);
+
+  if(servingAmt){
+    setVal('food-serving-amount', servingAmt);
+  }else{
+    setVal('food-serving-amount', 100);
+  }
+
+  if(servingUnit){
+    const sel = document.getElementById('food-serving-unit');
+    if(sel){
+      for(const o of sel.options){
+        if(o.value === servingUnit){
+          sel.value = servingUnit;
+          break;
+        }
+      }
+    }
+  }else{
+    const sel = document.getElementById('food-serving-unit');
+    if(sel) sel.value = 'g';
+  }
+
+  lockFoodMacroInputs();
+  recalcMacros();
+};
+
+/* Replace recalcMacros so changing 100g to 150g updates instantly */
+recalcMacros = function(){
+  if(!forteSelectedFoodBase){
+    const cal = forteNum(document.getElementById('food-cal-base')?.value);
+    const pro = forteNum(document.getElementById('food-pro-base')?.value);
+    const carb = forteNum(document.getElementById('food-carb-base')?.value);
+    const fat = forteNum(document.getElementById('food-fat-base')?.value);
+
+    forteSelectedFoodBase = {
+      name: document.getElementById('food-name')?.value || 'Food',
+      cal,
+      pro,
+      carb,
+      fat
+    };
+  }
+
+  const { factor } = forteFoodFactor();
+
+  const totalCal = Math.round(forteSelectedFoodBase.cal * factor);
+  const totalPro = forteRound1(forteSelectedFoodBase.pro * factor);
+  const totalCarb = forteRound1(forteSelectedFoodBase.carb * factor);
+  const totalFat = forteRound1(forteSelectedFoodBase.fat * factor);
+
+  animateFoodNumber('food-cal-total', totalCal, '');
+  animateFoodNumber('food-pro-total', totalPro, 'g');
+  animateFoodNumber('food-carb-total', totalCarb, 'g');
+  animateFoodNumber('food-fat-total', totalFat, 'g');
+
+  return {
+    calories: totalCal,
+    protein: totalPro,
+    carbs: totalCarb,
+    fats: totalFat
+  };
+};
+
+/* Attach listeners to serving inputs */
+function attachFoodMacroListeners(){
+  const amount = document.getElementById('food-serving-amount');
+  const unit = document.getElementById('food-serving-unit');
+
+  if(amount){
+    amount.oninput = function(){
+      recalcMacros();
+    };
+  }
+
+  if(unit){
+    unit.onchange = function(){
+      recalcMacros();
+    };
+  }
+
+  lockFoodMacroInputs();
+}
+
+/* Override openAddFood so modal resets properly */
+const forteOldOpenAddFood = typeof openAddFood === 'function' ? openAddFood : null;
+
+openAddFood = function(meal){
+  resetFoodBaseSelection();
+  attachFoodMacroListeners();
+
+  if(meal){
+    const mealEl = document.getElementById('food-meal');
+    if(mealEl) mealEl.value = meal;
+  }
+
+  const results = document.getElementById('food-search-results');
+  if(results) results.style.display = 'none';
+
+  const modal = document.getElementById('food-modal');
+  if(modal) modal.classList.add('open');
+};
+
+/* Replace saveFood so it logs the calculated serving totals */
+saveFood = async function(){
+  const u = await forteFoodUser();
+  if(!u) return forteFoodToast('Please sign in first');
+
+  const name = document.getElementById('food-name')?.value?.trim();
+
+  if(!name){
+    return forteFoodToast('Search and select a food first');
+  }
+
+  if(!forteSelectedFoodBase){
+    return forteFoodToast('Please select a food from search or barcode first');
+  }
+
+  const meal = document.getElementById('food-meal')?.value || 'Snack';
+  const { amount, unit } = forteFoodFactor();
+  const totals = recalcMacros();
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const entry = {
+    user_id: u.id,
+    food_name: `${name} (${amount}${unit})`,
+    meal_type: meal,
+    calories: totals.calories,
+    protein: totals.protein,
+    carbs: totals.carbs,
+    fats: totals.fats,
+    log_date: today
+  };
+
+  const btn = document.querySelector('#food-modal .btn-primary');
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = 'Logging...';
+  }
+
+  const { data, error } = await sb
+    .from('nutrition_logs')
+    .insert(entry)
+    .select()
+    .single();
+
+  if(btn){
+    btn.disabled = false;
+    btn.textContent = 'Add food';
+  }
+
+  if(error){
+    console.error('SAVE FOOD ERROR:', error);
+    return forteFoodToast('Could not log food: ' + error.message);
+  }
+
+  if(Array.isArray(nutLogs)){
+    nutLogs.push(data || entry);
+  }
+
+  if(typeof renderNutrition === 'function'){
+    renderNutrition();
+  }
+
+  if(typeof loadNutrition === 'function'){
+    await loadNutrition();
+  }
+
+  try{
+    if(typeof stopBarcode === 'function') stopBarcode();
+  }catch(e){}
+
+  const modal = document.getElementById('food-modal');
+  if(modal) modal.classList.remove('open');
+
+  resetFoodBaseSelection();
+
+  forteFoodToast('Food logged ✅');
+};
+
+/* Make sure it applies after page loads */
+setTimeout(attachFoodMacroListeners, 500);
 init();
 </script>
 
