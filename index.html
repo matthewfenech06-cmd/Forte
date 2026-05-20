@@ -10197,6 +10197,190 @@ handleSignup = async function(){
     }
   }
 };
+  /* =========================================================
+   FORTE SIGNUP DUPLICATE PROFILE FIX
+   - Fixes successful signup showing "username already taken"
+   - Uses upsert for profiles instead of insert
+   - Handles already-created auth user/profile correctly
+   Paste above init();
+   ========================================================= */
+
+function forteSignupCleanUsername(v){
+  return String(v || '')
+    .replace('@','')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+async function forteEnsureProfileForUser(authUser, username, fullName){
+  if(!authUser) throw new Error('No authenticated user');
+
+  const cleanUsername = forteSignupCleanUsername(username || authUser.email?.split('@')[0]);
+  const cleanFullName = fullName || cleanUsername;
+
+  const { data: existingProfile } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', authUser.id)
+    .maybeSingle();
+
+  if(existingProfile){
+    profile = existingProfile;
+    return existingProfile;
+  }
+
+  const { data: newProfile, error: upsertError } = await sb
+    .from('profiles')
+    .upsert({
+      id: authUser.id,
+      username: cleanUsername,
+      full_name: cleanFullName,
+      points: 0,
+      streak: 0,
+      onboarding_done: false
+    }, {
+      onConflict: 'id'
+    })
+    .select()
+    .single();
+
+  if(upsertError){
+    if(String(upsertError.message || '').toLowerCase().includes('duplicate')){
+      const { data: retryProfile, error: retryError } = await sb
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      if(retryProfile){
+        profile = retryProfile;
+        return retryProfile;
+      }
+
+      throw retryError || upsertError;
+    }
+
+    throw upsertError;
+  }
+
+  profile = newProfile;
+  return newProfile;
+}
+
+handleSignup = async function(){
+  const name = document.getElementById('signup-name')?.value?.trim();
+  const username = forteSignupCleanUsername(document.getElementById('signup-username')?.value);
+  const email = document.getElementById('signup-email')?.value?.trim();
+  const pass = document.getElementById('signup-pass')?.value;
+
+  if(!name || !username || !email || !pass){
+    return forteShowAuthMessage('Please fill in all fields');
+  }
+
+  if(username.length < 3){
+    return forteShowAuthMessage('Username must be at least 3 characters');
+  }
+
+  if(pass.length < 6){
+    return forteShowAuthMessage('Password must be at least 6 characters');
+  }
+
+  const btn = document.querySelector('#signup-form .btn-primary');
+  if(btn){
+    btn.textContent = 'Creating...';
+    btn.disabled = true;
+  }
+
+  try{
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password: pass,
+      options: {
+        data: {
+          full_name: name,
+          username: username
+        }
+      }
+    });
+
+    if(error) throw error;
+
+    if(!data.user){
+      throw new Error('No user returned from Supabase');
+    }
+
+    if(!data.session){
+      forteShowAuthMessage('✅ Account created! Check your email and click the confirmation link, then sign in.', true);
+      switchAuthTab('login');
+      const loginEmail = document.getElementById('login-email');
+      if(loginEmail) loginEmail.value = email;
+      return;
+    }
+
+    user = data.user;
+
+    await forteEnsureProfileForUser(user, username, name);
+
+    if(typeof syncProfile === 'function'){
+      syncProfile();
+    }
+
+    if(typeof enterApp === 'function'){
+      enterApp();
+    }
+
+    if(typeof showToast === 'function'){
+      showToast('Welcome to Forte! 🎉');
+    }
+
+  }catch(err){
+    console.error('SIGNUP ERROR:', err);
+
+    const msg = String(err?.message || '');
+
+    if(msg.toLowerCase().includes('user already registered')){
+      forteShowAuthMessage('An account with this email already exists. Try signing in.');
+    }else if(msg.toLowerCase().includes('profiles_username') || msg.toLowerCase().includes('username')){
+      forteShowAuthMessage('That username is already taken. Try another one.');
+    }else if(msg.toLowerCase().includes('rate limit') || msg.includes('429')){
+      forteShowAuthMessage('Signup email limit reached. Please wait or try again later.');
+    }else{
+      forteShowAuthMessage('Could not create account: ' + msg);
+    }
+
+  }finally{
+    if(btn){
+      btn.textContent = 'Create account';
+      btn.disabled = false;
+    }
+  }
+};
+  /* Fix onboarding finish crash */
+obFinish = async function(){
+  hideOnboarding();
+
+  try{
+    if(user){
+      await sb
+        .from('profiles')
+        .update({ onboarding_done: true })
+        .eq('id', user.id);
+
+      if(profile) profile.onboarding_done = true;
+    }
+  }catch(e){
+    console.warn('Could not mark onboarding complete:', e);
+  }
+
+  if(typeof showToast === 'function'){
+    showToast('Welcome to forte! 🔥');
+  }
+
+  if(typeof loadFeedPosts === 'function'){
+    loadFeedPosts();
+  }
+};
 init();
 </script>
 
