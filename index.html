@@ -5789,8 +5789,791 @@ function startWorkoutFromEx(name,group){
 }
 
 // call renderBrowseCats after exercises load
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Forte</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root{
+      --bg:#0a0a0a;
+      --bg2:#111;
+      --bg3:#1b1b1b;
+      --bg4:#252525;
+      --border:rgba(255,255,255,.1);
+      --text:#fff;
+      --text2:rgba(255,255,255,.72);
+      --text3:rgba(255,255,255,.45);
+      --accent:#ff0090;
+      --accent2:rgba(255,0,144,.12);
+      --red:#ff4f4f;
+      --green:#00c864;
+      --nav:72px;
+      --radius:18px;
+      --radius2:12px;
+      font-family:Inter,system-ui,sans-serif;
+    }
+    .light{
+      --bg:#f6f6f6;
+      --bg2:#fff;
+      --bg3:#ededed;
+      --bg4:#e1e1e1;
+      --border:rgba(0,0,0,.1);
+      --text:#090909;
+      --text2:rgba(0,0,0,.68);
+      --text3:rgba(0,0,0,.45);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,sans-serif;overflow:hidden}
+    button,input,select,textarea{font-family:Inter,sans-serif}
+    button{cursor:pointer}
+    #app{max-width:480px;margin:0 auto;height:100dvh;background:var(--bg);position:relative;overflow:hidden}
+    .screen{display:none;height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:150px}
+    .screen.active{display:block}
+    .topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:14px 18px}
+    .title{font-size:18px;font-weight:800;letter-spacing:-.4px}
+    .brand{font-size:18px;font-weight:800;letter-spacing:-.5px}
+    .brand span,.accent{color:var(--accent)}
+    .icon-btn{width:38px;height:38px;border-radius:50%;border:0;background:var(--bg3);color:var(--text);display:grid;place-items:center;font-size:18px}
+    .btn{border:0;border-radius:12px;padding:13px 15px;font-weight:750;font-size:14px}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+    .btn-danger{background:rgba(255,79,79,.12);color:var(--red);border:1px solid rgba(255,79,79,.25)}
+    .btn-green{background:var(--green);color:#001407}
+    .inp{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px;color:var(--text);outline:none;font-size:15px}
+    .inp:focus{border-color:var(--accent)}
+    textarea.inp{resize:none;line-height:1.45}
+    .label{font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.7px;margin-bottom:7px}
+    .field{margin-bottom:13px}
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:15px;margin:0 16px 14px}
+    .small{font-size:12px;color:var(--text3)}
+    .muted{color:var(--text3)}
+    .row{display:flex;align-items:center;gap:10px}
+    .between{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+    .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+    .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;background:var(--bg3);border:1px solid var(--border);padding:6px 10px;font-size:12px;color:var(--text2);font-weight:650}
+    .avatar{width:38px;height:38px;border-radius:50%;background:var(--accent2);color:var(--accent);display:grid;place-items:center;font-weight:800;overflow:hidden;flex-shrink:0}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    #auth-screen{display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:28px}
+    .auth-box{width:100%}
+    .auth-tabs{display:flex;background:var(--bg3);padding:4px;border-radius:12px;margin:28px 0 18px}
+    .auth-tab{flex:1;border:0;background:transparent;color:var(--text3);padding:10px;border-radius:9px;font-weight:700}
+    .auth-tab.active{background:var(--bg2);color:var(--text)}
+    #bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;height:var(--nav);background:var(--bg2);border-top:1px solid var(--border);display:none;align-items:center;justify-content:space-around;z-index:100}
+    #bottom-nav.visible{display:flex}
+    .nav-item{flex:1;height:100%;border:0;background:transparent;color:var(--text3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700}
+    .nav-item.active{color:var(--accent)}
+    .fab{width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:0;font-size:30px;font-weight:300;margin-top:-22px}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:300;align-items:flex-end;backdrop-filter:blur(4px)}
+    .modal-overlay.open{display:flex}
+    .modal{background:var(--bg2);width:100%;max-width:480px;margin:0 auto;border-radius:24px 24px 0 0;max-height:88dvh;overflow-y:auto;padding:20px 18px 50px}
+    .handle{width:38px;height:4px;border-radius:999px;background:var(--bg4);margin:0 auto 18px}
+    .modal-title{font-weight:800;font-size:18px;margin-bottom:16px}
+    .toast{position:fixed;top:18px;left:50%;transform:translate(-50%,-80px);z-index:999;background:var(--text);color:var(--bg);border-radius:999px;padding:11px 18px;font-size:13px;font-weight:800;transition:.25s;max-width:90vw;text-align:center}
+    .toast.show{transform:translate(-50%,0)}
+    .post{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:14px;padding-bottom:12px}
+    .post-head{padding:13px 16px;display:flex;align-items:center;gap:10px}
+    .post-media{width:100%;display:block;max-height:none;object-fit:cover;background:var(--bg3)}
+    .post-body{padding:0 16px}
+    .post-actions{display:flex;border-top:1px solid var(--border);margin-top:12px}
+    .post-action{flex:1;border:0;background:transparent;color:var(--text2);padding:12px;font-weight:750}
+    .workout-summary{background:var(--bg3);border-radius:12px;padding:12px;margin:9px 0}
+    .stat-card{text-align:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px 6px}
+    .stat-val{font-weight:850;font-size:17px}
+    .stat-label{font-size:11px;color:var(--text3);margin-top:3px;font-weight:700}
+    .story-row{display:flex;gap:12px;overflow-x:auto;padding:13px 16px;border-bottom:1px solid var(--border)}
+    .story-item{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--text2);width:62px;flex-shrink:0}
+    .story-ring{width:58px;height:58px;border-radius:50%;padding:2px;background:var(--bg3);position:relative}
+    .story-ring.unseen{background:linear-gradient(135deg,var(--accent),#ff9500)}
+    .story-inner{width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:grid;place-items:center}
+    .plus-mini{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;border:2px solid var(--bg);background:var(--accent);color:#fff;font-weight:900}
+    .list-item{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:13px;margin-bottom:10px}
+    .tabs{display:flex;gap:8px;overflow-x:auto;padding:12px 16px}
+    .tab{border:0;background:var(--bg3);color:var(--text2);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:750;white-space:nowrap}
+    .tab.active{background:var(--accent);color:#fff}
+    .macro{font-weight:850}
+    .progress{height:7px;border-radius:99px;background:var(--bg3);overflow:hidden}
+    .bar{height:100%;background:var(--accent);border-radius:99px}
+    .hidden{display:none!important}
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <section id="auth-screen" class="screen active">
+    <div class="auth-box">
+      <div class="brand" style="font-size:32px">forte<span>.</span></div>
+      <div class="small" style="margin-top:6px">Train. Eat. Compete.</div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login" onclick="switchAuth('login')">Sign in</button>
+        <button class="auth-tab" id="tab-signup" onclick="switchAuth('signup')">Create account</button>
+      </div>
+
+      <div id="auth-message" style="display:none;margin-bottom:12px;border-radius:12px;padding:12px;font-size:13px;font-weight:650"></div>
+
+      <div id="login-form">
+        <div class="field"><div class="label">Email</div><input class="inp" id="login-email" type="email" placeholder="you@email.com"></div>
+        <div class="field"><div class="label">Password</div><input class="inp" id="login-pass" type="password" placeholder="••••••••"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="login()">Sign in</button>
+      </div>
+
+      <div id="signup-form" style="display:none">
+        <div class="field"><div class="label">Full name</div><input class="inp" id="signup-name" placeholder="Your name"></div>
+        <div class="field"><div class="label">Username</div><input class="inp" id="signup-username" placeholder="@username"></div>
+        <div class="field"><div class="label">Email</div><input class="inp" id="signup-email" type="email" placeholder="you@email.com"></div>
+        <div class="field"><div class="label">Password</div><input class="inp" id="signup-pass" type="password" placeholder="Minimum 6 characters"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="signup()">Create account</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="feed-screen" class="screen">
+    <div class="topbar">
+      <div class="brand">forte<span>.</span></div>
+      <div class="row">
+        <button class="icon-btn" onclick="openNotifications()">🔔<span id="notif-dot" style="display:none;position:absolute;width:8px;height:8px;background:var(--red);border-radius:50%;margin-left:20px;margin-top:-20px"></span></button>
+        <button class="icon-btn" onclick="toggleTheme()">☼</button>
+      </div>
+    </div>
+
+    <div id="stories-row" class="story-row"></div>
+
+    <div class="card">
+      <div class="between">
+        <div>
+          <div style="font-weight:850">Your leagues</div>
+          <div class="small">Invites and active leagues</div>
+        </div>
+        <button class="btn btn-secondary" onclick="showScreen('leagues')">View</button>
+      </div>
+      <div id="feed-leagues" style="display:flex;gap:10px;overflow-x:auto;margin-top:12px"></div>
+    </div>
+
+    <div class="between" style="padding:0 16px 10px">
+      <div class="label" style="margin:0">Friends activity</div>
+      <button class="btn btn-secondary" onclick="openCreatePost()">Create post</button>
+    </div>
+    <div id="feed-posts"></div>
+  </section>
+
+  <section id="exercise-screen" class="screen">
+    <div class="topbar">
+      <div class="title">Exercise</div>
+      <button class="icon-btn" onclick="openWorkoutModal()">＋</button>
+    </div>
+
+    <div class="card">
+      <div class="between">
+        <div>
+          <div style="font-weight:850">👟 Daily steps</div>
+          <div id="step-status" class="small">Not tracking</div>
+        </div>
+        <button id="steps-activate-btn" class="btn btn-primary" onclick="activateSteps()">Activate</button>
+      </div>
+      <div style="font-size:32px;font-weight:850;margin-top:15px"><span id="steps-count">0</span> <span class="small">/ 10,000</span></div>
+      <div class="progress" style="margin-top:10px"><div id="steps-bar" class="bar" style="width:0%"></div></div>
+      <div class="grid3" style="margin-top:12px">
+        <div class="stat-card"><div class="stat-val" id="steps-cal">0</div><div class="stat-label">Cal</div></div>
+        <div class="stat-card"><div class="stat-val" id="steps-km">0.0</div><div class="stat-label">km</div></div>
+        <div class="stat-card"><div class="stat-val" id="weekly-workouts">0/4</div><div class="stat-label">Week</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="between">
+        <div style="font-weight:850">Past workouts</div>
+        <button class="btn btn-secondary" onclick="openWorkoutModal()">Log workout</button>
+      </div>
+      <div id="past-workouts" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section id="nutrition-screen" class="screen">
+    <div class="topbar">
+      <div class="title">Nutrition</div>
+      <button class="icon-btn" onclick="openFoodModal()">＋</button>
+    </div>
+
+    <div class="card">
+      <div class="grid4">
+        <div class="stat-card"><div class="stat-val macro accent" id="tot-cal">0</div><div class="stat-label">kcal</div></div>
+        <div class="stat-card"><div class="stat-val macro" id="tot-pro">0g</div><div class="stat-label">Protein</div></div>
+        <div class="stat-card"><div class="stat-val macro" id="tot-carb">0g</div><div class="stat-label">Carbs</div></div>
+        <div class="stat-card"><div class="stat-val macro" id="tot-fat">0g</div><div class="stat-label">Fats</div></div>
+      </div>
+    </div>
+
+    <div class="grid2" style="padding:0 16px 14px">
+      <button class="btn btn-secondary" onclick="showScreen('recipes')">🍽️ Recipes</button>
+      <button class="btn btn-primary" onclick="openRecipeModal()">Create recipe</button>
+    </div>
+
+    <div id="meal-sections"></div>
+  </section>
+
+  <section id="profile-screen" class="screen">
+    <div class="topbar">
+      <div class="title" id="profile-title">Profile</div>
+      <button class="icon-btn" onclick="openSettings()">☰</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="avatar" id="profile-avatar" style="width:72px;height:72px;font-size:24px">F</div>
+        <div>
+          <div id="profile-name" style="font-size:18px;font-weight:850">Loading...</div>
+          <div id="profile-username" class="small">@username</div>
+          <div class="pill" style="margin-top:8px">🔥 <span id="profile-streak">0</span> day streak</div>
+        </div>
+      </div>
+
+      <div class="grid4" style="margin-top:18px">
+        <div class="stat-card" onclick="showScreen('friends')"><div class="stat-val" id="stat-friends">0</div><div class="stat-label">Friends</div></div>
+        <div class="stat-card"><div class="stat-val accent" id="stat-points">0</div><div class="stat-label">Points</div></div>
+        <div class="stat-card" onclick="loadProfileWorkouts()"><div class="stat-val" id="stat-workouts">0</div><div class="stat-label">Workouts</div></div>
+        <div class="stat-card" onclick="loadProfileRecipes()"><div class="stat-val" id="stat-recipes">0</div><div class="stat-label">Recipes</div></div>
+      </div>
+
+      <div class="grid2" style="margin-top:14px">
+        <button class="btn btn-secondary" onclick="openStatsModal()">Stats & goals</button>
+        <button class="btn btn-primary" onclick="showScreen('leagues')">My leagues</button>
+      </div>
+    </div>
+
+    <div id="profile-content"></div>
+  </section>
+
+  <section id="friends-screen" class="screen">
+    <div class="topbar"><div class="title">Friends</div></div>
+    <div style="padding:14px 16px">
+      <input class="inp" id="friend-search" placeholder="Search users..." oninput="searchUsers(this.value)">
+    </div>
+    <div class="card">
+      <div class="label">Search results</div>
+      <div id="user-results"></div>
+    </div>
+    <div class="card">
+      <div class="label">Friend requests</div>
+      <div id="friend-requests"></div>
+    </div>
+    <div class="card">
+      <div class="label">Your friends</div>
+      <div id="friends-list"></div>
+    </div>
+  </section>
+
+  <section id="leagues-screen" class="screen">
+    <div class="topbar">
+      <div class="title">Leagues</div>
+      <button class="icon-btn" onclick="openLeagueModal()">＋</button>
+    </div>
+    <div id="leagues-list" style="padding-top:14px"></div>
+  </section>
+
+  <section id="recipes-screen" class="screen">
+    <div class="topbar">
+      <div class="title">Recipes</div>
+      <button class="icon-btn" onclick="openRecipeModal()">＋</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="loadRecipes('all',this)">All</button>
+      <button class="tab" onclick="loadRecipes('mine',this)">Mine</button>
+    </div>
+    <div id="recipes-list"></div>
+  </section>
+</div>
+
+<nav id="bottom-nav">
+  <button class="nav-item active" id="nav-feed" onclick="showScreen('feed')">▦<span>Feed</span></button>
+  <button class="nav-item" id="nav-exercise" onclick="showScreen('exercise')">🏋<span>Exercise</span></button>
+  <button class="fab" onclick="openLogMenu()">+</button>
+  <button class="nav-item" id="nav-nutrition" onclick="showScreen('nutrition')">◉<span>Nutrition</span></button>
+  <button class="nav-item" id="nav-profile" onclick="showScreen('profile')">👤<span>Profile</span></button>
+</nav>
+
+<div class="modal-overlay" id="log-menu">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">What do you want to do?</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');openWorkoutModal()">🏋 Log workout</button>
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');openFoodModal()">🥗 Log food</button>
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');openCreatePost()">📸 Create post</button>
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');openRecipeModal()">🍽️ Create recipe</button>
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');openStoryModal()">⭕ Add story</button>
+      <button class="btn btn-secondary" onclick="closeModal('log-menu');showScreen('leagues')">🏆 Leagues</button>
+      <button class="btn btn-danger" onclick="closeModal('log-menu')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="workout-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Log workout</div>
+    <div class="field"><div class="label">Title</div><input class="inp" id="workout-title" placeholder="Push day, Leg day..."></div>
+    <div id="exercise-list"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-bottom:10px" onclick="addExerciseBlock()">+ Add exercise</button>
+    <button class="btn btn-primary" style="width:100%" onclick="saveWorkout()">Finish & save workout</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('workout-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="share-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title" id="share-title">Create post</div>
+    <div id="share-workout-preview"></div>
+    <div class="field"><div class="label">Caption</div><textarea class="inp" id="share-caption" rows="3" placeholder="Write a caption..."></textarea></div>
+    <div class="field">
+      <div class="label">Photo/video optional</div>
+      <input class="inp" id="share-media" type="file" accept="image/*,video/*">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="submitPost()">Post</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('share-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="food-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Add food</div>
+    <div class="field"><div class="label">Search food</div><input class="inp" id="food-search" placeholder="Chicken, rice, gnocchi..." oninput="searchFoodLocal(this.value)"></div>
+    <div id="food-results"></div>
+    <div class="field"><div class="label">Food name</div><input class="inp" id="food-name"></div>
+    <div class="grid2">
+      <div class="field"><div class="label">Amount</div><input class="inp" id="food-amount" type="number" value="100" oninput="calcFoodTotals()"></div>
+      <div class="field"><div class="label">Unit</div><select class="inp" id="food-unit" onchange="calcFoodTotals()"><option value="g">g</option><option value="ml">ml</option><option value="oz">oz</option><option value="serving">serving</option></select></div>
+    </div>
+    <div class="field"><div class="label">Meal</div><select class="inp" id="food-meal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></div>
+    <div class="grid4">
+      <div class="stat-card"><div id="food-total-cal" class="stat-val accent">0</div><div class="stat-label">kcal</div></div>
+      <div class="stat-card"><div id="food-total-pro" class="stat-val">0g</div><div class="stat-label">Protein</div></div>
+      <div class="stat-card"><div id="food-total-carb" class="stat-val">0g</div><div class="stat-label">Carbs</div></div>
+      <div class="stat-card"><div id="food-total-fat" class="stat-val">0g</div><div class="stat-label">Fats</div></div>
+    </div>
+    <input type="hidden" id="food-base-cal"><input type="hidden" id="food-base-pro"><input type="hidden" id="food-base-carb"><input type="hidden" id="food-base-fat">
+    <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="saveFood()">Log food</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('food-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="post-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div id="post-content"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <input class="inp" id="comment-input" placeholder="Add a comment...">
+      <button class="btn btn-primary" onclick="submitComment()">Post</button>
+    </div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('post-modal')">Close</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div id="profile-modal-content"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('profile-modal')">Close</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="notifications-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="between" style="margin-bottom:14px">
+      <div class="modal-title" style="margin:0">Notifications</div>
+      <button class="btn btn-secondary" onclick="markAllRead()">Mark read</button>
+    </div>
+    <div id="notifications-list"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="league-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Create league</div>
+    <div class="field"><div class="label">Name</div><input class="inp" id="league-name"></div>
+    <div class="field"><div class="label">Description</div><input class="inp" id="league-desc"></div>
+    <div class="field"><div class="label">Private?</div><select class="inp" id="league-private"><option value="true">Private</option><option value="false">Public</option></select></div>
+    <button class="btn btn-primary" style="width:100%" onclick="saveLeague()">Create</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('league-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="recipe-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Create recipe</div>
+    <div class="field"><div class="label">Title</div><input class="inp" id="recipe-title"></div>
+    <div class="field"><div class="label">Description</div><textarea class="inp" id="recipe-desc" rows="2"></textarea></div>
+    <div class="grid4">
+      <div class="field"><div class="label">kcal</div><input class="inp" id="recipe-cal" type="number"></div>
+      <div class="field"><div class="label">Protein</div><input class="inp" id="recipe-pro" type="number"></div>
+      <div class="field"><div class="label">Carbs</div><input class="inp" id="recipe-carb" type="number"></div>
+      <div class="field"><div class="label">Fat</div><input class="inp" id="recipe-fat" type="number"></div>
+    </div>
+    <div class="field"><div class="label">Visibility</div><select class="inp" id="recipe-private"><option value="false">Public</option><option value="true">Private</option></select></div>
+    <button class="btn btn-primary" style="width:100%" onclick="saveRecipe()">Save recipe</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('recipe-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="story-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Add story</div>
+    <div class="field"><div class="label">Photo/video</div><input class="inp" id="story-file" type="file" accept="image/*,video/*"></div>
+    <div class="field"><div class="label">Caption</div><input class="inp" id="story-caption"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="uploadStory()">Post story</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('story-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="stats-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Stats & goals</div>
+    <div class="grid2">
+      <div class="field"><div class="label">Weight kg</div><input class="inp" id="stat-weight" type="number"></div>
+      <div class="field"><div class="label">Height cm</div><input class="inp" id="stat-height" type="number"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><div class="label">Calories</div><input class="inp" id="goal-cal" type="number"></div>
+      <div class="field"><div class="label">Protein</div><input class="inp" id="goal-pro" type="number"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="saveStats()">Save</button>
+    <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal('stats-modal')">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="handle"></div>
+    <div class="modal-title">Settings</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="toggleTheme()">Toggle light/dark</button>
+    <button class="btn btn-danger" style="width:100%;margin-top:10px" onclick="logout()">Sign out</button>
+  </div>
+</div>
+
+<div id="story-viewer" style="display:none;position:fixed;inset:0;background:#000;z-index:600;align-items:center;justify-content:center">
+  <button onclick="closeStoryViewer()" style="position:absolute;top:18px;right:18px;width:42px;height:42px;border-radius:50%;border:0;background:rgba(255,255,255,.15);color:#fff;font-size:24px;z-index:2">×</button>
+  <button onclick="nextStory()" style="position:absolute;right:0;top:0;width:45%;height:100%;border:0;background:transparent;z-index:1"></button>
+  <button onclick="prevStory()" style="position:absolute;left:0;top:0;width:45%;height:100%;border:0;background:transparent;z-index:1"></button>
+  <img id="story-img" style="max-width:100%;max-height:100%;object-fit:contain;display:none">
+  <video id="story-video" style="max-width:100%;max-height:100%;object-fit:contain;display:none" autoplay playsinline controls></video>
+  <div id="story-view-caption" style="position:absolute;bottom:30px;left:20px;right:20px;color:#fff;text-align:center;font-weight:700"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SURL='https://hbdiridvkgxarsuimrtu.supabase.co';
+const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIc3VwYWJhc2UiLCJyZWYiOiJoYmRpcmlkdmtnYXNhcnN1aW1ydHUiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc3OTE3NzE5NiwiZXhwIjoyMDk0NzUzMTk2fQ.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk';
+const sb=supabase.createClient(SURL,SKEY);
+
+let user=null,profile=null,currentPostId=null,pendingWorkoutId=null,pendingWorkoutSnapshot=[],storyGroups=[],storyGroupIndex=0,storyIndex=0;
+let baseFood={cal:0,pro:0,carb:0,fat:0};
+let stepCount=Number(localStorage.getItem('forte_steps')||0), stepActive=false;
+
+const FOODS=[
+  ['Chicken breast cooked',165,31,0,3.6],['White rice cooked',130,2.7,28,0.3],['Gnocchi',150,4,30,1],
+  ['Egg',155,13,1.1,11],['Oats',389,17,66,7],['Banana',89,1.1,23,0.3],
+  ['Greek yogurt',59,10,3.6,0.4],['Salmon',208,20,0,13],['Pasta dry',371,13,75,1.5],
+  ['Bread white',265,9,49,3.2],['Milk',61,3.2,4.8,3.3],['Potato',77,2,17,0.1]
+];
+
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function today(){return new Date().toISOString().slice(0,10)}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+function showToast(msg){toast(msg)}
+function closeModal(id){$(id)?.classList.remove('open')}
+function openModal(id){$(id)?.classList.add('open')}
+function timeAgo(ts){const d=Date.now()-new Date(ts).getTime();if(d<60000)return'just now';const m=Math.floor(d/60000);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago'}
+function avatar(p,size=38){const name=p?.full_name||p?.username||'?';return `<div class="avatar" style="width:${size}px;height:${size}px">${p?.avatar_url?`<img src="${p.avatar_url}">`:esc(name[0]).toUpperCase()}</div>`}
+async function safe(label,p){try{const r=await p;if(r.error){console.error(label,r.error);toast(r.error.message)}return r}catch(e){console.error(label,e);toast(label+' failed');return{data:null,error:e}}}
+
+function switchAuth(type){
+  $('tab-login').classList.toggle('active',type==='login');$('tab-signup').classList.toggle('active',type==='signup');
+  $('login-form').style.display=type==='login'?'block':'none';$('signup-form').style.display=type==='signup'?'block':'none';
+  $('auth-message').style.display='none';
+}
+function authMsg(msg,ok=false){const el=$('auth-message');el.style.display='block';el.style.background=ok?'rgba(0,200,100,.12)':'rgba(255,79,79,.12)';el.style.color=ok?'var(--green)':'var(--red)';el.textContent=msg}
+
+async function signup(){
+  const name=$('signup-name').value.trim(), username=$('signup-username').value.replace('@','').trim(), email=$('signup-email').value.trim(), pass=$('signup-pass').value;
+  if(!name||!username||!email||!pass)return authMsg('Fill in all fields');
+  const r=await safe('Signup',sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username}}}));
+  if(r.error)return;
+  if(!r.data.session){switchAuth('login');$('login-email').value=email;authMsg('✅ Account created. Check your email, confirm it, then sign in.',true);return;}
+  user=r.data.user;
+  await safe('Profile',sb.from('profiles').upsert({id:user.id,username,full_name:name},{onConflict:'id'}));
+  await loadProfile();enterApp();
+}
+async function login(){
+  const email=$('login-email').value.trim(), pass=$('login-pass').value;
+  if(!email||!pass)return authMsg('Enter email and password');
+  const r=await safe('Login',sb.auth.signInWithPassword({email,password:pass}));
+  if(r.error)return;
+  user=r.data.user;await loadProfile();enterApp();
+}
+async function logout(){await sb.auth.signOut();location.reload()}
+
+async function init(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){user=session.user;await loadProfile();enterApp()}else showAuth();
+}
+function showAuth(){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$('auth-screen').classList.add('active');$('auth-screen').style.display='flex';$('bottom-nav').classList.remove('visible')}
+function enterApp(){$('auth-screen').style.display='none';$('bottom-nav').classList.add('visible');showScreen('feed');loadAll()}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(name+'-screen').classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  $('nav-'+name)?.classList.add('active');
+  if(name==='feed')loadFeed();
+  if(name==='exercise')loadExercise();
+  if(name==='nutrition')loadNutrition();
+  if(name==='profile')loadProfileScreen();
+  if(name==='friends')loadFriends();
+  if(name==='leagues')loadLeagues();
+  if(name==='recipes')loadRecipes('all');
+}
+async function loadAll(){await Promise.allSettled([loadFeed(),loadStories(),loadFeedLeagues(),checkUnread()])}
+
+async function loadProfile(){
+  let r=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
+  if(!r.data){
+    const meta=user.user_metadata||{};
+    await sb.from('profiles').insert({id:user.id,username:meta.username||user.email.split('@')[0],full_name:meta.full_name||user.email.split('@')[0]});
+    r=await sb.from('profiles').select('*').eq('id',user.id).single();
+  }
+  profile=r.data;
+}
+async function loadProfileScreen(){
+  await loadProfile();
+  $('profile-name').textContent=profile.full_name||profile.username;
+  $('profile-username').textContent='@'+(profile.username||'');
+  $('profile-title').textContent='@'+(profile.username||'profile');
+  $('profile-avatar').innerHTML=profile.avatar_url?`<img src="${profile.avatar_url}">`:esc((profile.full_name||profile.username||'F')[0]).toUpperCase();
+  $('profile-streak').textContent=profile.streak||0;
+  $('stat-points').textContent=profile.points||0;
+  const f=await sb.from('friendships').select('*',{count:'exact',head:true}).or(`and(requester_id.eq.${user.id},status.eq.accepted),and(addressee_id.eq.${user.id},status.eq.accepted)`);
+  const w=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',user.id).eq('is_public',true);
+  const r=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',user.id).eq('is_private',false);
+  $('stat-friends').textContent=f.count||0;$('stat-workouts').textContent=w.count||0;$('stat-recipes').textContent=r.count||0;
+  loadProfileWorkouts();
+}
+async function loadProfileWorkouts(){
+  const r=await sb.from('workouts').select('*').eq('user_id',user.id).eq('is_public',true).order('created_at',{ascending:false});
+  $('profile-content').innerHTML=`<div class="card"><div class="label">Public workouts</div>${(r.data||[]).map(w=>`<div class="list-item" onclick="viewWorkout('${w.id}')"><div style="font-weight:800">${esc(w.title||'Workout')}</div><div class="small">${timeAgo(w.created_at)} · ${w.exercise_count||0} exercises · ${w.total_sets||0} sets</div></div>`).join('')||'<div class="small">No public workouts yet.</div>'}</div>`;
+}
+async function loadProfileRecipes(){
+  const r=await sb.from('recipes').select('*').eq('user_id',user.id).eq('is_private',false).order('created_at',{ascending:false});
+  $('profile-content').innerHTML=`<div class="card"><div class="label">Public recipes</div>${(r.data||[]).map(x=>recipeCard(x)).join('')||'<div class="small">No public recipes yet.</div>'}</div>`;
+}
+
+async function loadFeed(){
+  await loadStories();await loadFeedLeagues();
+  const r=await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(*)').order('created_at',{ascending:false}).limit(30);
+  const posts=r.data||[];
+  $('feed-posts').innerHTML=posts.length?posts.map(postCard).join(''):'<div class="card small">No posts yet. Log a workout or create a post.</div>';
+}
+function workoutHtml(snapshot){
+  const s=Array.isArray(snapshot)?snapshot:[];
+  if(!s.length)return'';
+  return `<div class="workout-summary"><div style="font-weight:850;color:var(--accent);margin-bottom:6px">Logged a workout!</div>${s.slice(0,4).map(ex=>`<div style="font-size:13px;margin-top:4px"><b>${esc(ex.name)}</b> · ${(ex.sets||[]).map(set=>`${set.weight||0}kg × ${set.reps||0}`).join(', ')}</div>`).join('')}${s.length>4?`<div class="small">+${s.length-4} more exercises</div>`:''}</div>`;
+}
+function postCard(p){
+  const snap=p.workout_snapshot||p.workouts?.workout_snapshot||[];
+  return `<div class="post">
+    <div class="post-head" onclick="viewUser('${p.user_id}')">${avatar(p.profiles)}<div style="flex:1"><div style="font-weight:800">${esc(p.profiles?.full_name||p.profiles?.username||'User')}</div><div class="small">${timeAgo(p.created_at)}</div></div>${p.user_id===user.id?`<button class="btn btn-danger" onclick="event.stopPropagation();deletePost('${p.id}')">Delete</button>`:''}</div>
+    ${p.media_url?p.media_type==='video'?`<video class="post-media" src="${p.media_url}" controls></video>`:`<img class="post-media" src="${p.media_url}">`:''}
+    <div class="post-body">
+      ${p.workout_id?workoutHtml(snap):''}
+      ${p.caption?`<div style="white-space:pre-wrap;margin-top:9px">${esc(p.caption)}</div>`:''}
+      ${p.workout_id?`<button class="btn btn-secondary" style="margin-top:10px" onclick="viewWorkoutFromPost('${p.id}')">View workout</button>`:''}
+    </div>
+    <div class="post-actions">
+      <button class="post-action" onclick="toggleLike('${p.id}')">❤️ <span id="like-${p.id}">${p.likes_count||0}</span></button>
+      <button class="post-action" onclick="openPost('${p.id}')">💬 <span>${p.comments_count||0}</span> comment${(p.comments_count||0)===1?'':'s'}</button>
+    </div>
+  </div>`;
+}
+function openCreatePost(){pendingWorkoutId=null;pendingWorkoutSnapshot=[];$('share-title').textContent='Create post';$('share-workout-preview').innerHTML='';$('share-caption').value='';$('share-media').value='';openModal('share-modal')}
+async function submitPost(){
+  let media_url=null,media_type=null,file=$('share-media').files[0];
+  if(file){const path=`posts/${user.id}/${Date.now()}-${file.name}`;const up=await safe('Upload',sb.storage.from('forte-media').upload(path,file,{upsert:true,contentType:file.type}));if(!up.error){media_url=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;media_type=file.type.startsWith('video')?'video':'image'}}
+  const post={user_id:user.id,workout_id:pendingWorkoutId,caption:$('share-caption').value.trim(),media_url,media_type,workout_snapshot:pendingWorkoutSnapshot,is_public:true,created_at:new Date().toISOString()};
+  await safe('Post',sb.from('posts').insert(post));closeModal('share-modal');toast('Posted!');loadFeed();
+}
+async function toggleLike(postId){
+  const ex=await sb.from('post_likes').select('id').eq('post_id',postId).eq('user_id',user.id).maybeSingle();
+  if(ex.data)await sb.from('post_likes').delete().eq('id',ex.data.id);else await sb.from('post_likes').insert({post_id:postId,user_id:user.id});
+  const c=await sb.from('post_likes').select('*',{count:'exact',head:true}).eq('post_id',postId);
+  await sb.from('posts').update({likes_count:c.count||0}).eq('id',postId);
+  $('like-'+postId).textContent=c.count||0;
+}
+async function deletePost(id){if(confirm('Delete post?')){await sb.from('posts').delete().eq('id',id).eq('user_id',user.id);loadFeed();toast('Deleted')}}
+async function openPost(id){
+  currentPostId=id;
+  const p=(await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(*)').eq('id',id).single()).data;
+  const comments=(await sb.from('comments').select('*,profiles!comments_user_id_fkey(username,full_name,avatar_url)').eq('post_id',id).order('created_at')).data||[];
+  $('post-content').innerHTML=postCard(p)+`<div class="label" style="margin:16px 0 8px">Comments</div>${comments.map(c=>`<div class="list-item"><div class="row">${avatar(c.profiles,28)}<div><b>${esc(c.profiles?.username||'user')}</b><div>${esc(c.content)}</div><div class="small">❤️ ${c.likes_count||0}</div></div></div></div>`).join('')||'<div class="small">No comments yet.</div>'}`;
+  openModal('post-modal');
+}
+async function submitComment(){
+  const content=$('comment-input').value.trim();if(!content||!currentPostId)return;
+  await sb.from('comments').insert({post_id:currentPostId,user_id:user.id,content});
+  const c=await sb.from('comments').select('*',{count:'exact',head:true}).eq('post_id',currentPostId);
+  await sb.from('posts').update({comments_count:c.count||0}).eq('id',currentPostId);
+  $('comment-input').value='';openPost(currentPostId);loadFeed();
+}
+
+function openWorkoutModal(){$('exercise-list').innerHTML='';$('workout-title').value='';addExerciseBlock();openModal('workout-modal')}
+function addExerciseBlock(){
+  const id='ex'+Date.now()+Math.random();
+  const div=document.createElement('div');div.className='list-item';div.dataset.ex=id;
+  div.innerHTML=`<div class="field"><div class="label">Exercise</div><input class="inp ex-name" placeholder="Bench press"></div><div class="sets"></div><button class="btn btn-secondary" onclick="addSet(this)">+ Add set</button><button class="btn btn-danger" style="margin-left:8px" onclick="this.closest('.list-item').remove()">Remove</button>`;
+  $('exercise-list').appendChild(div);addSet(div.querySelector('button'));
+}
+function addSet(btn){const sets=btn.closest('.list-item').querySelector('.sets');sets.insertAdjacentHTML('beforeend',`<div class="grid2" style="margin-bottom:8px"><input class="inp set-weight" type="number" placeholder="kg"><input class="inp set-reps" type="number" placeholder="reps"></div>`)}
+async function saveWorkout(){
+  const title=$('workout-title').value.trim()||'Logged a workout!';
+  const snapshot=[...document.querySelectorAll('#exercise-list .list-item')].map(block=>({name:block.querySelector('.ex-name').value.trim()||'Exercise',sets:[...block.querySelectorAll('.grid2')].map(r=>({weight:Number(r.querySelector('.set-weight').value||0),reps:Number(r.querySelector('.set-reps').value||0)})).filter(s=>s.weight||s.reps)})).filter(e=>e.sets.length);
+  if(!snapshot.length)return toast('Add at least one set');
+  const total_sets=snapshot.reduce((a,e)=>a+e.sets.length,0);
+  const w=await safe('Workout',sb.from('workouts').insert({user_id:user.id,title,is_public:true,points_earned:3,exercise_count:snapshot.length,total_sets,workout_snapshot:snapshot,created_at:new Date().toISOString()}).select().single());
+  if(!w.data)return;
+  const rows=[];snapshot.forEach(ex=>ex.sets.forEach((s,i)=>rows.push({workout_id:w.data.id,exercise_name:ex.name,set_number:i+1,weight:s.weight,reps:s.reps})));
+  if(rows.length)await sb.from('workout_sets').insert(rows);
+  await sb.from('points_log').insert({user_id:user.id,points:3,reason:'Workout: '+title,workout_id:w.data.id});
+  await sb.from('profiles').update({points:(profile.points||0)+3}).eq('id',user.id);profile.points=(profile.points||0)+3;
+  closeModal('workout-modal');toast('Workout saved +3 pts');loadExercise();loadProfileScreen();
+  pendingWorkoutId=w.data.id;pendingWorkoutSnapshot=snapshot;$('share-title').textContent='Share workout';$('share-workout-preview').innerHTML=workoutHtml(snapshot);$('share-caption').value='';$('share-media').value='';openModal('share-modal');
+}
+async function loadExercise(){
+  updateStepsUI();
+  const w=(await sb.from('workouts').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20)).data||[];
+  $('past-workouts').innerHTML=w.map(x=>`<div class="list-item" onclick="viewWorkout('${x.id}')"><div style="font-weight:800">${esc(x.title)}</div><div class="small">${timeAgo(x.created_at)} · ${x.exercise_count||0} exercises · ${x.total_sets||0} sets · +${x.points_earned||0} pts</div></div>`).join('')||'<div class="small">No workouts yet.</div>';
+  $('weekly-workouts').textContent=w.filter(x=>new Date(x.created_at)>new Date(Date.now()-7*864e5)).length+'/4';
+}
+async function viewWorkout(id){const w=(await sb.from('workouts').select('*').eq('id',id).single()).data;if(!w)return;$('post-content').innerHTML=`<div class="modal-title">${esc(w.title)}</div>${workoutHtml(w.workout_snapshot||[])}`;openModal('post-modal')}
+async function viewWorkoutFromPost(postId){const p=(await sb.from('posts').select('*,workouts(*)').eq('id',postId).single()).data;$('post-content').innerHTML=workoutHtml(p.workout_snapshot||p.workouts?.workout_snapshot||[]);openModal('post-modal')}
+
+function openFoodModal(){baseFood={cal:0,pro:0,carb:0,fat:0};$('food-results').innerHTML='';$('food-name').value='';$('food-amount').value=100;calcFoodTotals();openModal('food-modal')}
+function searchFoodLocal(q){if(!q){$('food-results').innerHTML='';return}const res=FOODS.filter(f=>f[0].toLowerCase().includes(q.toLowerCase())).slice(0,8);$('food-results').innerHTML=res.map(f=>`<div class="list-item" onclick="selectFood('${esc(f[0])}',${f[1]},${f[2]},${f[3]},${f[4]})"><b>${esc(f[0])}</b><div class="small">${f[1]} kcal · ${f[2]}g protein per 100g</div></div>`).join('')||'<div class="small">No result. Type food details manually later.</div>'}
+function selectFood(name,cal,pro,carb,fat){$('food-name').value=name;baseFood={cal,pro,carb,fat};$('food-base-cal').value=cal;$('food-base-pro').value=pro;$('food-base-carb').value=carb;$('food-base-fat').value=fat;$('food-results').innerHTML='';calcFoodTotals()}
+function calcFoodTotals(){const amount=Number($('food-amount').value||0);const unit=$('food-unit').value;const factor=(amount*(unit==='oz'?28.35:unit==='serving'?100:1))/100;const b=baseFood;$('food-total-cal').textContent=Math.round(b.cal*factor);$('food-total-pro').textContent=Math.round(b.pro*factor*10)/10+'g';$('food-total-carb').textContent=Math.round(b.carb*factor*10)/10+'g';$('food-total-fat').textContent=Math.round(b.fat*factor*10)/10+'g'}
+async function saveFood(){
+  const name=$('food-name').value.trim();if(!name)return toast('Choose food');
+  const amount=Number($('food-amount').value||100),unit=$('food-unit').value;const factor=(amount*(unit==='oz'?28.35:unit==='serving'?100:1))/100;
+  await safe('Food',sb.from('nutrition_logs').insert({user_id:user.id,food_name:`${name} (${amount}${unit})`,meal_type:$('food-meal').value,calories:Math.round(baseFood.cal*factor),protein:Math.round(baseFood.pro*factor*10)/10,carbs:Math.round(baseFood.carb*factor*10)/10,fats:Math.round(baseFood.fat*factor*10)/10,serving_amount:amount,serving_unit:unit,log_date:today()}));
+  closeModal('food-modal');toast('Food logged');loadNutrition();
+}
+async function loadNutrition(){
+  const logs=(await sb.from('nutrition_logs').select('*').eq('user_id',user.id).eq('log_date',today()).order('created_at')).data||[];
+  const t=logs.reduce((a,x)=>({cal:a.cal+(x.calories||0),pro:a.pro+(x.protein||0),carb:a.carb+(x.carbs||0),fat:a.fat+(x.fats||0)}),{cal:0,pro:0,carb:0,fat:0});
+  $('tot-cal').textContent=t.cal;$('tot-pro').textContent=Math.round(t.pro*10)/10+'g';$('tot-carb').textContent=Math.round(t.carb*10)/10+'g';$('tot-fat').textContent=Math.round(t.fat*10)/10+'g';
+  const meals=['Breakfast','Lunch','Dinner','Snack'];
+  $('meal-sections').innerHTML=meals.map(m=>`<div class="card"><div class="between"><b>${m}</b><button class="btn btn-secondary" onclick="openFoodModal();$('food-meal').value='${m}'">+ Add</button></div>${logs.filter(x=>x.meal_type===m).map(x=>`<div class="list-item"><b>${esc(x.food_name)}</b><div class="small">${x.calories||0} kcal · P ${x.protein||0}g · C ${x.carbs||0}g · F ${x.fats||0}g</div></div>`).join('')||'<div class="small" style="margin-top:10px">Nothing logged yet.</div>'}</div>`).join('');
+}
+
+async function searchUsers(q){if(q.length<2){$('user-results').innerHTML='';return}const r=await sb.from('profiles').select('*').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id',user.id).limit(10);$('user-results').innerHTML=(r.data||[]).map(userItem).join('')||'<div class="small">No users found.</div>'}
+function userItem(u){return `<div class="list-item row" onclick="viewUser('${u.id}')">${avatar(u)}<div style="flex:1"><b>${esc(u.full_name||u.username)}</b><div class="small">@${esc(u.username||'')}</div></div><button class="btn btn-secondary" onclick="event.stopPropagation();sendFriendRequest('${u.id}')">Follow</button><button class="btn btn-secondary" onclick="event.stopPropagation();startDM('${u.id}')">Message</button></div>`}
+async function sendFriendRequest(to){const r=await safe('Friend request',sb.from('friendships').upsert({requester_id:user.id,addressee_id:to,status:'pending'},{onConflict:'requester_id,addressee_id'}).select().single());if(r.data){await notify(to,'friend_request',`${profile.full_name||profile.username} sent you a friend request`,'Accept or decline',{friendship_id:r.data.id,requester_id:user.id});toast('Friend request sent')}}
+async function loadFriends(){
+  const req=(await sb.from('friendships').select('*,profiles!friendships_requester_id_fkey(*)').eq('addressee_id',user.id).eq('status','pending')).data||[];
+  $('friend-requests').innerHTML=req.map(x=>`<div class="list-item row">${avatar(x.profiles)}<div style="flex:1"><b>${esc(x.profiles?.username)}</b></div><button class="btn btn-green" onclick="acceptFriend('${x.id}')">✓</button><button class="btn btn-danger" onclick="declineFriend('${x.id}')">×</button></div>`).join('')||'<div class="small">No requests.</div>';
+  const a=(await sb.from('friendships').select('*,profiles!friendships_addressee_id_fkey(*)').eq('requester_id',user.id).eq('status','accepted')).data||[];
+  const b=(await sb.from('friendships').select('*,profiles!friendships_requester_id_fkey(*)').eq('addressee_id',user.id).eq('status','accepted')).data||[];
+  const friends=[...a.map(x=>x.profiles),...b.map(x=>x.profiles)].filter(Boolean);
+  $('friends-list').innerHTML=friends.map(userItem).join('')||'<div class="small">No friends yet.</div>';
+}
+async function acceptFriend(id){await sb.from('friendships').update({status:'accepted'}).eq('id',id);toast('Friend accepted');loadFriends();loadProfileScreen()}
+async function declineFriend(id){await sb.from('friendships').update({status:'declined'}).eq('id',id);toast('Declined');loadFriends()}
+
+async function viewUser(id){
+  const p=(await sb.from('profiles').select('*').eq('id',id).single()).data;if(!p)return;
+  const w=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',id).eq('is_public',true);
+  const r=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',id).eq('is_private',false);
+  $('profile-modal-content').innerHTML=`<div class="row" style="margin-bottom:15px">${avatar(p,64)}<div><div style="font-size:18px;font-weight:850">${esc(p.full_name||p.username)}</div><div class="small">@${esc(p.username||'')}</div><div class="small">${p.points||0} pts · ${w.count||0} workouts · ${r.count||0} recipes</div></div></div><div class="grid2"><button class="btn btn-primary" onclick="sendFriendRequest('${id}')">Follow</button><button class="btn btn-secondary" onclick="startDM('${id}')">Message</button></div>`;
+  openModal('profile-modal');
+}
+
+function openLeagueModal(){openModal('league-modal')}
+async function saveLeague(){const name=$('league-name').value.trim();if(!name)return toast('Name required');const r=await safe('League',sb.from('leagues').insert({name,description:$('league-desc').value,created_by:user.id,is_private:$('league-private').value==='true'}).select().single());if(r.data){await sb.from('league_members').insert({league_id:r.data.id,user_id:user.id,status:'accepted',invited_by:user.id});closeModal('league-modal');loadLeagues();loadFeedLeagues()}}
+async function loadLeagues(){
+  const m=(await sb.from('league_members').select('*,leagues(*)').eq('user_id',user.id).in('status',['accepted','pending'])).data||[];
+  $('leagues-list').innerHTML=m.map(x=>`<div class="card"><div class="between"><div><b>${esc(x.leagues?.name)}</b><div class="small">${x.status==='pending'?'Invite pending':x.leagues?.is_private?'Private':'Public'}</div></div>${x.status==='pending'?`<div class="row"><button class="btn btn-green" onclick="acceptLeagueInvite('${x.id}')">✓</button><button class="btn btn-danger" onclick="declineLeagueInvite('${x.id}')">×</button></div>`:`<button class="btn btn-secondary" onclick="openLeague('${x.league_id}')">View</button>`}</div></div>`).join('')||'<div class="card small">No leagues yet.</div>';
+}
+async function loadFeedLeagues(){
+  const inv=(await sb.from('league_members').select('*,leagues(*)').eq('user_id',user.id).eq('status','pending')).data||[];
+  const mine=(await sb.from('league_members').select('*,leagues(*)').eq('user_id',user.id).eq('status','accepted')).data||[];
+  $('feed-leagues').innerHTML=[...inv.map(x=>`<div class="list-item" style="min-width:220px"><b>Invite: ${esc(x.leagues?.name)}</b><div class="row" style="margin-top:8px"><button class="btn btn-green" onclick="acceptLeagueInvite('${x.id}')">✓ Join</button><button class="btn btn-danger" onclick="declineLeagueInvite('${x.id}')">×</button></div></div>`),...mine.map(x=>`<div class="list-item" style="min-width:160px" onclick="openLeague('${x.league_id}')"><b>${esc(x.leagues?.name)}</b><div class="small">${x.leagues?.is_private?'Private':'Public'}</div></div>`)].join('')||'<div class="small">No leagues yet.</div>';
+}
+async function acceptLeagueInvite(id){await sb.from('league_members').update({status:'accepted',joined_at:new Date().toISOString()}).eq('id',id);toast('Joined league');loadLeagues();loadFeedLeagues();loadNotifications()}
+async function declineLeagueInvite(id){await sb.from('league_members').update({status:'declined'}).eq('id',id);toast('Declined');loadLeagues();loadFeedLeagues();loadNotifications()}
+async function openLeague(id){
+  const league=(await sb.from('leagues').select('*').eq('id',id).single()).data;
+  const members=(await sb.from('league_members').select('*,profiles(*)').eq('league_id',id).eq('status','accepted')).data||[];
+  let rows=[];
+  for(const m of members){const start=m.joined_at||league.created_at;const pts=(await sb.from('points_log').select('points').eq('user_id',m.user_id).gte('earned_at',start)).data||[];const w=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start);const r=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start);rows.push({...m.profiles,points:pts.reduce((a,x)=>a+(x.points||0),0),workouts:w.count||0,recipes:r.count||0})}
+  rows.sort((a,b)=>b.points-a.points);
+  $('post-content').innerHTML=`<div class="modal-title">${esc(league.name)}</div>${rows.map((u,i)=>`<div class="list-item row">${avatar(u,32)}<div style="flex:1"><b>#${i+1} ${esc(u.username)}</b><div class="small">${u.points} pts · ${u.workouts} workouts · ${u.recipes} recipes</div></div></div>`).join('')}<div class="label" style="margin-top:15px">Invite friends</div><div id="league-invite-list"></div>`;
+  openModal('post-modal');loadLeagueInviteFriends(id);
+}
+async function loadLeagueInviteFriends(leagueId){const a=(await sb.from('friendships').select('profiles!friendships_addressee_id_fkey(*)').eq('requester_id',user.id).eq('status','accepted')).data||[];const b=(await sb.from('friendships').select('profiles!friendships_requester_id_fkey(*)').eq('addressee_id',user.id).eq('status','accepted')).data||[];const fs=[...a.map(x=>x.profiles),...b.map(x=>x.profiles)].filter(Boolean);$('league-invite-list').innerHTML=fs.map(f=>`<div class="list-item row">${avatar(f,30)}<div style="flex:1">${esc(f.username)}</div><button class="btn btn-secondary" onclick="inviteLeague('${leagueId}','${f.id}')">Invite</button></div>`).join('')||'<div class="small">No friends to invite.</div>'}
+async function inviteLeague(leagueId,uid){const r=await safe('Invite',sb.from('league_members').upsert({league_id:leagueId,user_id:uid,invited_by:user.id,status:'pending'},{onConflict:'league_id,user_id'}).select().single());if(r.data){await notify(uid,'league_invite',`${profile.username} invited you to a league`,'Accept or decline',{league_member_id:r.data.id,league_id:leagueId});await sendDM(uid,'I invited you to my Forte league. Check your notifications to join ✅');toast('Invite sent')}}
+
+function openRecipeModal(){openModal('recipe-modal')}
+async function saveRecipe(){const title=$('recipe-title').value.trim();if(!title)return toast('Title required');await safe('Recipe',sb.from('recipes').insert({user_id:user.id,title,description:$('recipe-desc').value,calories:Number($('recipe-cal').value||0),protein:Number($('recipe-pro').value||0),carbs:Number($('recipe-carb').value||0),fats:Number($('recipe-fat').value||0),is_private:$('recipe-private').value==='true'}));closeModal('recipe-modal');loadRecipes('mine');loadProfileScreen()}
+function recipeCard(r){return `<div class="list-item" onclick="viewRecipe('${r.id}')"><b>${esc(r.title)}</b><div class="small">${r.calories||0} kcal · ${r.protein||0}g protein</div></div>`}
+async function loadRecipes(type='all',btn){document.querySelectorAll('#recipes-screen .tab').forEach(t=>t.classList.remove('active'));btn?.classList.add('active');let q=sb.from('recipes').select('*,profiles!recipes_user_id_fkey(username)').order('created_at',{ascending:false});q=type==='mine'?q.eq('user_id',user.id):q.eq('is_private',false);const r=await q;$('recipes-list').innerHTML=(r.data||[]).map(recipeCard).join('')||'<div class="card small">No recipes yet.</div>'}
+async function viewRecipe(id){const r=(await sb.from('recipes').select('*,profiles!recipes_user_id_fkey(username)').eq('id',id).single()).data;$('post-content').innerHTML=`<div class="modal-title">${esc(r.title)}</div><div class="small">by @${esc(r.profiles?.username||'')}</div><p style="margin:12px 0">${esc(r.description||'')}</p><div class="grid4"><div class="stat-card"><div class="stat-val">${r.calories||0}</div><div class="stat-label">kcal</div></div><div class="stat-card"><div class="stat-val">${r.protein||0}g</div><div class="stat-label">Protein</div></div><div class="stat-card"><div class="stat-val">${r.carbs||0}g</div><div class="stat-label">Carbs</div></div><div class="stat-card"><div class="stat-val">${r.fats||0}g</div><div class="stat-label">Fat</div></div></div>`;openModal('post-modal')}
+
+async function notify(uid,type,title,body,data={}){await sb.from('notifications').insert({user_id:uid,actor_id:user.id,type,title,body,data})}
+function openNotifications(){loadNotifications();openModal('notifications-modal')}
+async function loadNotifications(){const r=await sb.from('notifications').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(30);$('notifications-list').innerHTML=(r.data||[]).map(n=>`<div class="list-item"><b>${esc(n.title)}</b><div class="small">${esc(n.body||'')} · ${timeAgo(n.created_at)}</div>${notifActions(n)}</div>`).join('')||'<div class="small">No notifications yet.</div>';checkUnread()}
+function notifActions(n){const d=n.data||{};if(n.type==='friend_request')return `<div class="row" style="margin-top:8px"><button class="btn btn-green" onclick="acceptFriend('${d.friendship_id}')">✓ Accept</button><button class="btn btn-danger" onclick="declineFriend('${d.friendship_id}')">× Decline</button></div>`;if(n.type==='league_invite')return `<div class="row" style="margin-top:8px"><button class="btn btn-green" onclick="acceptLeagueInvite('${d.league_member_id}')">✓ Join</button><button class="btn btn-danger" onclick="declineLeagueInvite('${d.league_member_id}')">× Decline</button></div>`;return''}
+async function markAllRead(){await sb.from('notifications').update({read:true}).eq('user_id',user.id);loadNotifications()}
+async function checkUnread(){const c=await sb.from('notifications').select('*',{count:'exact',head:true}).eq('user_id',user.id).eq('read',false);$('notif-dot').style.display=(c.count||0)>0?'block':'none'}
+
+async function startDM(uid){await sendDM(uid,'Hey 👋');toast('Message sent')}
+async function sendDM(uid,msg){let conv=null;const mine=(await sb.from('conversation_members').select('conversation_id').eq('user_id',user.id)).data||[];if(mine.length){const shared=(await sb.from('conversation_members').select('conversation_id').eq('user_id',uid).in('conversation_id',mine.map(x=>x.conversation_id))).data||[];conv=shared[0]?.conversation_id}if(!conv){const c=(await sb.from('conversations').insert({}).select().single()).data;conv=c.id;await sb.from('conversation_members').insert([{conversation_id:conv,user_id:user.id},{conversation_id:conv,user_id:uid}])}await sb.from('messages').insert({conversation_id:conv,sender_id:user.id,content:msg});await notify(uid,'message',`${profile.username} sent you a message`,msg,{conversation_id:conv})}
+
+function openStoryModal(){openModal('story-modal')}
+async function loadStories(){const r=await sb.from('stories').select('*,profiles!stories_user_id_fkey(*)').gt('expires_at',new Date().toISOString()).order('created_at',{ascending:false});const groups={};const order=[];groups[user.id]={profile,stories:[],isMe:true};order.push(user.id);(r.data||[]).forEach(s=>{if(!groups[s.user_id]){groups[s.user_id]={profile:s.profiles,stories:[],isMe:s.user_id===user.id};order.push(s.user_id)}groups[s.user_id].stories.push(s)});storyGroups=order.map(id=>groups[id]);$('stories-row').innerHTML=storyGroups.map((g,i)=>{const unseen=g.stories.some(s=>!localStorage.getItem('story_'+s.id));return `<div class="story-item" onclick="${g.stories.length?`openStoryViewer(${i})`:'openStoryModal()'}"><div class="story-ring ${unseen?'unseen':''}"><div class="story-inner">${avatar(g.profile,52)}</div>${g.isMe?`<button class="plus-mini" onclick="event.stopPropagation();openStoryModal()">+</button>`:''}</div><div>${g.isMe?'Your story':esc(g.profile?.username||'')}</div></div>`}).join('')}
+async function uploadStory(){const file=$('story-file').files[0];if(!file)return toast('Choose a file');const path=`stories/${user.id}/${Date.now()}-${file.name}`;const up=await safe('Story upload',sb.storage.from('forte-media').upload(path,file,{upsert:true,contentType:file.type}));if(up.error)return;const url=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;await sb.from('stories').insert({user_id:user.id,media_url:url,media_type:file.type.startsWith('video')?'video':'image',caption:$('story-caption').value,expires_at:new Date(Date.now()+864e5).toISOString()});closeModal('story-modal');loadStories()}
+function openStoryViewer(i){storyGroupIndex=i;storyIndex=0;showStory()}
+function showStory(){const s=storyGroups[storyGroupIndex]?.stories[storyIndex];if(!s)return;localStorage.setItem('story_'+s.id,'1');$('story-viewer').style.display='flex';$('story-img').style.display='none';$('story-video').style.display='none';if(s.media_type==='video'){$('story-video').src=s.media_url;$('story-video').style.display='block'}else{$('story-img').src=s.media_url;$('story-img').style.display='block'}$('story-view-caption').textContent=s.caption||'';loadStories()}
+function nextStory(){const g=storyGroups[storyGroupIndex];if(storyIndex<g.stories.length-1){storyIndex++;showStory()}else closeStoryViewer()}
+function prevStory(){if(storyIndex>0){storyIndex--;showStory()}}
+function closeStoryViewer(){$('story-viewer').style.display='none';$('story-video').pause();loadStories()}
+
+function activateSteps(){stepActive=true;localStorage.setItem('forte_step_tracking','active');$('step-status').textContent='Tracking active';$('steps-activate-btn').textContent='Active';if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){DeviceMotionEvent.requestPermission().catch(()=>{})}window.addEventListener('devicemotion',motionStep);toast('Step tracking activated')}
+let lastStep=0;
+function motionStep(e){if(!stepActive)return;const a=e.accelerationIncludingGravity;if(!a)return;const mag=Math.sqrt((a.x||0)**2+(a.y||0)**2+(a.z||0)**2);const now=Date.now();if(mag>13&&now-lastStep>350){lastStep=now;stepCount++;localStorage.setItem('forte_steps',stepCount);updateStepsUI()}}
+function updateStepsUI(){const pct=Math.min(100,stepCount/10000*100);$('steps-count').textContent=stepCount.toLocaleString();$('steps-bar').style.width=pct+'%';$('steps-cal').textContent=Math.round(stepCount*.04);$('steps-km').textContent=Math.round(stepCount*.0008*10)/10}
+function openStatsModal(){$('stat-weight').value=profile.weight_kg||'';$('stat-height').value=profile.height_cm||'';$('goal-cal').value=profile.calorie_goal||'';$('goal-pro').value=profile.protein_goal||'';openModal('stats-modal')}
+async function saveStats(){const up={weight_kg:Number($('stat-weight').value)||null,height_cm:Number($('stat-height').value)||null,calorie_goal:Number($('goal-cal').value)||null,protein_goal:Number($('goal-pro').value)||null};await sb.from('profiles').update(up).eq('id',user.id);Object.assign(profile,up);closeModal('stats-modal');toast('Saved')}
+function openSettings(){openModal('settings-modal')}
+function toggleTheme(){document.body.classList.toggle('light')}
+
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+
 init();
 </script>
+</body>
+</html></script>
 
 <script>
 if('serviceWorker' in navigator){
