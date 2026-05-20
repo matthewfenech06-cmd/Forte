@@ -7296,6 +7296,399 @@ setTimeout(() => {
   try{ loadStories(); }catch(e){}
   try{ checkUnreadNotifications(); }catch(e){}
 }, 1200);
+  /* =========================================================
+   FORTE FIX: LEAGUE CREATE + DM START + INVITES
+   Paste directly above init();
+   ========================================================= */
+
+function safeToast(msg){
+  if(typeof fpToast === 'function') return fpToast(msg);
+  if(typeof showToast === 'function') return showToast(msg);
+  alert(msg);
+}
+
+async function getCurrentUserSafe(){
+  if(user) return user;
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session?.user){
+    user = session.user;
+    return user;
+  }
+  return null;
+}
+
+/* -----------------------------
+   FIX CREATE LEAGUE
+----------------------------- */
+saveLeague = async function(){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+
+  const name = document.getElementById('league-name')?.value?.trim();
+  const description = document.getElementById('league-desc')?.value?.trim() || null;
+  const reward = document.getElementById('league-reward')?.value?.trim() || null;
+  const endDate = document.getElementById('league-end-date')?.value || null;
+
+  if(!name) return safeToast('Enter a league name');
+
+  const btn = document.querySelector('#create-league-modal .btn-primary');
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+  }
+
+  const { data:league, error } = await sb
+    .from('leagues')
+    .insert({
+      name,
+      description,
+      reward,
+      end_date: endDate,
+      created_by: u.id,
+      is_private: !!leaguePrivate
+    })
+    .select()
+    .single();
+
+  if(error){
+    console.error('CREATE LEAGUE ERROR:', error);
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = 'Create league';
+    }
+    return safeToast('Error creating league: ' + (error.message || 'unknown error'));
+  }
+
+  const { error:memberError } = await sb
+    .from('league_members')
+    .upsert({
+      league_id: league.id,
+      user_id: u.id,
+      status: 'accepted',
+      invited_by: u.id
+    }, {
+      onConflict: 'league_id,user_id'
+    });
+
+  if(memberError){
+    console.error('JOIN OWN LEAGUE ERROR:', memberError);
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = 'Create league';
+    }
+    return safeToast('League created but could not join it: ' + memberError.message);
+  }
+
+  if(btn){
+    btn.disabled = false;
+    btn.textContent = 'Create league';
+  }
+
+  closeModal('create-league-modal');
+  safeToast('League created! 🏆');
+
+  try{ loadLeagues(); }catch(e){}
+  try{ loadFeedLeagues(); }catch(e){}
+};
+
+/* -----------------------------
+   FIX START DM
+----------------------------- */
+startDM = async function(otherUserId){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+  if(!otherUserId) return safeToast('No user selected');
+  if(otherUserId === u.id) return safeToast('You cannot message yourself');
+
+  try{
+    closeModal('new-dm-modal');
+  }catch(e){}
+
+  let convId = null;
+
+  try{
+    const { data:mine, error:mineErr } = await sb
+      .from('conversation_members')
+      .select('conversation_id')
+      .eq('user_id', u.id);
+
+    if(mineErr) throw mineErr;
+
+    const myConvIds = (mine || []).map(x => x.conversation_id);
+
+    if(myConvIds.length){
+      const { data:shared, error:sharedErr } = await sb
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', otherUserId)
+        .in('conversation_id', myConvIds)
+        .limit(1);
+
+      if(sharedErr) throw sharedErr;
+      if(shared && shared.length) convId = shared[0].conversation_id;
+    }
+
+    if(!convId){
+      const { data:conv, error:convErr } = await sb
+        .from('conversations')
+        .insert({})
+        .select()
+        .single();
+
+      if(convErr) throw convErr;
+
+      convId = conv.id;
+
+      const { error:memErr } = await sb
+        .from('conversation_members')
+        .insert([
+          {
+            conversation_id: convId,
+            user_id: u.id,
+            last_read_at: new Date().toISOString()
+          },
+          {
+            conversation_id: convId,
+            user_id: otherUserId,
+            last_read_at: null
+          }
+        ]);
+
+      if(memErr) throw memErr;
+    }
+
+    openChat(convId, otherUserId);
+
+  }catch(err){
+    console.error('START DM ERROR:', err);
+    safeToast('Could not start message: ' + (err.message || 'unknown error'));
+  }
+};
+
+/* -----------------------------
+   FIX SEND MESSAGE
+----------------------------- */
+sendMessage = async function(){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+
+  const inp = document.getElementById('chat-input');
+  const content = inp?.value?.trim();
+
+  if(!content) return;
+  if(!currentConvId) return safeToast('No conversation selected');
+
+  inp.value = '';
+
+  const { error } = await sb
+    .from('messages')
+    .insert({
+      conversation_id: currentConvId,
+      sender_id: u.id,
+      content
+    });
+
+  if(error){
+    console.error('SEND MESSAGE ERROR:', error);
+    safeToast('Could not send message: ' + error.message);
+    inp.value = content;
+  }
+};
+
+/* -----------------------------
+   FIX LEAGUE INVITE
+----------------------------- */
+inviteToLeague = async function(leagueId, targetUserId){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+
+  if(!leagueId || !targetUserId) return safeToast('Missing invite details');
+
+  const { data:league } = await sb
+    .from('leagues')
+    .select('id,name')
+    .eq('id', leagueId)
+    .single();
+
+  const { error } = await sb
+    .from('league_members')
+    .upsert({
+      league_id: leagueId,
+      user_id: targetUserId,
+      status: 'pending',
+      invited_by: u.id
+    }, {
+      onConflict: 'league_id,user_id'
+    });
+
+  if(error){
+    console.error('INVITE ERROR:', error);
+    return safeToast('Could not send invite: ' + error.message);
+  }
+
+  await sb.from('notifications').insert({
+    user_id: targetUserId,
+    actor_id: u.id,
+    type: 'league_invite',
+    title: 'League invite 🏆',
+    body: `You were invited to join ${league?.name || 'a league'}`,
+    data: {
+      league_id: leagueId,
+      league_name: league?.name || ''
+    }
+  }).catch(err => console.error('INVITE NOTIFICATION ERROR:', err));
+
+  /* Also try to send a DM automatically */
+  try{
+    let convId = null;
+
+    const { data:mine } = await sb
+      .from('conversation_members')
+      .select('conversation_id')
+      .eq('user_id', u.id);
+
+    const myConvIds = (mine || []).map(x => x.conversation_id);
+
+    if(myConvIds.length){
+      const { data:shared } = await sb
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', targetUserId)
+        .in('conversation_id', myConvIds)
+        .limit(1);
+
+      if(shared && shared.length) convId = shared[0].conversation_id;
+    }
+
+    if(!convId){
+      const { data:conv } = await sb
+        .from('conversations')
+        .insert({})
+        .select()
+        .single();
+
+      convId = conv.id;
+
+      await sb.from('conversation_members').insert([
+        { conversation_id: convId, user_id: u.id, last_read_at: new Date().toISOString() },
+        { conversation_id: convId, user_id: targetUserId, last_read_at: null }
+      ]);
+    }
+
+    await sb.from('messages').insert({
+      conversation_id: convId,
+      sender_id: u.id,
+      content: `I invited you to join my league: ${league?.name || 'League'} 🏆`
+    });
+  }catch(dmErr){
+    console.error('INVITE DM ERROR:', dmErr);
+  }
+
+  safeToast('Invite sent! 🏆');
+};
+
+/* -----------------------------
+   FIX NOTIFICATIONS PANEL TO SHOW LEAGUE INVITES
+----------------------------- */
+loadNotifications = async function(){
+  const u = await getCurrentUserSafe();
+  if(!u) return;
+
+  const el = document.getElementById('notif-list');
+  if(!el) return;
+
+  const { data, error } = await sb
+    .from('notifications')
+    .select('*')
+    .eq('user_id', u.id)
+    .order('created_at', { ascending:false })
+    .limit(40);
+
+  if(error){
+    console.error('LOAD NOTIFICATIONS ERROR:', error);
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Could not load notifications</div>';
+    return;
+  }
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No notifications yet</div>';
+    return;
+  }
+
+  el.innerHTML = data.map(n => {
+    const d = n.data || {};
+    const isLeagueInvite = n.type === 'league_invite';
+
+    return `
+      <div style="background:${n.read ? 'transparent' : 'rgba(255,0,144,.06)'};border-bottom:1px solid var(--border);padding:14px 4px">
+        <div style="display:flex;gap:12px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">
+            ${isLeagueInvite ? '🏆' : n.type === 'message' ? '💬' : n.type === 'follow' ? '👤' : '🔔'}
+          </div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:700">${n.title || 'Notification'}</div>
+            ${n.body ? `<div style="font-size:13px;color:var(--text2);margin-top:3px">${n.body}</div>` : ''}
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">${typeof getTimeAgo === 'function' ? getTimeAgo(n.created_at) : ''}</div>
+
+            ${
+              isLeagueInvite
+              ? `
+                <div style="display:flex;gap:8px;margin-top:10px">
+                  <button onclick="acceptLeagueInvite('${d.league_id}','${n.id}')" style="flex:1;background:#19c37d;border:none;border-radius:8px;padding:9px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">✓ Join</button>
+                  <button onclick="declineLeagueInvite('${d.league_id}','${n.id}')" style="flex:1;background:#ff4f4f;border:none;border-radius:8px;padding:9px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">✕ Decline</button>
+                </div>
+              `
+              : ''
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const unread = data.filter(n => !n.read).length;
+  const dot = document.getElementById('notif-dot');
+  if(dot) dot.style.display = unread > 0 ? 'block' : 'none';
+};
+
+async function acceptLeagueInvite(leagueId, notificationId){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+
+  const { error } = await sb
+    .from('league_members')
+    .update({ status:'accepted' })
+    .eq('league_id', leagueId)
+    .eq('user_id', u.id);
+
+  if(error){
+    console.error('ACCEPT LEAGUE ERROR:', error);
+    return safeToast('Could not join league: ' + error.message);
+  }
+
+  await sb.from('notifications').update({ read:true }).eq('id', notificationId);
+  safeToast('Joined league! 🏆');
+
+  loadNotifications();
+  try{ loadLeagues(); }catch(e){}
+  try{ loadFeedLeagues(); }catch(e){}
+}
+
+async function declineLeagueInvite(leagueId, notificationId){
+  const u = await getCurrentUserSafe();
+  if(!u) return safeToast('Please sign in first');
+
+  await sb
+    .from('league_members')
+    .delete()
+    .eq('league_id', leagueId)
+    .eq('user_id', u.id);
+
+  await sb.from('notifications').update({ read:true }).eq('id', notificationId);
+
+  safeToast('Invite declined');
+  loadNotifications();
+}
 init();
 </script>
 
