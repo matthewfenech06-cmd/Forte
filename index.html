@@ -10391,6 +10391,494 @@ if('serviceWorker' in navigator){
   });
 }
 </script>
+  <script>
+/* =========================================================
+   FORTE NOTIFICATIONS + DM UNREAD BADGE FIX
+   Paste directly before </body>
+   ========================================================= */
+
+let forteNotifPollTimer = null;
+let forteLastNotifSeenAt = localStorage.getItem('forte_last_notif_seen_at') || new Date().toISOString();
+
+async function forteRequestNotificationPermission(){
+  try{
+    if(!('Notification' in window)) return false;
+    if(Notification.permission === 'granted') return true;
+    if(Notification.permission !== 'denied'){
+      const res = await Notification.requestPermission();
+      return res === 'granted';
+    }
+  }catch(e){}
+  return false;
+}
+
+function forteBrowserNotify(title, body){
+  try{
+    if(!('Notification' in window)) return;
+    if(Notification.permission !== 'granted') return;
+    new Notification(title || 'Forte', {
+      body: body || '',
+      icon: '/favicon.ico',
+      badge: '/favicon.ico'
+    });
+  }catch(e){
+    console.warn('Browser notification failed', e);
+  }
+}
+
+async function forteCreateNotification(userId, type, title, body, data = {}){
+  if(!user || !userId || userId === user.id) return;
+
+  try{
+    await sb.from('notifications').insert({
+      user_id: userId,
+      actor_id: user.id,
+      type,
+      title,
+      body: body || null,
+      data: data || {},
+      read: false
+    });
+  }catch(e){
+    console.warn('Could not create notification', e);
+  }
+}
+
+function forteEnsureDmBadge(){
+  const btn = document.querySelector('[onclick="openDMs()"]');
+  if(!btn) return null;
+
+  let badge = document.getElementById('dm-count-badge');
+  if(!badge){
+    badge = document.createElement('div');
+    badge.id = 'dm-count-badge';
+    badge.style.cssText = `
+      display:none;
+      position:absolute;
+      top:-4px;
+      right:-4px;
+      min-width:18px;
+      height:18px;
+      padding:0 5px;
+      border-radius:999px;
+      background:#ff0090;
+      color:#fff;
+      font-size:10px;
+      font-weight:800;
+      line-height:18px;
+      text-align:center;
+      border:2px solid var(--bg);
+      z-index:20;
+    `;
+    btn.style.position = 'relative';
+    btn.appendChild(badge);
+  }
+
+  return badge;
+}
+
+async function forteUpdateDmUnreadBadge(){
+  if(!user) return;
+
+  const badge = forteEnsureDmBadge();
+  if(!badge) return;
+
+  try{
+    const { data: myMemberships } = await sb
+      .from('conversation_members')
+      .select('conversation_id,last_read_at')
+      .eq('user_id', user.id);
+
+    if(!myMemberships || !myMemberships.length){
+      badge.style.display = 'none';
+      const dot = document.getElementById('dm-dot');
+      if(dot) dot.style.display = 'none';
+      return;
+    }
+
+    let unreadConversations = 0;
+
+    for(const m of myMemberships){
+      const { count } = await sb
+        .from('messages')
+        .select('*', { count:'exact', head:true })
+        .eq('conversation_id', m.conversation_id)
+        .neq('sender_id', user.id)
+        .gt('created_at', m.last_read_at || '2000-01-01');
+
+      if((count || 0) > 0) unreadConversations++;
+    }
+
+    if(unreadConversations > 0){
+      badge.textContent = unreadConversations > 99 ? '99+' : String(unreadConversations);
+      badge.style.display = 'block';
+      const dot = document.getElementById('dm-dot');
+      if(dot) dot.style.display = 'none';
+    }else{
+      badge.style.display = 'none';
+      const dot = document.getElementById('dm-dot');
+      if(dot) dot.style.display = 'none';
+    }
+
+  }catch(e){
+    console.warn('DM unread count failed', e);
+  }
+}
+
+async function forteUpdateNotifBell(){
+  if(!user) return;
+
+  try{
+    const { count } = await sb
+      .from('notifications')
+      .select('*', { count:'exact', head:true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+
+    const dot = document.getElementById('notif-dot');
+    if(dot) dot.style.display = (count || 0) > 0 ? 'block' : 'none';
+
+  }catch(e){
+    console.warn('Notification bell failed', e);
+  }
+}
+
+async function fortePollNotifications(){
+  if(!user) return;
+
+  await forteUpdateDmUnreadBadge();
+  await forteUpdateNotifBell();
+
+  try{
+    const { data } = await sb
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('read', false)
+      .gt('created_at', forteLastNotifSeenAt)
+      .order('created_at', { ascending:false })
+      .limit(5);
+
+    if(data && data.length){
+      data.reverse().forEach(n => {
+        forteBrowserNotify(n.title, n.body || '');
+      });
+
+      forteLastNotifSeenAt = new Date().toISOString();
+      localStorage.setItem('forte_last_notif_seen_at', forteLastNotifSeenAt);
+    }
+
+  }catch(e){
+    console.warn('Notification polling failed', e);
+  }
+}
+
+function forteStartNotificationSystem(){
+  forteRequestNotificationPermission();
+
+  clearInterval(forteNotifPollTimer);
+
+  setTimeout(fortePollNotifications, 1000);
+
+  forteNotifPollTimer = setInterval(fortePollNotifications, 10000);
+}
+
+/* Patch app entry so notification system starts after login */
+if(typeof enterApp === 'function' && !window.__forteEnterAppNotifPatched){
+  window.__forteEnterAppNotifPatched = true;
+  const oldEnterApp = enterApp;
+  enterApp = function(){
+    oldEnterApp.apply(this, arguments);
+    forteStartNotificationSystem();
+  };
+}
+
+/* Better notifications panel */
+window.openNotifications = async function(){
+  await loadNotifications();
+  const panel = document.getElementById('notif-panel');
+  if(panel) panel.classList.add('open');
+};
+
+window.loadNotifications = async function(){
+  if(!user) return;
+
+  const el = document.getElementById('notif-list');
+  if(!el) return;
+
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading...</div>';
+
+  try{
+    const { data } = await sb
+      .from('notifications')
+      .select('*,profiles!notifications_actor_id_fkey(username,full_name,avatar_url)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending:false })
+      .limit(40);
+
+    if(!data || !data.length){
+      el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:14px">No notifications yet</div>';
+      return;
+    }
+
+    el.innerHTML = data.map(n => {
+      const icon =
+        n.type === 'message' ? '💬' :
+        n.type === 'like' ? '❤️' :
+        n.type === 'comment' ? '💬' :
+        n.type === 'follow' ? '👤' :
+        n.type === 'league_invite' ? '🏆' :
+        '🔔';
+
+      const click =
+        n.type === 'message' && n.data?.conversation_id
+          ? `forteOpenNotifMessage('${n.id}','${n.data.conversation_id}','${n.actor_id || ''}')`
+          : n.type === 'post_like' || n.type === 'like' || n.type === 'comment'
+          ? `forteOpenNotifPost('${n.id}','${n.data?.post_id || ''}')`
+          : `markRead('${n.id}', this)`;
+
+      return `
+        <div onclick="${click}" style="
+          display:flex;
+          gap:12px;
+          padding:14px 12px;
+          border-radius:12px;
+          cursor:pointer;
+          background:${n.read ? 'transparent' : 'rgba(255,0,144,.08)'};
+          border-bottom:1px solid var(--border);
+        ">
+          <div style="
+            width:38px;
+            height:38px;
+            border-radius:50%;
+            background:var(--bg3);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:18px;
+            flex-shrink:0;
+          ">${icon}</div>
+
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:${n.read ? '500' : '800'}">${n.title || 'Notification'}</div>
+            ${n.body ? `<div style="font-size:13px;color:var(--text2);margin-top:3px;line-height:1.35">${n.body}</div>` : ''}
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">${getTimeAgo(n.created_at)}</div>
+          </div>
+
+          ${!n.read ? '<div style="width:8px;height:8px;background:#ff0090;border-radius:50%;margin-top:6px"></div>' : ''}
+        </div>
+      `;
+    }).join('');
+
+  }catch(e){
+    console.error('Could not load notifications', e);
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red);font-size:14px">Could not load notifications</div>';
+  }
+};
+
+window.forteOpenNotifMessage = async function(notifId, convId, actorId){
+  try{
+    await sb.from('notifications').update({ read:true }).eq('id', notifId);
+  }catch(e){}
+
+  closeModal('notif-panel');
+
+  if(convId && actorId && typeof openChat === 'function'){
+    openChat(convId, actorId);
+  }
+
+  forteUpdateNotifBell();
+};
+
+window.forteOpenNotifPost = async function(notifId, postId){
+  try{
+    await sb.from('notifications').update({ read:true }).eq('id', notifId);
+  }catch(e){}
+
+  closeModal('notif-panel');
+
+  if(postId && typeof openPost === 'function'){
+    openPost(postId);
+  }
+
+  forteUpdateNotifBell();
+};
+
+/* Patch sendMessage so receiver gets a notification */
+if(typeof sendMessage === 'function' && !window.__forteSendMessageNotifPatched){
+  window.__forteSendMessageNotifPatched = true;
+
+  window.sendMessage = async function(){
+    const inp = document.getElementById('chat-input');
+    const content = inp?.value?.trim();
+
+    if(!content || !currentConvId || !user) return;
+
+    if(inp) inp.value = '';
+
+    try{
+      const { error } = await sb.from('messages').insert({
+        conversation_id: currentConvId,
+        sender_id: user.id,
+        content
+      });
+
+      if(error) throw error;
+
+      const { data: members } = await sb
+        .from('conversation_members')
+        .select('user_id')
+        .eq('conversation_id', currentConvId)
+        .neq('user_id', user.id);
+
+      const receiverId = members?.[0]?.user_id;
+
+      if(receiverId){
+        const senderName = profile?.full_name || profile?.username || 'Someone';
+        await forteCreateNotification(
+          receiverId,
+          'message',
+          senderName + ' sent you a message',
+          content.length > 80 ? content.slice(0, 80) + '...' : content,
+          { conversation_id: currentConvId }
+        );
+      }
+
+      forteUpdateDmUnreadBadge();
+
+    }catch(e){
+      console.error('Send message failed', e);
+      showToast('Could not send message: ' + (e.message || 'Unknown error'));
+    }
+  };
+}
+
+/* Mark conversation as read and refresh badge when opening chat */
+if(typeof openChat === 'function' && !window.__forteOpenChatNotifPatched){
+  window.__forteOpenChatNotifPatched = true;
+  const oldOpenChat = openChat;
+
+  window.openChat = async function(convId, otherUserId){
+    await oldOpenChat.apply(this, arguments);
+
+    try{
+      await sb
+        .from('conversation_members')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('conversation_id', convId)
+        .eq('user_id', user.id);
+    }catch(e){}
+
+    setTimeout(forteUpdateDmUnreadBadge, 500);
+  };
+}
+
+/* Patch likes so post owner gets notification */
+if(typeof toggleLike === 'function' && !window.__forteLikeNotifPatched){
+  window.__forteLikeNotifPatched = true;
+  const oldToggleLike = toggleLike;
+
+  window.toggleLike = async function(postId, el){
+    const before = document.getElementById('like-count-' + postId)?.textContent || '0';
+
+    await oldToggleLike.apply(this, arguments);
+
+    const after = document.getElementById('like-count-' + postId)?.textContent || '0';
+
+    if(parseInt(after) > parseInt(before)){
+      try{
+        const { data: post } = await sb
+          .from('posts')
+          .select('user_id')
+          .eq('id', postId)
+          .single();
+
+        if(post?.user_id && post.user_id !== user?.id){
+          const name = profile?.full_name || profile?.username || 'Someone';
+          await forteCreateNotification(
+            post.user_id,
+            'like',
+            name + ' liked your post',
+            null,
+            { post_id: postId }
+          );
+        }
+      }catch(e){
+        console.warn('Like notification failed', e);
+      }
+    }
+  };
+}
+
+/* Patch comments so post owner gets notification */
+if(typeof submitComment === 'function' && !window.__forteCommentNotifPatched){
+  window.__forteCommentNotifPatched = true;
+  const oldSubmitComment = submitComment;
+
+  window.submitComment = async function(){
+    const inp = document.getElementById('comment-inp');
+    const postId = inp?.dataset?.postId;
+    const commentText = inp?.value?.trim();
+
+    await oldSubmitComment.apply(this, arguments);
+
+    if(!postId || !commentText || !user) return;
+
+    try{
+      const { data: post } = await sb
+        .from('posts')
+        .select('user_id')
+        .eq('id', postId)
+        .single();
+
+      if(post?.user_id && post.user_id !== user.id){
+        const name = profile?.full_name || profile?.username || 'Someone';
+        await forteCreateNotification(
+          post.user_id,
+          'comment',
+          name + ' commented on your post',
+          commentText.length > 80 ? commentText.slice(0, 80) + '...' : commentText,
+          { post_id: postId }
+        );
+      }
+    }catch(e){
+      console.warn('Comment notification failed', e);
+    }
+  };
+}
+
+/* Patch follow button/request so receiver gets notification */
+if(typeof toggleFollow === 'function' && !window.__forteFollowNotifPatched){
+  window.__forteFollowNotifPatched = true;
+  const oldToggleFollow = toggleFollow;
+
+  window.toggleFollow = async function(userId, btn){
+    const wasFollowing = followingIds?.has?.(userId);
+
+    await oldToggleFollow.apply(this, arguments);
+
+    const nowFollowing = followingIds?.has?.(userId);
+
+    if(!wasFollowing && nowFollowing){
+      const name = profile?.full_name || profile?.username || 'Someone';
+      await forteCreateNotification(
+        userId,
+        'follow',
+        name + ' followed you',
+        null,
+        { actor_id: user?.id }
+      );
+    }
+  };
+}
+
+/* If app is already loaded/logged in, start now */
+setTimeout(() => {
+  if(user){
+    forteStartNotificationSystem();
+  }
+}, 1500);
+</script>
 </body>
   <script>
 /* =========================================================
