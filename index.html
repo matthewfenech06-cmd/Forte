@@ -8128,6 +8128,324 @@ async function sendVoiceNoteBlob(){
     forteRecorder = null;
   }
 }
+  /* =========================================================
+   FORTE CHAT READ RECEIPTS + MESSAGE REACTIONS
+   Paste directly above init();
+   ========================================================= */
+
+let forteCurrentChatOtherUserId = null;
+let forteCurrentChatOtherLastRead = null;
+let forteMessageReactions = {};
+
+function forteReactionSummary(messageId){
+  const reactions = forteMessageReactions[messageId] || [];
+  if(!reactions.length) return '';
+
+  const grouped = {};
+  reactions.forEach(r => {
+    grouped[r.emoji] = grouped[r.emoji] || {
+      emoji: r.emoji,
+      count: 0,
+      mine: false
+    };
+    grouped[r.emoji].count++;
+    if(r.user_id === user?.id) grouped[r.emoji].mine = true;
+  });
+
+  return `
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+      ${Object.values(grouped).map(r => `
+        <button onclick="event.stopPropagation();removeOrToggleReaction('${messageId}','${r.emoji}')"
+          style="background:${r.mine ? 'var(--accent-dim)' : 'var(--bg3)'};border:1px solid ${r.mine ? 'var(--accent)' : 'var(--border)'};border-radius:999px;padding:2px 7px;font-size:12px;cursor:pointer;color:var(--text)">
+          ${r.emoji}${r.count > 1 ? ` ${r.count}` : ''}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function forteMessageStatus(m){
+  if(m.sender_id !== user?.id) return '';
+
+  if(!forteCurrentChatOtherLastRead){
+    return 'Delivered';
+  }
+
+  const msgTime = forteParseDate(m.created_at).getTime();
+  const readTime = forteParseDate(forteCurrentChatOtherLastRead).getTime();
+
+  return readTime >= msgTime ? 'Seen' : 'Delivered';
+}
+
+function showReactionPicker(messageId){
+  const emoji = prompt('React with emoji:', '❤️');
+  if(!emoji) return;
+
+  const clean = emoji.trim();
+  if(!clean) return;
+
+  reactToMessage(messageId, clean);
+}
+
+async function reactToMessage(messageId, emoji){
+  const u = await getCurrentUserSafe();
+  if(!u) return forteToast('Please sign in first');
+
+  const { error } = await sb
+    .from('message_reactions')
+    .upsert({
+      message_id: messageId,
+      user_id: u.id,
+      emoji
+    }, {
+      onConflict: 'message_id,user_id'
+    });
+
+  if(error){
+    console.error('REACTION ERROR:', error);
+    return forteToast('Could not react: ' + error.message);
+  }
+
+  await loadMessageReactions(currentConvId);
+  await loadMessages(currentConvId);
+}
+
+async function removeOrToggleReaction(messageId, emoji){
+  const mine = (forteMessageReactions[messageId] || []).find(r => r.user_id === user?.id && r.emoji === emoji);
+
+  if(mine){
+    await sb
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+      .eq('user_id', user.id);
+
+    await loadMessageReactions(currentConvId);
+    await loadMessages(currentConvId);
+    return;
+  }
+
+  reactToMessage(messageId, emoji);
+}
+
+async function loadMessageReactions(convId){
+  if(!convId){
+    forteMessageReactions = {};
+    return;
+  }
+
+  const { data:msgs } = await sb
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', convId)
+    .limit(100);
+
+  const ids = (msgs || []).map(m => m.id);
+
+  if(!ids.length){
+    forteMessageReactions = {};
+    return;
+  }
+
+  const { data, error } = await sb
+    .from('message_reactions')
+    .select('id,message_id,user_id,emoji,created_at')
+    .in('message_id', ids);
+
+  if(error){
+    console.error('LOAD REACTIONS ERROR:', error);
+    forteMessageReactions = {};
+    return;
+  }
+
+  forteMessageReactions = {};
+  (data || []).forEach(r => {
+    if(!forteMessageReactions[r.message_id]) forteMessageReactions[r.message_id] = [];
+    forteMessageReactions[r.message_id].push(r);
+  });
+}
+
+async function markConversationRead(convId){
+  const u = await getCurrentUserSafe();
+  if(!u || !convId) return;
+
+  await sb
+    .from('conversation_members')
+    .update({
+      last_read_at: new Date().toISOString()
+    })
+    .eq('conversation_id', convId)
+    .eq('user_id', u.id);
+}
+
+async function loadOtherReadStatus(convId, otherUserId){
+  if(!convId || !otherUserId){
+    forteCurrentChatOtherLastRead = null;
+    return;
+  }
+
+  const { data } = await sb
+    .from('conversation_members')
+    .select('last_read_at')
+    .eq('conversation_id', convId)
+    .eq('user_id', otherUserId)
+    .single();
+
+  forteCurrentChatOtherLastRead = data?.last_read_at || null;
+}
+
+/* Override chat bubble renderer to include reactions + receipts */
+chatMessageHtml = function(m){
+  const isMe = m.sender_id === user?.id;
+  const p = m.profiles || {};
+  const time = forteTime(m.created_at);
+
+  let bubbleContent = '';
+
+  if(m.media_url && m.media_type === 'image'){
+    bubbleContent += `
+      <img src="${m.media_url}" onclick="event.stopPropagation();window.open('${m.media_url}','_blank')"
+        style="max-width:260px;width:100%;border-radius:14px;display:block;cursor:pointer;margin-bottom:${m.content ? '8px' : '0'}">
+    `;
+  }
+
+  if(m.media_url && m.media_type === 'video'){
+    bubbleContent += `
+      <video src="${m.media_url}" controls playsinline onclick="event.stopPropagation()"
+        style="max-width:260px;width:100%;border-radius:14px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></video>
+    `;
+  }
+
+  if(m.media_url && m.media_type === 'audio'){
+    bubbleContent += `
+      <audio src="${m.media_url}" controls onclick="event.stopPropagation()"
+        style="width:240px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></audio>
+    `;
+  }
+
+  if(m.content){
+    bubbleContent += `<div>${forteEsc(m.content)}</div>`;
+  }
+
+  if(!bubbleContent){
+    bubbleContent = `<div></div>`;
+  }
+
+  const bg = isMe ? '#ff0090' : 'var(--bg2)';
+  const color = isMe ? '#fff' : 'var(--text)';
+  const radius = isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px';
+  const status = forteMessageStatus(m);
+  const reactionsHtml = forteReactionSummary(m.id);
+
+  return `
+    <div style="display:flex;flex-direction:${isMe?'row-reverse':'row'};align-items:flex-end;gap:8px;margin-bottom:8px">
+      ${!isMe ? avatarEl(p,28) : ''}
+      <div style="max-width:75%;display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'}">
+        <div onclick="showReactionPicker('${m.id}')"
+          style="background:${bg};color:${color};padding:${m.media_url ? '6px' : '10px 14px'};border-radius:${radius};font-size:14px;line-height:1.5;word-break:break-word;cursor:pointer">
+          ${bubbleContent}
+        </div>
+
+        ${reactionsHtml}
+
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:${isMe?'right':'left'}">
+          ${time}${isMe ? ` · ${status}` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+/* Override loading so receipts/reactions are fresh */
+loadMessages = async function(convId){
+  const el = document.getElementById('chat-messages');
+
+  await markConversationRead(convId);
+  await loadOtherReadStatus(convId, forteCurrentChatOtherUserId);
+  await loadMessageReactions(convId);
+
+  const { data, error } = await sb
+    .from('messages')
+    .select('*,profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)')
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending:true })
+    .limit(100);
+
+  if(error){
+    console.error('LOAD MESSAGES ERROR:', error);
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px">Could not load messages</div>';
+    return;
+  }
+
+  renderMessages(data || [], el);
+};
+
+/* Override opening chat to track who the other person is */
+const forteReceiptsOldOpenChat = openChat;
+openChat = async function(convId, otherUserId){
+  forteCurrentChatOtherUserId = otherUserId;
+  await forteReceiptsOldOpenChat(convId, otherUserId);
+  await markConversationRead(convId);
+  await loadOtherReadStatus(convId, otherUserId);
+  await loadMessages(convId);
+};
+
+/* Realtime updates for messages, reactions and read status */
+subscribeToMessages = function(convId){
+  if(messageSubscription) messageSubscription.unsubscribe();
+
+  messageSubscription = sb.channel('chat-live:' + convId)
+    .on(
+      'postgres_changes',
+      {
+        event:'INSERT',
+        schema:'public',
+        table:'messages',
+        filter:'conversation_id=eq.' + convId
+      },
+      async payload => {
+        await markConversationRead(convId);
+        await loadMessages(convId);
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event:'*',
+        schema:'public',
+        table:'message_reactions'
+      },
+      async payload => {
+        await loadMessages(convId);
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event:'UPDATE',
+        schema:'public',
+        table:'conversation_members',
+        filter:'conversation_id=eq.' + convId
+      },
+      async payload => {
+        if(payload.new.user_id === forteCurrentChatOtherUserId){
+          forteCurrentChatOtherLastRead = payload.new.last_read_at;
+          await loadMessages(convId);
+        }
+      }
+    )
+    .subscribe();
+};
+
+/* Refresh read receipt every few seconds while chat is open */
+setInterval(async () => {
+  const chatOpen = document.getElementById('chat-screen')?.style.display === 'flex';
+
+  if(chatOpen && currentConvId){
+    await markConversationRead(currentConvId);
+    await loadOtherReadStatus(currentConvId, forteCurrentChatOtherUserId);
+  }
+}, 5000);
 init();
 </script>
 
