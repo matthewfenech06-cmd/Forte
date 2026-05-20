@@ -5789,6 +5789,1513 @@ function startWorkoutFromEx(name,group){
 }
 
 // call renderBrowseCats after exercises load
+  /* =========================================================
+   FORTE TARGETED REPAIR PATCH
+   Paste this directly above init();
+   ========================================================= */
+
+window.FORTE_PATCH_VERSION = '2026-05-20-1';
+
+/* ---------- safe helpers ---------- */
+function fpToast(msg){
+  try{ showToast(msg); }catch(e){ console.log(msg); }
+}
+
+function fpEsc(v){
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+function fpAvatar(u, size){
+  size = size || 36;
+  const name = (u && (u.full_name || u.username)) || 'U';
+  if(u && u.avatar_url){
+    return `<img src="${u.avatar_url}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  }
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-family:'Inter',sans-serif;font-size:${Math.round(size*.38)}px;font-weight:700;color:var(--accent);flex-shrink:0">${fpEsc(name[0]).toUpperCase()}</div>`;
+}
+
+function fpTimeAgo(ts){
+  if(!ts) return '';
+  const diff = Date.now() - new Date(ts).getTime();
+  if(diff < 60000) return 'just now';
+  const m = Math.floor(diff / 60000);
+  if(m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if(h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+async function fpCount(table, filters){
+  try{
+    let q = sb.from(table).select('*', { count:'exact', head:true });
+    (filters || []).forEach(f => {
+      q = q[f.op || 'eq'](f.col, f.val);
+    });
+    const { count } = await q;
+    return count || 0;
+  }catch(e){
+    return 0;
+  }
+}
+
+async function fpNotify(targetUserId, type, title, body, data){
+  if(!targetUserId || !user || targetUserId === user.id) return;
+  try{
+    await sb.from('notifications').insert({
+      user_id: targetUserId,
+      actor_id: user.id,
+      type,
+      title,
+      body: body || null,
+      data: data || {},
+      read: false,
+      created_at: new Date().toISOString()
+    });
+  }catch(e){
+    console.warn('notify failed', e);
+  }
+}
+
+/* ---------- fix scrolling snap-back / bottom cut off ---------- */
+(function forteFixScrolling(){
+  const style = document.createElement('style');
+  style.textContent = `
+    html,body{height:100%;overflow:hidden!important;}
+    .screen{
+      padding-bottom:calc(var(--nav-h) + 120px)!important;
+      overscroll-behavior:contain!important;
+      -webkit-overflow-scrolling:touch!important;
+    }
+    .workout-post img,
+    .workout-post video{
+      max-height:none!important;
+    }
+    .modal{
+      padding-bottom:90px!important;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+/* ---------- workout snapshot helper ---------- */
+function fpWorkoutSnapshotFromCurrent(){
+  try{
+    return (wkExs || []).map(ex => ({
+      name: ex.name,
+      group: ex.group || '',
+      sets: (ex.sets || [])
+        .filter(s => s.reps || s.weight)
+        .map(s => ({
+          reps: parseInt(s.reps) || 0,
+          weight: parseFloat(s.weight) || 0
+        }))
+    })).filter(ex => ex.sets.length);
+  }catch(e){
+    return [];
+  }
+}
+
+function fpWorkoutHtml(snapshot){
+  snapshot = Array.isArray(snapshot) ? snapshot : [];
+  if(!snapshot.length) return '';
+  return `
+    <div style="margin:0 16px 12px;background:var(--bg3);border-radius:12px;padding:12px">
+      <div style="font-size:13px;font-weight:800;color:var(--accent);margin-bottom:8px">Logged a workout!</div>
+      ${snapshot.slice(0,4).map(ex => `
+        <div style="font-size:13px;margin-top:6px">
+          <b>${fpEsc(ex.name)}</b>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">
+            ${(ex.sets || []).map((s,i) => `Set ${i+1}: ${s.weight || 0}kg × ${s.reps || 0}`).join(' · ')}
+          </div>
+        </div>
+      `).join('')}
+      ${snapshot.length > 4 ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">+${snapshot.length - 4} more exercises</div>` : ''}
+    </div>
+  `;
+}
+
+/* ---------- fix save workout: no duplicate points, store workout details ---------- */
+saveWorkout = async function(){
+  if(!user) return fpToast('Please sign in first');
+
+  const title = document.getElementById('workout-title').value || 'Logged a workout!';
+  const snapshot = fpWorkoutSnapshotFromCurrent();
+
+  if(!snapshot.length) return fpToast('Add at least one exercise');
+
+  const totalSets = snapshot.reduce((sum, ex) => sum + ex.sets.length, 0);
+  const pts = 3;
+
+  try{ stopWorkoutTimer(); }catch(e){}
+
+  let workoutInsert = {
+    user_id: user.id,
+    title,
+    is_public: true,
+    points_earned: pts,
+    exercise_count: snapshot.length,
+    total_sets: totalSets,
+    workout_snapshot: snapshot,
+    created_at: new Date().toISOString()
+  };
+
+  let { data:wk, error } = await sb.from('workouts').insert(workoutInsert).select().single();
+
+  if(error){
+    console.error('workout insert failed', error);
+    delete workoutInsert.workout_snapshot;
+    delete workoutInsert.exercise_count;
+    delete workoutInsert.total_sets;
+    const retry = await sb.from('workouts').insert(workoutInsert).select().single();
+    wk = retry.data;
+    error = retry.error;
+  }
+
+  if(error || !wk){
+    console.error(error);
+    return fpToast('Could not save workout');
+  }
+
+  const setRows = [];
+  snapshot.forEach(ex => {
+    ex.sets.forEach((s,i) => {
+      setRows.push({
+        workout_id: wk.id,
+        exercise_name: ex.name,
+        set_number: i + 1,
+        reps: s.reps,
+        weight: s.weight
+      });
+    });
+  });
+
+  if(setRows.length){
+    await sb.from('workout_sets').insert(setRows);
+  }
+
+  await sb.from('points_log').insert({
+    user_id: user.id,
+    points: pts,
+    reason: 'Workout: ' + title,
+    workout_id: wk.id,
+    earned_at: new Date().toISOString()
+  }).catch?.(()=>{});
+
+  const newPoints = (profile?.points || 0) + pts;
+  await sb.from('profiles').update({ points:newPoints }).eq('id', user.id);
+  if(profile) profile.points = newPoints;
+
+  closeModal('workout-modal');
+
+  pendingWorkoutId = wk.id;
+  window.pendingWorkoutSnapshot = snapshot;
+
+  const preview = document.getElementById('share-workout-preview');
+  if(preview) preview.innerHTML = fpWorkoutHtml(snapshot);
+
+  const nameEl = document.getElementById('share-workout-name');
+  if(nameEl) nameEl.textContent = title;
+
+  const statsEl = document.getElementById('share-workout-stats');
+  if(statsEl) statsEl.textContent = `${snapshot.length} exercises · ${totalSets} sets`;
+
+  const cap = document.getElementById('share-caption');
+  if(cap){
+    cap.value = '';
+    cap.disabled = false;
+    cap.style.pointerEvents = 'auto';
+    cap.style.userSelect = 'auto';
+    setTimeout(() => cap.focus(), 300);
+  }
+
+  fpToast(`Workout saved! +${pts} pts 🔥`);
+
+  setTimeout(() => {
+    const modal = document.getElementById('share-modal');
+    if(modal) modal.classList.add('open');
+  }, 350);
+
+  try{ await loadProfile(); syncProfile(); }catch(e){}
+  try{ loadMyWorkouts(); }catch(e){}
+};
+
+/* ---------- fix submit post/caption/media ---------- */
+submitPost = async function(){
+  if(!user) return fpToast('Sign in first');
+
+  const btn = document.getElementById('share-submit-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sharing...'; }
+
+  const caption = document.getElementById('share-caption')?.value || '';
+  const mediaFile = document.getElementById('share-media-input')?.files?.[0];
+
+  let mediaUrl = null;
+  let mediaType = null;
+
+  if(mediaFile){
+    const ext = mediaFile.name.split('.').pop();
+    const path = `posts/${user.id}/${Date.now()}.${ext}`;
+    const up = await sb.storage.from('forte-media').upload(path, mediaFile, {
+      upsert: true,
+      contentType: mediaFile.type
+    });
+    if(!up.error){
+      mediaUrl = sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+      mediaType = mediaFile.type.startsWith('video') ? 'video' : 'image';
+    }
+  }
+
+  const post = {
+    user_id: user.id,
+    workout_id: pendingWorkoutId || null,
+    caption,
+    media_url: mediaUrl,
+    media_type: mediaType,
+    workout_snapshot: window.pendingWorkoutSnapshot || [],
+    likes_count: 0,
+    comments_count: 0,
+    created_at: new Date().toISOString()
+  };
+
+  let { error } = await sb.from('posts').insert(post);
+
+  if(error){
+    console.warn('post insert with snapshot failed, retrying', error);
+    delete post.workout_snapshot;
+    const retry = await sb.from('posts').insert(post);
+    error = retry.error;
+  }
+
+  if(btn){ btn.disabled = false; btn.textContent = 'Share to feed'; }
+
+  if(error){
+    console.error(error);
+    return fpToast('Could not share post');
+  }
+
+  closeModal('share-modal');
+  fpToast('Posted! 🔥');
+  pendingWorkoutId = null;
+  window.pendingWorkoutSnapshot = [];
+
+  try{ loadFeedPosts(); }catch(e){}
+};
+
+/* ---------- fixed feed posts: real likes/comments/workout details/delete button ---------- */
+loadFeedPosts = async function(){
+  try{ loadStories(); }catch(e){}
+
+  const { data:posts, error } = await sb
+    .from('posts')
+    .select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(*)')
+    .order('created_at',{ascending:false})
+    .limit(30);
+
+  const wrap = document.getElementById('feed-posts');
+  if(!wrap) return;
+
+  if(error){
+    console.error(error);
+    wrap.innerHTML = '<div class="empty-state"><p>Could not load feed.</p></div>';
+    return;
+  }
+
+  if(!posts || !posts.length){
+    wrap.innerHTML = '<div class="empty-state"><p>No posts yet. Log a workout or create a post.</p></div>';
+    return;
+  }
+
+  const enriched = await Promise.all(posts.map(async p => {
+    const likes = await fpCount('post_likes', [{col:'post_id',val:p.id}]);
+    const comments = await fpCount('comments', [{col:'post_id',val:p.id}]);
+
+    if((p.likes_count || 0) !== likes || (p.comments_count || 0) !== comments){
+      sb.from('posts').update({ likes_count:likes, comments_count:comments }).eq('id',p.id).then(()=>{});
+    }
+
+    p.likes_count = likes;
+    p.comments_count = comments;
+    return p;
+  }));
+
+  wrap.innerHTML = enriched.map((p,i) => {
+    const u = p.profiles || {};
+    const snapshot = p.workout_snapshot || p.workouts?.workout_snapshot || [];
+    const wTitle = p.workouts?.title || (snapshot.length ? 'Logged a workout!' : '');
+    const own = user && p.user_id === user.id;
+
+    return `
+      <div class="workout-post fade-up" style="animation-delay:${i*.03}s">
+        <div class="post-header" onclick="viewProfile('${p.user_id}')">
+          ${fpAvatar(u,36)}
+          <div style="flex:1">
+            <div class="post-user">${fpEsc(u.full_name || u.username || 'User')}</div>
+            <div class="post-time">${fpTimeAgo(p.created_at)}</div>
+          </div>
+          ${own ? `<button onclick="event.stopPropagation();deletePost('${p.id}')" style="background:rgba(255,79,79,.12);border:1px solid rgba(255,79,79,.25);border-radius:8px;padding:6px 10px;color:var(--red);font-size:12px;font-weight:700">Delete</button>` : ''}
+        </div>
+
+        ${p.media_url && p.media_type === 'image' ? `<img src="${p.media_url}" style="width:100%;height:auto;object-fit:cover;display:block" onclick="openPost('${p.id}')">` : ''}
+        ${p.media_url && p.media_type === 'video' ? `<video src="${p.media_url}" style="width:100%;height:auto;display:block" controls playsinline></video>` : ''}
+
+        ${wTitle ? `<div class="post-workout-title">${fpEsc(wTitle)}</div>` : ''}
+        ${fpWorkoutHtml(snapshot)}
+
+        ${p.caption ? `<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);white-space:pre-wrap">${fpEsc(p.caption)}</div>` : ''}
+
+        ${snapshot.length ? `<div style="padding:0 16px 12px"><button onclick="openWorkoutFromPost('${p.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;font-weight:700">View workout</button></div>` : ''}
+
+        <div class="post-actions">
+          <div class="post-action" onclick="toggleLike('${p.id}',this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l7.78-7.78a5.5 5.5 0 0 0 1.06-8.84z"/></svg>
+            <span id="like-count-${p.id}">${p.likes_count || 0}</span>
+          </div>
+          <div class="post-action" onclick="openPost('${p.id}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>${p.comments_count || 0} comment${(p.comments_count || 0) === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+};
+
+/* ---------- fixed likes ---------- */
+toggleLike = async function(postId, el){
+  if(!user) return fpToast('Sign in first');
+
+  const existing = await sb
+    .from('post_likes')
+    .select('id')
+    .eq('post_id',postId)
+    .eq('user_id',user.id)
+    .maybeSingle();
+
+  if(existing.data){
+    await sb.from('post_likes').delete().eq('id',existing.data.id);
+  }else{
+    await sb.from('post_likes').insert({ post_id:postId, user_id:user.id });
+  }
+
+  const likes = await fpCount('post_likes', [{col:'post_id',val:postId}]);
+  await sb.from('posts').update({ likes_count:likes }).eq('id',postId);
+
+  const countEl = document.getElementById('like-count-'+postId);
+  if(countEl) countEl.textContent = likes;
+
+  if(el) el.style.color = existing.data ? '' : 'var(--accent)';
+
+  if(!existing.data){
+    try{
+      const { data:p } = await sb.from('posts').select('user_id').eq('id',postId).single();
+      if(p && p.user_id !== user.id){
+        await fpNotify(
+          p.user_id,
+          'like',
+          `${profile?.full_name || profile?.username || 'Someone'} liked your post ❤️`,
+          '',
+          { post_id:postId }
+        );
+      }
+    }catch(e){}
+  }
+};
+
+/* ---------- fixed open post/comment count/delete/comment list ---------- */
+openPost = async function(postId){
+  const { data:post, error } = await sb
+    .from('posts')
+    .select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(*)')
+    .eq('id',postId)
+    .single();
+
+  if(error || !post) return fpToast('Could not open post');
+
+  const { data:comments } = await sb
+    .from('comments')
+    .select('*,profiles!comments_user_id_fkey(id,username,full_name,avatar_url)')
+    .eq('post_id',postId)
+    .order('created_at',{ascending:true});
+
+  const likes = await fpCount('post_likes', [{col:'post_id',val:postId}]);
+  const commentCount = comments?.length || 0;
+
+  await sb.from('posts').update({ likes_count:likes, comments_count:commentCount }).eq('id',postId);
+
+  const snapshot = post.workout_snapshot || post.workouts?.workout_snapshot || [];
+  const own = user && post.user_id === user.id;
+
+  document.getElementById('post-modal-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      ${fpAvatar(post.profiles || {},36)}
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700">${fpEsc(post.profiles?.full_name || post.profiles?.username || 'User')}</div>
+        <div style="font-size:12px;color:var(--text3)">${fpTimeAgo(post.created_at)}</div>
+      </div>
+      ${own ? `<button onclick="deletePost('${post.id}')" style="background:rgba(255,79,79,.12);border:1px solid rgba(255,79,79,.25);border-radius:8px;padding:7px 12px;color:var(--red);font-size:12px;font-weight:700">Delete</button>` : ''}
+    </div>
+
+    ${post.media_url && post.media_type === 'image' ? `<img src="${post.media_url}" style="width:100%;height:auto;border-radius:var(--radius-sm);margin-bottom:12px">` : ''}
+    ${post.media_url && post.media_type === 'video' ? `<video src="${post.media_url}" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px" controls playsinline></video>` : ''}
+
+    ${fpWorkoutHtml(snapshot)}
+
+    ${post.caption ? `<div style="font-size:14px;margin-bottom:14px;white-space:pre-wrap">${fpEsc(post.caption)}</div>` : ''}
+
+    <div style="display:flex;gap:14px;margin-bottom:14px;color:var(--text2);font-size:13px;font-weight:700">
+      <span>❤️ ${likes} like${likes === 1 ? '' : 's'}</span>
+      <span>💬 ${commentCount} comment${commentCount === 1 ? '' : 's'}</span>
+    </div>
+
+    <div style="font-size:12px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Comments</div>
+
+    <div>
+      ${(comments || []).map(c => `
+        <div style="display:flex;gap:10px;margin-bottom:12px;background:var(--bg3);border-radius:10px;padding:10px">
+          ${fpAvatar(c.profiles || {},28)}
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:700">${fpEsc(c.profiles?.username || 'User')}</div>
+            <div style="font-size:13px;color:var(--text2);white-space:pre-wrap">${fpEsc(c.content)}</div>
+            <div style="margin-top:6px;display:flex;gap:12px">
+              <button onclick="likeComment('${c.id}',this)" style="background:none;border:none;color:var(--text3);font-size:12px;font-weight:700">Like</button>
+              <button onclick="replyToComment('${fpEsc(c.profiles?.username || 'user')}')" style="background:none;border:none;color:var(--text3);font-size:12px;font-weight:700">Reply</button>
+            </div>
+          </div>
+        </div>
+      `).join('') || '<div style="font-size:13px;color:var(--text3)">No comments yet</div>'}
+    </div>
+  `;
+
+  const inp = document.getElementById('comment-inp');
+  if(inp) inp.dataset.postId = postId;
+
+  document.getElementById('post-modal').classList.add('open');
+};
+
+submitComment = async function(){
+  const inp = document.getElementById('comment-inp');
+  const postId = inp?.dataset?.postId;
+  const content = inp?.value?.trim();
+
+  if(!user) return fpToast('Sign in first');
+  if(!postId || !content) return;
+
+  await sb.from('comments').insert({
+    user_id:user.id,
+    post_id:postId,
+    content,
+    created_at:new Date().toISOString()
+  });
+
+  const count = await fpCount('comments', [{col:'post_id',val:postId}]);
+  await sb.from('posts').update({ comments_count:count }).eq('id',postId);
+
+  try{
+    const { data:p } = await sb.from('posts').select('user_id').eq('id',postId).single();
+    if(p && p.user_id !== user.id){
+      await fpNotify(
+        p.user_id,
+        'comment',
+        `${profile?.full_name || profile?.username || 'Someone'} commented on your post 💬`,
+        content,
+        { post_id:postId }
+      );
+    }
+  }catch(e){}
+
+  inp.value = '';
+  fpToast('Comment posted');
+  openPost(postId);
+  try{ loadFeedPosts(); }catch(e){}
+};
+
+async function likeComment(commentId, btn){
+  fpToast('Comment liked');
+  if(btn) btn.textContent = 'Liked';
+}
+
+function replyToComment(username){
+  const inp = document.getElementById('comment-inp');
+  if(inp){
+    inp.value = '@' + username + ' ';
+    inp.focus();
+  }
+}
+
+async function deletePost(postId){
+  if(!user) return;
+  if(!confirm('Delete this post?')) return;
+  await sb.from('comments').delete().eq('post_id',postId);
+  await sb.from('post_likes').delete().eq('post_id',postId);
+  await sb.from('posts').delete().eq('id',postId).eq('user_id',user.id);
+  closeModal('post-modal');
+  fpToast('Post deleted');
+  try{ loadFeedPosts(); }catch(e){}
+}
+
+async function openWorkoutFromPost(postId){
+  const { data:p } = await sb.from('posts').select('*,workouts(*)').eq('id',postId).single();
+  const snapshot = p?.workout_snapshot || p?.workouts?.workout_snapshot || [];
+  document.getElementById('post-modal-content').innerHTML = `
+    <div class="modal-title">Workout details</div>
+    ${fpWorkoutHtml(snapshot)}
+  `;
+  document.getElementById('post-modal').classList.add('open');
+}
+
+/* ---------- fixed friends/follow/profile/message ---------- */
+sendFriendRequest = async function(toId){
+  if(!user) return fpToast('Sign in first');
+
+  const { data:existing } = await sb
+    .from('friendships')
+    .select('*')
+    .eq('requester_id',user.id)
+    .eq('addressee_id',toId)
+    .maybeSingle();
+
+  if(existing){
+    return fpToast(existing.status === 'accepted' ? 'Already friends' : 'Request already sent');
+  }
+
+  const { data:req, error } = await sb
+    .from('friendships')
+    .insert({ requester_id:user.id, addressee_id:toId, status:'pending' })
+    .select()
+    .single();
+
+  if(error){
+    console.error(error);
+    return fpToast('Could not send request');
+  }
+
+  await fpNotify(
+    toId,
+    'friend_request',
+    `${profile?.full_name || profile?.username || 'Someone'} sent you a friend request`,
+    'Tap accept or decline.',
+    { friendship_id:req.id, requester_id:user.id }
+  );
+
+  fpToast('Friend request sent');
+};
+
+acceptFriend = async function(friendshipIdOrRequesterId){
+  if(!user) return;
+
+  let q = sb.from('friendships').update({status:'accepted'});
+
+  if(String(friendshipIdOrRequesterId).length > 30){
+    q = q.eq('id', friendshipIdOrRequesterId);
+  }else{
+    q = q.eq('requester_id', friendshipIdOrRequesterId).eq('addressee_id', user.id);
+  }
+
+  await q;
+  fpToast('Friend accepted');
+  try{ loadFriends(); loadNotifications(); loadProfile(); syncProfile(); }catch(e){}
+};
+
+declineFriend = async function(friendshipIdOrRequesterId){
+  if(!user) return;
+
+  let q = sb.from('friendships').update({status:'declined'});
+
+  if(String(friendshipIdOrRequesterId).length > 30){
+    q = q.eq('id', friendshipIdOrRequesterId);
+  }else{
+    q = q.eq('requester_id', friendshipIdOrRequesterId).eq('addressee_id', user.id);
+  }
+
+  await q;
+  fpToast('Request declined');
+  try{ loadFriends(); loadNotifications(); }catch(e){}
+};
+
+viewProfile = async function(userId){
+  const { data:p, error } = await sb.from('profiles').select('*').eq('id',userId).single();
+  if(error || !p) return fpToast('Could not open profile');
+
+  const workoutCount = await fpCount('workouts', [{col:'user_id',val:userId}]);
+  const recipeCount = await fpCount('recipes', [{col:'user_id',val:userId}]);
+  const friendCountA = await fpCount('friendships', [{col:'requester_id',val:userId},{col:'status',val:'accepted'}]);
+  const friendCountB = await fpCount('friendships', [{col:'addressee_id',val:userId},{col:'status',val:'accepted'}]);
+
+  document.getElementById('profile-view-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      ${fpAvatar(p,70)}
+      <div>
+        <div style="font-family:'Inter',sans-serif;font-size:18px;font-weight:800">${fpEsc(p.full_name || p.username)}</div>
+        <div style="font-size:13px;color:var(--text3)">@${fpEsc(p.username || '')}</div>
+        <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:5px">${p.points || 0} pts</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-val">${friendCountA + friendCountB}</div><div class="stat-label">Friends</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--accent)">${p.points || 0}</div><div class="stat-label">Points</div></div>
+      <div class="stat-card"><div class="stat-val">${workoutCount}</div><div class="stat-label">Workouts</div></div>
+      <div class="stat-card"><div class="stat-val">${recipeCount}</div><div class="stat-label">Recipes</div></div>
+    </div>
+
+    ${userId !== user.id ? `
+      <div style="display:flex;gap:10px">
+        <button onclick="sendFriendRequest('${p.id}')" class="btn-filled">Follow</button>
+        <button onclick="startDM('${p.id}')" class="btn-outline">Message</button>
+      </div>
+    ` : ''}
+  `;
+
+  document.getElementById('profile-view-modal').classList.add('open');
+};
+
+async function startDM(otherUserId){
+  if(!user) return fpToast('Sign in first');
+
+  let convId = null;
+
+  const { data:mine } = await sb
+    .from('conversation_members')
+    .select('conversation_id')
+    .eq('user_id',user.id);
+
+  if(mine && mine.length){
+    const ids = mine.map(x => x.conversation_id);
+    const { data:shared } = await sb
+      .from('conversation_members')
+      .select('conversation_id')
+      .eq('user_id',otherUserId)
+      .in('conversation_id',ids);
+
+    if(shared && shared.length) convId = shared[0].conversation_id;
+  }
+
+  if(!convId){
+    const { data:conv, error } = await sb.from('conversations').insert({}).select().single();
+    if(error || !conv) return fpToast('Could not start message');
+    convId = conv.id;
+    await sb.from('conversation_members').insert([
+      { conversation_id:convId, user_id:user.id },
+      { conversation_id:convId, user_id:otherUserId }
+    ]);
+  }
+
+  closeModal('profile-view-modal');
+
+  try{
+    openChat(convId, otherUserId);
+  }catch(e){
+    await sb.from('messages').insert({
+      conversation_id:convId,
+      sender_id:user.id,
+      content:'Hey 👋'
+    });
+
+    await fpNotify(
+      otherUserId,
+      'message',
+      `${profile?.full_name || profile?.username || 'Someone'} sent you a message 💬`,
+      'Hey 👋',
+      { conversation_id:convId }
+    );
+
+    fpToast('Message sent');
+  }
+}
+
+/* ---------- fixed notifications: friend request / league invite actions ---------- */
+openNotifications = function(){
+  loadNotifications();
+  document.getElementById('notif-panel').classList.add('open');
+};
+
+loadNotifications = async function(){
+  if(!user) return;
+
+  const el = document.getElementById('notif-list');
+  if(!el) return;
+
+  const { data, error } = await sb
+    .from('notifications')
+    .select('*')
+    .eq('user_id',user.id)
+    .order('created_at',{ascending:false})
+    .limit(30);
+
+  if(error){
+    console.error(error);
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">Could not load notifications</div>';
+    return;
+  }
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No notifications yet</div>';
+    return;
+  }
+
+  el.innerHTML = data.map(n => {
+    const d = n.data || {};
+    let actions = '';
+
+    if(n.type === 'friend_request'){
+      actions = `
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button onclick="acceptFriend('${d.friendship_id || d.requester_id}')" style="background:#00c864;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#001407">✓ Accept</button>
+          <button onclick="declineFriend('${d.friendship_id || d.requester_id}')" style="background:rgba(255,79,79,.15);border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#ff4f4f">× Decline</button>
+        </div>
+      `;
+    }
+
+    if(n.type === 'league_invite'){
+      actions = `
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button onclick="acceptLeagueInvite('${d.league_member_id}')" style="background:#00c864;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#001407">✓ Join</button>
+          <button onclick="declineLeagueInvite('${d.league_member_id}')" style="background:rgba(255,79,79,.15);border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;color:#ff4f4f">× Decline</button>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display:flex;gap:12px;padding:14px 12px;border-radius:var(--radius-sm);background:${n.read ? 'transparent' : 'rgba(255,0,144,.04)'}">
+        <div style="width:36px;height:36px;border-radius:50%;background:${n.read ? 'var(--bg3)' : 'rgba(255,0,144,.15)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+          ${n.type === 'friend_request' ? '👤' : n.type === 'league_invite' ? '🏆' : n.type === 'message' ? '💬' : n.type === 'like' ? '❤️' : n.type === 'comment' ? '💬' : '🔔'}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:${n.read ? '500' : '700'}">${fpEsc(n.title || 'Notification')}</div>
+          ${n.body ? `<div style="font-size:13px;color:var(--text2);margin-top:3px;line-height:1.4">${fpEsc(n.body)}</div>` : ''}
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${fpTimeAgo(n.created_at)}</div>
+          ${actions}
+        </div>
+        ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#ff0090;margin-top:4px;flex-shrink:0"></div>' : ''}
+      </div>
+    `;
+  }).join('');
+
+  const unread = data.filter(n => !n.read).length;
+  const dot = document.getElementById('notif-dot');
+  if(dot) dot.style.display = unread > 0 ? 'block' : 'none';
+};
+
+markAllRead = async function(){
+  if(!user) return;
+  await sb.from('notifications').update({read:true}).eq('user_id',user.id).eq('read',false);
+  fpToast('All caught up');
+  loadNotifications();
+};
+
+/* ---------- fixed leagues/invites/private leagues/leaderboard ---------- */
+loadFeedLeagues = async function(){
+  if(!user) return;
+
+  const el = document.getElementById('feed-leagues');
+  if(!el) return;
+
+  const { data:memberships } = await sb
+    .from('league_members')
+    .select('*,leagues(*)')
+    .eq('user_id',user.id)
+    .in('status',['accepted','pending'])
+    .order('joined_at',{ascending:false});
+
+  if(!memberships || !memberships.length){
+    el.innerHTML = `<div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">+ Create or join a league</div>`;
+    return;
+  }
+
+  el.innerHTML = memberships.map(m => {
+    const l = m.leagues || {};
+    if(m.status === 'pending'){
+      return `
+        <div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;min-width:220px;flex-shrink:0">
+          <div style="font-size:13px;font-weight:800">Invite: ${fpEsc(l.name)}</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="acceptLeagueInvite('${m.id}')" style="background:#00c864;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:800;color:#001407">✓ Join</button>
+            <button onclick="declineLeagueInvite('${m.id}')" style="background:rgba(255,79,79,.15);border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:800;color:#ff4f4f">×</button>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div onclick="openLeague('${l.id}')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;flex-shrink:0">
+        <div style="font-size:13px;font-weight:800">${fpEsc(l.name)}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private ? '🔒 Private' : 'Public'}</div>
+      </div>
+    `;
+  }).join('');
+};
+
+loadLeagues = async function(){
+  if(!user) return;
+
+  const list = document.getElementById('leagues-list');
+  if(!list) return;
+
+  const { data:memberships, error } = await sb
+    .from('league_members')
+    .select('*,leagues(*)')
+    .eq('user_id',user.id)
+    .in('status',['accepted','pending']);
+
+  if(error){
+    console.error(error);
+    list.innerHTML = '<div class="empty-state"><p>Could not load leagues.</p></div>';
+    return;
+  }
+
+  if(!memberships || !memberships.length){
+    list.innerHTML = '<div class="empty-state"><p>No leagues yet.<br>Create one or accept an invite.</p></div>';
+    return;
+  }
+
+  list.innerHTML = memberships.map(m => {
+    const l = m.leagues || {};
+    return `
+      <div style="background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border);padding:16px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-size:15px;font-weight:800">${fpEsc(l.name)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:3px">${m.status === 'pending' ? 'Invitation pending' : l.is_private ? '🔒 Private league' : 'Public league'}</div>
+          </div>
+          ${m.status === 'pending' ? `
+            <div style="display:flex;gap:7px">
+              <button onclick="acceptLeagueInvite('${m.id}')" style="background:#00c864;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;color:#001407">✓</button>
+              <button onclick="declineLeagueInvite('${m.id}')" style="background:rgba(255,79,79,.15);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;color:#ff4f4f">×</button>
+            </div>
+          ` : `
+            <button onclick="openLeague('${l.id}')" style="background:var(--accent);border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;color:#fff">View</button>
+          `}
+        </div>
+        ${l.description ? `<div style="font-size:13px;color:var(--text2)">${fpEsc(l.description)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+};
+
+async function acceptLeagueInvite(memberId){
+  await sb.from('league_members').update({
+    status:'accepted',
+    joined_at:new Date().toISOString()
+  }).eq('id',memberId);
+
+  fpToast('Joined league 🏆');
+  try{ loadLeagues(); loadFeedLeagues(); loadNotifications(); }catch(e){}
+}
+
+async function declineLeagueInvite(memberId){
+  await sb.from('league_members').update({status:'declined'}).eq('id',memberId);
+  fpToast('Invite declined');
+  try{ loadLeagues(); loadFeedLeagues(); loadNotifications(); }catch(e){}
+}
+
+inviteToLeague = async function(leagueId,friendId){
+  if(!user) return;
+
+  const { data:member, error } = await sb
+    .from('league_members')
+    .upsert({
+      league_id:leagueId,
+      user_id:friendId,
+      invited_by:user.id,
+      status:'pending'
+    }, { onConflict:'league_id,user_id' })
+    .select()
+    .single();
+
+  if(error){
+    console.error(error);
+    return fpToast('Could not send invite');
+  }
+
+  await fpNotify(
+    friendId,
+    'league_invite',
+    `${profile?.full_name || profile?.username || 'Someone'} invited you to a league`,
+    'Tap join or decline.',
+    { league_member_id:member.id, league_id:leagueId }
+  );
+
+  try{
+    await startDMWithMessage(friendId,'I invited you to my Forte league 🏆 Check your notifications to join.');
+  }catch(e){}
+
+  fpToast('Invite sent');
+};
+
+async function startDMWithMessage(otherUserId,message){
+  let convId = null;
+
+  const { data:mine } = await sb.from('conversation_members').select('conversation_id').eq('user_id',user.id);
+
+  if(mine && mine.length){
+    const ids = mine.map(x => x.conversation_id);
+    const { data:shared } = await sb.from('conversation_members').select('conversation_id').eq('user_id',otherUserId).in('conversation_id',ids);
+    if(shared && shared.length) convId = shared[0].conversation_id;
+  }
+
+  if(!convId){
+    const { data:conv } = await sb.from('conversations').insert({}).select().single();
+    convId = conv.id;
+    await sb.from('conversation_members').insert([
+      {conversation_id:convId,user_id:user.id},
+      {conversation_id:convId,user_id:otherUserId}
+    ]);
+  }
+
+  await sb.from('messages').insert({
+    conversation_id:convId,
+    sender_id:user.id,
+    content:message
+  });
+}
+
+openLeague = async function(leagueId){
+  const { data:league } = await sb.from('leagues').select('*').eq('id',leagueId).single();
+  if(!league) return fpToast('League not found');
+
+  const { data:members } = await sb
+    .from('league_members')
+    .select('*,profiles(*)')
+    .eq('league_id',leagueId)
+    .eq('status','accepted');
+
+  const rows = [];
+
+  for(const m of (members || [])){
+    const start = m.joined_at || league.created_at || '2000-01-01';
+
+    const { data:pts } = await sb
+      .from('points_log')
+      .select('points')
+      .eq('user_id',m.user_id)
+      .gte('earned_at',start);
+
+    const workouts = await fpCount('workouts', [
+      {col:'user_id',val:m.user_id},
+      {op:'gte',col:'created_at',val:start}
+    ]);
+
+    const recipes = await fpCount('recipes', [
+      {col:'user_id',val:m.user_id},
+      {op:'gte',col:'created_at',val:start}
+    ]);
+
+    rows.push({
+      ...(m.profiles || {}),
+      league_points:(pts || []).reduce((a,x) => a + (x.points || 0),0),
+      league_workouts:workouts,
+      league_recipes:recipes
+    });
+  }
+
+  rows.sort((a,b) => b.league_points - a.league_points);
+
+  document.getElementById('post-modal-content').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="font-family:'Inter',sans-serif;font-size:18px;font-weight:800;margin-bottom:4px">${fpEsc(league.name)}</div>
+      ${league.description ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">${fpEsc(league.description)}</div>` : ''}
+      <div style="font-size:12px;color:var(--text3)">Leaderboard since joining league</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:36px 1fr 58px 70px 60px;gap:6px;padding:0 0 8px;font-size:11px;color:var(--text3);font-weight:800;text-transform:uppercase">
+      <div>#</div><div>User</div><div>Pts</div><div>Workouts</div><div>Recipes</div>
+    </div>
+
+    ${rows.map((u,i) => `
+      <div style="display:grid;grid-template-columns:36px 1fr 58px 70px 60px;gap:6px;align-items:center;padding:10px 0;border-top:1px solid var(--border)">
+        <div style="font-weight:800;color:${i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'var(--text3)'}">${i+1}</div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          ${fpAvatar(u,30)}
+          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(u.username || u.full_name || 'User')}</div>
+        </div>
+        <div style="font-size:13px;font-weight:800;color:var(--accent)">${u.league_points}</div>
+        <div style="font-size:13px;font-weight:700">${u.league_workouts}</div>
+        <div style="font-size:13px;font-weight:700">${u.league_recipes}</div>
+      </div>
+    `).join('') || '<div style="font-size:13px;color:var(--text3)">No members yet</div>'}
+
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Invite friends</div>
+      <div id="league-invite-list-${leagueId}"></div>
+    </div>
+  `;
+
+  document.getElementById('post-modal').classList.add('open');
+  loadFriendsForInvite(leagueId);
+};
+
+/* ---------- profile stats order: Friends / Points / Workouts / Recipes ---------- */
+syncProfile = async function(){
+  if(!profile) return;
+
+  const n = profile.full_name || profile.username || 'Forte';
+
+  try{ document.getElementById('feed-username').textContent = n.split(' ')[0]; }catch(e){}
+  try{ document.getElementById('stat-pts').textContent = profile.points || 0; }catch(e){}
+  try{ document.getElementById('stat-streak').textContent = (profile.streak || 0) + '🔥'; }catch(e){}
+  try{ document.getElementById('profile-name').textContent = n; }catch(e){}
+  try{ document.getElementById('profile-uname').textContent = '@' + (profile.username || ''); }catch(e){}
+  try{ document.getElementById('profile-avatar-letter').textContent = n[0].toUpperCase(); }catch(e){}
+  try{ document.getElementById('profile-pts').textContent = profile.points || 0; }catch(e){}
+  try{ document.getElementById('profile-streak').textContent = profile.streak || 0; }catch(e){}
+
+  const avatarImg = document.getElementById('profile-avatar-img');
+  if(avatarImg){
+    if(profile.avatar_url){
+      avatarImg.src = profile.avatar_url;
+      avatarImg.style.display = 'block';
+      document.getElementById('profile-avatar-letter').style.display = 'none';
+    }else{
+      avatarImg.style.display = 'none';
+      document.getElementById('profile-avatar-letter').style.display = 'block';
+    }
+  }
+
+  if(profile.calorie_goal){
+    goals = {
+      cal:profile.calorie_goal,
+      pro:profile.protein_goal || 150,
+      carb:profile.carb_goal || 250,
+      fat:profile.fat_goal || 65
+    };
+  }
+
+  const friendsA = await fpCount('friendships', [{col:'requester_id',val:user.id},{col:'status',val:'accepted'}]);
+  const friendsB = await fpCount('friendships', [{col:'addressee_id',val:user.id},{col:'status',val:'accepted'}]);
+  const workouts = await fpCount('workouts', [{col:'user_id',val:user.id}]);
+  const recipes = await fpCount('recipes', [{col:'user_id',val:user.id}]);
+
+  const stats = document.querySelector('.profile-stats');
+  if(stats){
+    stats.innerHTML = `
+      <div class="profile-stat" onclick="showScreen('friends')"><div class="profile-stat-val">${friendsA + friendsB}</div><div class="profile-stat-label">Friends</div></div>
+      <div class="profile-stat"><div class="profile-stat-val" style="color:var(--accent)">${profile.points || 0}</div><div class="profile-stat-label">Points</div></div>
+      <div class="profile-stat" onclick="loadProfilePublicWorkouts()"><div class="profile-stat-val">${workouts}</div><div class="profile-stat-label">Workouts</div></div>
+      <div class="profile-stat" onclick="loadProfilePublicRecipes()"><div class="profile-stat-val">${recipes}</div><div class="profile-stat-label">Recipes</div></div>
+    `;
+    stats.style.gridTemplateColumns = 'repeat(4,1fr)';
+  }
+
+  try{ renderBodySection(); }catch(e){}
+  try{ loadWkCount(); }catch(e){}
+};
+
+async function loadProfilePublicWorkouts(){
+  if(!user) return;
+  const { data } = await sb.from('workouts').select('*').eq('user_id',user.id).eq('is_public',true).order('created_at',{ascending:false});
+  const grid = document.getElementById('profile-workouts-grid');
+  if(grid){
+    grid.innerHTML = (data || []).map(w => `
+      <div class="workout-thumb" onclick="viewWorkoutById('${w.id}')">
+        <div class="workout-thumb-title">${fpEsc(w.title || 'Workout')}</div>
+        <div class="workout-thumb-sub">${fpTimeAgo(w.created_at)}</div>
+        <div class="workout-thumb-pts">+${w.points_earned || 0} pts</div>
+      </div>
+    `).join('') || '<div class="empty-state" style="grid-column:span 2"><p>No public workouts yet.</p></div>';
+  }
+}
+
+async function loadProfilePublicRecipes(){
+  fpToast('Opening recipes');
+  showScreen('recipes');
+  setTimeout(() => {
+    try{
+      const btns = document.querySelectorAll('#recipes-screen .lb-filter');
+      if(btns[2]) btns[2].click();
+    }catch(e){}
+  },300);
+}
+
+async function viewWorkoutById(id){
+  const { data:w } = await sb.from('workouts').select('*').eq('id',id).single();
+  if(!w) return;
+  document.getElementById('post-modal-content').innerHTML = `
+    <div class="modal-title">${fpEsc(w.title || 'Workout')}</div>
+    ${fpWorkoutHtml(w.workout_snapshot || [])}
+  `;
+  document.getElementById('post-modal').classList.add('open');
+}
+
+/* ---------- stats/goals save fix ---------- */
+saveBodyStats = async function(){
+  if(!user) return fpToast('Sign in first');
+
+  const w = parseFloat(document.getElementById('bs-weight')?.value);
+  const h = parseFloat(document.getElementById('bs-height')?.value);
+  const gw = parseFloat(document.getElementById('bs-goal-weight')?.value) || null;
+  const gwks = parseInt(document.getElementById('bs-goal-weeks')?.value) || null;
+
+  const updates = {
+    weight_kg:w || null,
+    height_cm:h || null,
+    age:parseInt(document.getElementById('bs-age')?.value) || null,
+    sex:document.getElementById('bs-sex')?.value || null,
+    activity_level:parseFloat(document.getElementById('bs-act')?.value) || null,
+    goal_type:document.getElementById('bs-goal')?.value || null,
+    goal_weight_kg:gw,
+    goal_weeks:gwks
+  };
+
+  if(goals && goals.cal){
+    updates.calorie_goal = goals.cal;
+    updates.protein_goal = goals.pro;
+    updates.carb_goal = goals.carb;
+    updates.fat_goal = goals.fat;
+  }
+
+  const { data, error } = await sb
+    .from('profiles')
+    .update(updates)
+    .eq('id',user.id)
+    .select()
+    .single();
+
+  if(error){
+    console.error(error);
+    return fpToast('Could not save stats');
+  }
+
+  profile = data;
+  closeModal('body-modal');
+  fpToast('Stats saved 💪');
+
+  try{ syncProfile(); }catch(e){}
+};
+
+/* ---------- story fixes: plus always adds, viewed greys out immediately ---------- */
+loadStories = async function(){
+  const row = document.getElementById('stories-row');
+  if(!row) return;
+
+  const { data } = await sb.from('stories')
+    .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at',{ascending:false});
+
+  const groups = {};
+  const order = [];
+
+  if(user){
+    groups[user.id] = { profile, stories:[], isMe:true };
+    order.push(user.id);
+  }
+
+  (data || []).forEach(s => {
+    if(!groups[s.user_id]){
+      groups[s.user_id] = { profile:s.profiles, stories:[], isMe:s.user_id === user?.id };
+      order.push(s.user_id);
+    }
+    groups[s.user_id].stories.push(s);
+  });
+
+  storyGroups = order.map(id => groups[id]);
+
+  row.innerHTML = storyGroups.map((g,i) => {
+    const p = g.profile || {};
+    const hasStory = g.stories.length > 0;
+    const unseen = hasStory && g.stories.some(st => !localStorage.getItem('viewed_story_'+st.id));
+
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+        <div style="position:relative" onclick="${hasStory ? `openStoryViewer(${i})` : 'openAddStory()'}">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${unseen ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)'}">
+            <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
+              ${p.avatar_url ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${fpEsc((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`}
+            </div>
+          </div>
+          ${g.isMe ? `<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.isMe ? 'Your story' : fpEsc(p.username || '')}</div>
+      </div>
+    `;
+  }).join('');
+};
+
+showStory = function(groupIdx, storyIdx){
+  const group = storyGroups[groupIdx];
+  if(!group || !group.stories.length) return;
+
+  const story = group.stories[storyIdx];
+  const p = group.profile || {};
+
+  clearTimeout(storyTimer);
+
+  if(story) localStorage.setItem('viewed_story_'+story.id,'1');
+  setTimeout(() => loadStories(), 50);
+
+  document.getElementById('story-user-info').innerHTML = `
+    ${p.avatar_url ? `<img src="${p.avatar_url}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">` : `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--accent)">${fpEsc((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`}
+    <div>
+      <div style="color:#fff;font-size:14px;font-weight:700">${fpEsc(p.full_name || p.username || 'User')}</div>
+      <div style="color:rgba(255,255,255,.6);font-size:11px">${fpTimeAgo(story.created_at)}</div>
+    </div>
+    ${group.isMe ? `<button onclick="deleteStory('${story.id}')" style="background:none;border:none;color:rgba(255,255,255,.7);font-size:12px;cursor:pointer;margin-left:8px">Delete</button>` : ''}
+  `;
+
+  const total = group.stories.length;
+  document.getElementById('story-progress-bars').innerHTML = Array.from({length:total},(_,i) => `
+    <div style="flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:2px;overflow:hidden">
+      <div id="prog-${i}" style="height:100%;background:#fff;border-radius:2px;width:${i < storyIdx ? '100' : '0'}%;transition:none"></div>
+    </div>
+  `).join('');
+
+  if(story.media_type === 'video'){
+    document.getElementById('story-video').src = story.media_url;
+    document.getElementById('story-video').style.display = 'block';
+    document.getElementById('story-img').style.display = 'none';
+    document.getElementById('story-video').play();
+  }else{
+    document.getElementById('story-img').src = story.media_url;
+    document.getElementById('story-img').style.display = 'block';
+    document.getElementById('story-video').style.display = 'none';
+  }
+
+  const cap = document.getElementById('story-caption');
+  if(story.caption){
+    cap.textContent = story.caption;
+    cap.style.display = 'block';
+  }else{
+    cap.style.display = 'none';
+  }
+
+  const duration = story.media_type === 'video' ? 15000 : 5000;
+  const bar = document.getElementById('prog-'+storyIdx);
+  if(bar){
+    setTimeout(() => {
+      bar.style.transition = `width ${duration}ms linear`;
+      bar.style.width = '100%';
+    },50);
+  }
+
+  storyTimer = setTimeout(() => nextStory(), duration);
+};
+
+/* ---------- plus menu: add create post + create recipe + story ---------- */
+openLogMenu = function(){
+  const menu = document.getElementById('log-menu');
+  const modal = menu?.querySelector('.modal');
+  if(modal && !document.getElementById('patch-create-post-btn')){
+    const cancel = modal.querySelector('button[onclick*="Cancel"], button:last-child');
+    const extra = document.createElement('div');
+    extra.innerHTML = `
+      <button id="patch-create-post-btn" onclick="closeModal('log-menu');openCreatePost()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">📸</div>
+        <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Create post</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Share a caption, photo or video</div></div>
+      </button>
+      <button onclick="closeModal('log-menu');openCreateRecipe()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">🍽️</div>
+        <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Create recipe</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Add a recipe to Forte</div></div>
+      </button>
+      <button onclick="closeModal('log-menu');openAddStory()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">⭕</div>
+        <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Add story</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Post another story</div></div>
+      </button>
+    `;
+    if(cancel) cancel.before(extra);
+    else modal.appendChild(extra);
+  }
+  menu.classList.add('open');
+};
+
+function openCreatePost(){
+  pendingWorkoutId = null;
+  window.pendingWorkoutSnapshot = [];
+  const preview = document.getElementById('share-workout-preview');
+  if(preview) preview.innerHTML = '';
+  const nameEl = document.getElementById('share-workout-name');
+  if(nameEl) nameEl.textContent = 'Create post';
+  const statsEl = document.getElementById('share-workout-stats');
+  if(statsEl) statsEl.textContent = '';
+  const cap = document.getElementById('share-caption');
+  if(cap) cap.value = '';
+  const input = document.getElementById('share-media-input');
+  if(input) input.value = '';
+  document.getElementById('share-modal').classList.add('open');
+}
+
+/* ---------- steps activate button ---------- */
+let fpStepCount = parseInt(localStorage.getItem('forte_steps_today') || '0');
+let fpStepActive = false;
+let fpLastStep = 0;
+
+function fpUpdateSteps(){
+  const goal = parseInt(localStorage.getItem('forte_step_goal') || '10000');
+  const cal = Math.round(fpStepCount * 0.04);
+  const km = Math.round(fpStepCount * 0.0008 * 10) / 10;
+  const pct = Math.min(100, Math.round(fpStepCount / goal * 100));
+
+  const setText = (id,val) => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = val;
+  };
+
+  setText('ex-steps-count', fpStepCount.toLocaleString());
+  setText('ex-steps-goal', goal.toLocaleString());
+  setText('ex-cal-burned', cal);
+  setText('ex-km', km);
+
+  const bar = document.getElementById('ex-steps-bar');
+  if(bar) bar.style.width = pct + '%';
+
+  localStorage.setItem('forte_steps_today', String(fpStepCount));
+}
+
+async function activateStepTracking(){
+  if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+    try{
+      const permission = await DeviceMotionEvent.requestPermission();
+      if(permission !== 'granted') return fpToast('Motion access is needed for step tracking');
+    }catch(e){
+      return fpToast('Could not request motion access');
+    }
+  }
+
+  fpStepActive = true;
+  localStorage.setItem('forte_step_tracking','active');
+
+  window.addEventListener('devicemotion', e => {
+    if(!fpStepActive) return;
+    const acc = e.accelerationIncludingGravity;
+    if(!acc) return;
+
+    const mag = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
+    const now = Date.now();
+
+    if(mag > 13 && now - fpLastStep > 350){
+      fpLastStep = now;
+      fpStepCount++;
+      fpUpdateSteps();
+    }
+  }, { passive:true });
+
+  const status = document.getElementById('step-tracking-status');
+  if(status){
+    status.textContent = '● Tracking';
+    status.style.color = '#00c864';
+  }
+
+  fpToast('Step tracking activated 👟');
+}
+
+loadExerciseScreen = async function(){
+  try{ fpUpdateSteps(); }catch(e){}
+  try{ await loadPRs(); }catch(e){}
+  try{ await loadPastWorkouts(); }catch(e){}
+  try{ renderExLibCats(); }catch(e){}
+  try{ loadProgressGraph('weight'); }catch(e){}
+
+  const status = document.getElementById('step-tracking-status');
+  if(status && localStorage.getItem('forte_step_tracking') === 'active'){
+    status.textContent = '● Tracking';
+    status.style.color = '#00c864';
+  }
+
+  const stepsCard = document.getElementById('step-tracking-status')?.parentElement;
+  if(stepsCard && !document.getElementById('activate-steps-btn')){
+    const btn = document.createElement('button');
+    btn.id = 'activate-steps-btn';
+    btn.textContent = 'Activate';
+    btn.style.cssText = 'margin-top:10px;background:var(--accent);border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;color:#fff;cursor:pointer';
+    btn.onclick = activateStepTracking;
+    stepsCard.appendChild(btn);
+  }
+};
+
+/* ---------- nutrition serving recalculation + refresh display ---------- */
+selectSearchResult = function(el){
+  const name = el.dataset.name;
+  const cal = parseFloat(el.dataset.cal) || 0;
+  const pro = parseFloat(el.dataset.pro) || 0;
+  const carb = parseFloat(el.dataset.carb) || 0;
+  const fat = parseFloat(el.dataset.fat) || 0;
+  const serving = parseFloat(el.dataset.serving) || 100;
+
+  fillFoodForm(name,cal,pro,carb,fat,serving,'g');
+
+  document.getElementById('food-search-results').style.display = 'none';
+  document.getElementById('food-search-inp').value = name;
+};
+
+recalcMacros = function(){
+  const amount = parseFloat(document.getElementById('food-serving-amount')?.value) || 100;
+  const unit = document.getElementById('food-serving-unit')?.value || 'g';
+  const factor = (amount * (UNIT_TO_G[unit] || 1)) / 100;
+
+  const cal = parseFloat(document.getElementById('food-cal-base')?.value) || 0;
+  const pro = parseFloat(document.getElementById('food-pro-base')?.value) || 0;
+  const carb = parseFloat(document.getElementById('food-carb-base')?.value) || 0;
+  const fat = parseFloat(document.getElementById('food-fat-base')?.value) || 0;
+
+  document.getElementById('food-cal-total').textContent = Math.round(cal * factor);
+  document.getElementById('food-pro-total').textContent = Math.round(pro * factor * 10) / 10 + 'g';
+  document.getElementById('food-carb-total').textContent = Math.round(carb * factor * 10) / 10 + 'g';
+  document.getElementById('food-fat-total').textContent = Math.round(fat * factor * 10) / 10 + 'g';
+};
+
+saveFood = async function(){
+  if(!user) return fpToast('Please sign in first');
+
+  const name = document.getElementById('food-name')?.value;
+  if(!name) return fpToast('Enter a food name');
+
+  recalcMacros();
+
+  const amount = parseFloat(document.getElementById('food-serving-amount')?.value) || 100;
+  const unit = document.getElementById('food-serving-unit')?.value || 'g';
+  const factor = (amount * (UNIT_TO_G[unit] || 1)) / 100;
+
+  const calBase = parseFloat(document.getElementById('food-cal-base')?.value) || 0;
+  const proBase = parseFloat(document.getElementById('food-pro-base')?.value) || 0;
+  const carbBase = parseFloat(document.getElementById('food-carb-base')?.value) || 0;
+  const fatBase = parseFloat(document.getElementById('food-fat-base')?.value) || 0;
+
+  const entry = {
+    user_id:user.id,
+    food_name:`${name} (${amount}${unit})`,
+    meal_type:document.getElementById('food-meal')?.value || 'Snack',
+    calories:Math.round(calBase * factor),
+    protein:Math.round(proBase * factor * 10) / 10,
+    carbs:Math.round(carbBase * factor * 10) / 10,
+    fats:Math.round(fatBase * factor * 10) / 10,
+    serving_amount:amount,
+    serving_unit:unit,
+    log_date:new Date().toISOString().split('T')[0]
+  };
+
+  const { error } = await sb.from('nutrition_logs').insert(entry);
+  if(error){
+    console.error(error);
+    return fpToast('Could not log food');
+  }
+
+  closeModal('food-modal');
+  fpToast('Food logged 🥗');
+
+  ['food-name','food-cal-base','food-pro-base','food-carb-base','food-fat-base'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+
+  const amountEl = document.getElementById('food-serving-amount');
+  if(amountEl) amountEl.value = '100';
+
+  try{ loadNutrition(); }catch(e){}
+};
+
+/* ---------- final boot patch ---------- */
+setTimeout(() => {
+  try{ loadFeedPosts(); }catch(e){}
+  try{ loadFeedLeagues(); }catch(e){}
+  try{ loadStories(); }catch(e){}
+  try{ checkUnreadNotifications(); }catch(e){}
+}, 1200);
 init();
 </script>
 
