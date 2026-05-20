@@ -7643,6 +7643,491 @@ async function declineLeagueInvite(leagueId, notificationId){
   safeToast('Invite declined');
   loadNotifications();
 }
+  /* =========================================================
+   FORTE CHAT MEDIA + VOICE + TIMEZONE FIX
+   Paste directly above init();
+   ========================================================= */
+
+function forteParseDate(ts){
+  if(!ts) return new Date();
+
+  let s = String(ts);
+
+  // Supabase sometimes returns UTC without a timezone marker.
+  // If no Z or +/- timezone exists, force UTC.
+  const hasTimezone = /z$/i.test(s) || /[+-]\d\d:\d\d$/.test(s);
+  if(!hasTimezone) s += 'Z';
+
+  return new Date(s);
+}
+
+getTimeAgo = function(ts){
+  const d = forteParseDate(ts);
+  const diff = Date.now() - d.getTime();
+
+  if(diff < 0) return 'just now';
+
+  const m = Math.floor(diff / 60000);
+  if(m < 1) return 'just now';
+  if(m < 60) return m + 'm ago';
+
+  const h = Math.floor(m / 60);
+  if(h < 24) return h + 'h ago';
+
+  const days = Math.floor(h / 24);
+  if(days < 7) return days + 'd ago';
+
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short'
+  });
+};
+
+function forteTime(ts){
+  return forteParseDate(ts).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function forteEsc(v){
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+function forteToast(msg){
+  if(typeof safeToast === 'function') return safeToast(msg);
+  if(typeof fpToast === 'function') return fpToast(msg);
+  if(typeof showToast === 'function') return showToast(msg);
+  alert(msg);
+}
+
+function forteMimeExt(file){
+  const nameExt = file?.name?.split('.').pop();
+  if(nameExt && nameExt.length <= 5) return nameExt.toLowerCase();
+
+  const type = file?.type || '';
+  if(type.includes('png')) return 'png';
+  if(type.includes('webp')) return 'webp';
+  if(type.includes('gif')) return 'gif';
+  if(type.includes('jpeg') || type.includes('jpg')) return 'jpg';
+  if(type.includes('mp4')) return 'mp4';
+  if(type.includes('webm')) return 'webm';
+  if(type.includes('ogg')) return 'ogg';
+  if(type.includes('mpeg')) return 'mp3';
+
+  return 'bin';
+}
+
+async function forteUploadChatFile(file, mediaType){
+  const u = await getCurrentUserSafe();
+  if(!u) throw new Error('Please sign in first');
+  if(!file) throw new Error('No file selected');
+
+  const ext = forteMimeExt(file);
+  const path = `chat/${u.id}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+
+  const { error } = await sb.storage
+    .from('forte-media')
+    .upload(path, file, {
+      contentType: file.type || undefined,
+      upsert: false
+    });
+
+  if(error) throw error;
+
+  const { data:{ publicUrl } } = sb.storage
+    .from('forte-media')
+    .getPublicUrl(path);
+
+  return {
+    url: publicUrl,
+    type: mediaType,
+    name: file.name || `chat-${mediaType}.${ext}`
+  };
+}
+
+function ensureChatMediaControls(){
+  const bar = document.querySelector('#chat-screen > div:last-child');
+  const input = document.getElementById('chat-input');
+
+  if(!bar || !input || document.getElementById('chat-photo-input')) return;
+
+  bar.style.alignItems = 'center';
+
+  const mediaWrap = document.createElement('div');
+  mediaWrap.id = 'chat-media-controls';
+  mediaWrap.style.cssText = 'display:flex;gap:8px;align-items:center;flex-shrink:0';
+
+  mediaWrap.innerHTML = `
+    <input id="chat-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="sendChatImage(this.files[0])">
+    <input id="chat-image-input" type="file" accept="image/*,video/*" style="display:none" onchange="sendChatImage(this.files[0])">
+
+    <button onclick="document.getElementById('chat-photo-input').click()" title="Take photo"
+      style="width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+    </button>
+
+    <button onclick="document.getElementById('chat-image-input').click()" title="Attach image/video"
+      style="width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </button>
+
+    <button id="chat-voice-btn" onclick="toggleVoiceNote()" title="Voice note"
+      style="width:38px;height:38px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+  `;
+
+  bar.insertBefore(mediaWrap, input);
+}
+
+function chatMessageHtml(m){
+  const isMe = m.sender_id === user?.id;
+  const p = m.profiles || {};
+  const time = forteTime(m.created_at);
+
+  let bubbleContent = '';
+
+  if(m.media_url && m.media_type === 'image'){
+    bubbleContent += `
+      <img src="${m.media_url}" onclick="window.open('${m.media_url}','_blank')"
+        style="max-width:260px;width:100%;border-radius:14px;display:block;cursor:pointer;margin-bottom:${m.content ? '8px' : '0'}">
+    `;
+  }
+
+  if(m.media_url && m.media_type === 'video'){
+    bubbleContent += `
+      <video src="${m.media_url}" controls playsinline
+        style="max-width:260px;width:100%;border-radius:14px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></video>
+    `;
+  }
+
+  if(m.media_url && m.media_type === 'audio'){
+    bubbleContent += `
+      <audio src="${m.media_url}" controls style="width:240px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></audio>
+    `;
+  }
+
+  if(m.content){
+    bubbleContent += `<div>${forteEsc(m.content)}</div>`;
+  }
+
+  if(!bubbleContent){
+    bubbleContent = `<div></div>`;
+  }
+
+  const bg = isMe ? '#ff0090' : 'var(--bg2)';
+  const color = isMe ? '#fff' : 'var(--text)';
+  const radius = isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px';
+
+  return `
+    <div style="display:flex;flex-direction:${isMe?'row-reverse':'row'};align-items:flex-end;gap:8px;margin-bottom:8px">
+      ${!isMe ? avatarEl(p,28) : ''}
+      <div style="max-width:75%">
+        <div style="background:${bg};color:${color};padding:${m.media_url ? '6px' : '10px 14px'};border-radius:${radius};font-size:14px;line-height:1.5;word-break:break-word">
+          ${bubbleContent}
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:${isMe?'right':'left'}">${time}</div>
+      </div>
+    </div>
+  `;
+}
+
+renderMessages = function(messages, el){
+  if(!el) el = document.getElementById('chat-messages');
+
+  if(!messages || !messages.length){
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px">Start the conversation 👋</div>';
+    return;
+  }
+
+  const today = new Date().toDateString();
+  let lastDate = '';
+
+  el.innerHTML = messages.map(m => {
+    const msgDate = forteParseDate(m.created_at).toDateString();
+    let sep = '';
+
+    if(msgDate !== lastDate){
+      lastDate = msgDate;
+      const label = msgDate === today
+        ? 'Today'
+        : forteParseDate(m.created_at).toLocaleDateString('en-GB', {
+            weekday:'long',
+            day:'numeric',
+            month:'short'
+          });
+
+      sep = `<div style="text-align:center;margin:8px 0">
+        <span style="font-size:11px;color:var(--text3);background:var(--bg3);padding:4px 12px;border-radius:12px">${label}</span>
+      </div>`;
+    }
+
+    return sep + chatMessageHtml(m);
+  }).join('');
+
+  el.scrollTop = el.scrollHeight;
+};
+
+loadMessages = async function(convId){
+  const el = document.getElementById('chat-messages');
+
+  const { data, error } = await sb
+    .from('messages')
+    .select('*,profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)')
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending:true })
+    .limit(80);
+
+  if(error){
+    console.error('LOAD MESSAGES ERROR:', error);
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text3);font-size:13px">Could not load messages</div>';
+    return;
+  }
+
+  renderMessages(data || [], el);
+};
+
+subscribeToMessages = function(convId){
+  if(messageSubscription) messageSubscription.unsubscribe();
+
+  messageSubscription = sb.channel('messages:' + convId)
+    .on(
+      'postgres_changes',
+      {
+        event:'INSERT',
+        schema:'public',
+        table:'messages',
+        filter:'conversation_id=eq.' + convId
+      },
+      async payload => {
+        const { data:msg } = await sb
+          .from('messages')
+          .select('*,profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)')
+          .eq('id', payload.new.id)
+          .single();
+
+        if(msg){
+          const el = document.getElementById('chat-messages');
+
+          if(el.textContent.includes('Start the conversation')){
+            el.innerHTML = '';
+          }
+
+          el.insertAdjacentHTML('beforeend', chatMessageHtml(msg));
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+    )
+    .subscribe();
+};
+
+const forteOldOpenChat = openChat;
+openChat = async function(convId, otherUserId){
+  await forteOldOpenChat(convId, otherUserId);
+  ensureChatMediaControls();
+};
+
+sendMessage = async function(){
+  const u = await getCurrentUserSafe();
+  if(!u) return forteToast('Please sign in first');
+
+  const inp = document.getElementById('chat-input');
+  const content = inp?.value?.trim();
+
+  if(!content) return;
+  if(!currentConvId) return forteToast('No conversation selected');
+
+  inp.value = '';
+
+  const { error } = await sb
+    .from('messages')
+    .insert({
+      conversation_id: currentConvId,
+      sender_id: u.id,
+      content
+    });
+
+  if(error){
+    console.error('SEND MESSAGE ERROR:', error);
+    forteToast('Could not send message: ' + error.message);
+    inp.value = content;
+  }
+};
+
+async function sendChatImage(file){
+  if(!file) return;
+  if(!currentConvId) return forteToast('No conversation selected');
+
+  const u = await getCurrentUserSafe();
+  if(!u) return forteToast('Please sign in first');
+
+  try{
+    forteToast('Uploading...');
+
+    const mediaType = file.type.startsWith('video') ? 'video' : 'image';
+    const uploaded = await forteUploadChatFile(file, mediaType);
+
+    const { error } = await sb
+      .from('messages')
+      .insert({
+        conversation_id: currentConvId,
+        sender_id: u.id,
+        content: '',
+        media_url: uploaded.url,
+        media_type: uploaded.type,
+        media_name: uploaded.name
+      });
+
+    if(error) throw error;
+
+    forteToast(mediaType === 'video' ? 'Video sent!' : 'Photo sent!');
+  }catch(err){
+    console.error('SEND MEDIA ERROR:', err);
+    forteToast('Could not send media: ' + (err.message || 'unknown error'));
+  }finally{
+    const photo = document.getElementById('chat-photo-input');
+    const image = document.getElementById('chat-image-input');
+    if(photo) photo.value = '';
+    if(image) image.value = '';
+  }
+}
+
+/* -----------------------------
+   VOICE NOTES
+----------------------------- */
+let forteRecorder = null;
+let forteVoiceChunks = [];
+let forteVoiceStarted = 0;
+let forteVoiceStream = null;
+
+async function toggleVoiceNote(){
+  if(forteRecorder && forteRecorder.state === 'recording'){
+    stopVoiceNote();
+  }else{
+    startVoiceNote();
+  }
+}
+
+async function startVoiceNote(){
+  if(!currentConvId) return forteToast('No conversation selected');
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    return forteToast('Voice notes are not supported on this device');
+  }
+
+  try{
+    forteVoiceStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+
+    forteVoiceChunks = [];
+    forteVoiceStarted = Date.now();
+
+    forteRecorder = new MediaRecorder(forteVoiceStream);
+
+    forteRecorder.ondataavailable = e => {
+      if(e.data && e.data.size > 0) forteVoiceChunks.push(e.data);
+    };
+
+    forteRecorder.onstop = sendVoiceNoteBlob;
+
+    forteRecorder.start();
+
+    const btn = document.getElementById('chat-voice-btn');
+    if(btn){
+      btn.style.background = '#ff0090';
+      btn.style.color = '#fff';
+      btn.innerHTML = '■';
+    }
+
+    forteToast('Recording voice note...');
+  }catch(err){
+    console.error('VOICE START ERROR:', err);
+    forteToast('Microphone access denied');
+  }
+}
+
+function stopVoiceNote(){
+  if(forteRecorder && forteRecorder.state === 'recording'){
+    forteRecorder.stop();
+  }
+
+  if(forteVoiceStream){
+    forteVoiceStream.getTracks().forEach(t => t.stop());
+    forteVoiceStream = null;
+  }
+
+  const btn = document.getElementById('chat-voice-btn');
+  if(btn){
+    btn.style.background = 'var(--bg3)';
+    btn.style.color = 'var(--text2)';
+    btn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    `;
+  }
+}
+
+async function sendVoiceNoteBlob(){
+  if(!forteVoiceChunks.length) return;
+
+  const u = await getCurrentUserSafe();
+  if(!u) return forteToast('Please sign in first');
+
+  try{
+    const duration = Math.max(1, Math.round((Date.now() - forteVoiceStarted) / 1000));
+    const mime = forteRecorder?.mimeType || 'audio/webm';
+    const blob = new Blob(forteVoiceChunks, { type:mime });
+    const file = new File([blob], `voice-note-${Date.now()}.webm`, { type:mime });
+
+    forteToast('Sending voice note...');
+
+    const uploaded = await forteUploadChatFile(file, 'audio');
+
+    const { error } = await sb
+      .from('messages')
+      .insert({
+        conversation_id: currentConvId,
+        sender_id: u.id,
+        content: '',
+        media_url: uploaded.url,
+        media_type: 'audio',
+        media_name: uploaded.name,
+        audio_duration: duration
+      });
+
+    if(error) throw error;
+
+    forteToast('Voice note sent!');
+  }catch(err){
+    console.error('VOICE SEND ERROR:', err);
+    forteToast('Could not send voice note: ' + (err.message || 'unknown error'));
+  }finally{
+    forteVoiceChunks = [];
+    forteRecorder = null;
+  }
+}
 init();
 </script>
 
