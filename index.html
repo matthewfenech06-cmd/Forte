@@ -8745,6 +8745,76 @@ chatMessageHtml = function(m){
     </div>
   `;
 };
+  /* =========================================================
+   FORTE REMOVE REACTION ON TAP
+   Paste under the emoji tray patch, above init();
+   ========================================================= */
+
+forteReactionSummary = function(messageId){
+  const reactions = forteMessageReactions[messageId] || [];
+  if(!reactions.length) return '';
+
+  const grouped = {};
+
+  reactions.forEach(r => {
+    grouped[r.emoji] = grouped[r.emoji] || {
+      emoji: r.emoji,
+      count: 0,
+      mine: false
+    };
+
+    grouped[r.emoji].count++;
+
+    if(r.user_id === user?.id){
+      grouped[r.emoji].mine = true;
+    }
+  });
+
+  return `
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+      ${Object.values(grouped).map(r => `
+        <button
+          onclick="event.stopPropagation();tapExistingReaction('${messageId}','${r.emoji}',${r.mine ? 'true' : 'false'})"
+          title="${r.mine ? 'Tap to remove reaction' : 'React with this emoji'}"
+          style="
+            background:${r.mine ? 'var(--accent-dim)' : 'var(--bg3)'};
+            border:1px solid ${r.mine ? 'var(--accent)' : 'var(--border)'};
+            border-radius:999px;
+            padding:2px 7px;
+            font-size:12px;
+            cursor:pointer;
+            color:var(--text);
+          ">
+          ${r.emoji}${r.count > 1 ? ` ${r.count}` : ''}
+        </button>
+      `).join('')}
+    </div>
+  `;
+};
+
+async function tapExistingReaction(messageId, emoji, mine){
+  const u = await getCurrentUserSafe();
+  if(!u) return forteToast('Please sign in first');
+
+  if(mine){
+    const { error } = await sb
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+      .eq('user_id', u.id);
+
+    if(error){
+      console.error('REMOVE REACTION ERROR:', error);
+      return forteToast('Could not remove reaction: ' + error.message);
+    }
+
+    await loadMessageReactions(currentConvId);
+    await loadMessages(currentConvId);
+    return;
+  }
+
+  await reactToMessage(messageId, emoji);
+}
 init();
 </script>
 
