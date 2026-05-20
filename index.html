@@ -10407,6 +10407,164 @@ if('serviceWorker' in navigator){
   <script>
 /* =========================================================
    FORTE NOTIFICATIONS + DM UNREAD BADGE FIX
+   <script>
+/* =========================================================
+   FORTE DM SEND IMMEDIATE DISPLAY FIX
+   - Message appears instantly after pressing send
+   - Still saves to Supabase
+   - Still creates notification for receiver
+   Paste directly before </body>
+   ========================================================= */
+
+function forteAppendMessageToChat(message){
+  const el = document.getElementById('chat-messages');
+  if(!el || !message) return;
+
+  // Remove empty state if present
+  if(el.textContent && el.textContent.includes('Start the conversation')){
+    el.innerHTML = '';
+  }
+
+  let html = '';
+
+  if(typeof chatMessageHtml === 'function'){
+    html = chatMessageHtml(message);
+  }else{
+    const isMe = message.sender_id === user?.id;
+    html = `
+      <div style="display:flex;flex-direction:${isMe ? 'row-reverse' : 'row'};align-items:flex-end;gap:8px;margin-bottom:8px">
+        <div style="
+          max-width:75%;
+          background:${isMe ? '#ff0090' : 'var(--bg2)'};
+          color:${isMe ? '#fff' : 'var(--text)'};
+          padding:10px 14px;
+          border-radius:${isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px'};
+          font-size:14px;
+          line-height:1.5;
+          word-break:break-word;
+        ">
+          ${String(message.content || '').replace(/[&<>"']/g, c => ({
+            '&':'&amp;',
+            '<':'&lt;',
+            '>':'&gt;',
+            '"':'&quot;',
+            "'":'&#39;'
+          }[c]))}
+        </div>
+      </div>
+    `;
+  }
+
+  el.insertAdjacentHTML('beforeend', html);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function forteNotifyMessageReceiver(conversationId, content){
+  if(!user || !conversationId) return;
+
+  try{
+    const { data: members } = await sb
+      .from('conversation_members')
+      .select('user_id')
+      .eq('conversation_id', conversationId)
+      .neq('user_id', user.id);
+
+    const receiverId = members?.[0]?.user_id;
+    if(!receiverId) return;
+
+    const senderName = profile?.full_name || profile?.username || 'Someone';
+
+    if(typeof forteCreateNotification === 'function'){
+      await forteCreateNotification(
+        receiverId,
+        'message',
+        senderName + ' sent you a message',
+        content.length > 80 ? content.slice(0, 80) + '...' : content,
+        { conversation_id: conversationId }
+      );
+    }else{
+      await sb.from('notifications').insert({
+        user_id: receiverId,
+        actor_id: user.id,
+        type: 'message',
+        title: senderName + ' sent you a message',
+        body: content.length > 80 ? content.slice(0, 80) + '...' : content,
+        data: { conversation_id: conversationId },
+        read: false
+      });
+    }
+  }catch(e){
+    console.warn('Message notification failed:', e);
+  }
+}
+
+window.sendMessage = async function(){
+  const inp = document.getElementById('chat-input');
+  const content = inp?.value?.trim();
+
+  if(!content || !currentConvId || !user) return;
+
+  // Clear input immediately
+  inp.value = '';
+
+  const tempId = 'temp-' + Date.now();
+
+  // Show message instantly while saving
+  const tempMessage = {
+    id: tempId,
+    conversation_id: currentConvId,
+    sender_id: user.id,
+    content,
+    created_at: new Date().toISOString(),
+    delivered_at: null,
+    read_at: null,
+    profiles: profile || {}
+  };
+
+  forteAppendMessageToChat(tempMessage);
+
+  try{
+    const { data: savedMessage, error } = await sb
+      .from('messages')
+      .insert({
+        conversation_id: currentConvId,
+        sender_id: user.id,
+        content
+      })
+      .select('*,profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)')
+      .single();
+
+    if(error) throw error;
+
+    // Reload chat to replace temp message with real saved message ID/status
+    if(typeof loadMessageReactions === 'function'){
+      await loadMessageReactions(currentConvId);
+    }
+
+    if(typeof loadMessages === 'function'){
+      await loadMessages(currentConvId);
+    }
+
+    await forteNotifyMessageReceiver(currentConvId, content);
+
+    if(typeof forteUpdateDmUnreadBadge === 'function'){
+      forteUpdateDmUnreadBadge();
+    }
+
+  }catch(e){
+    console.error('SEND MESSAGE ERROR:', e);
+
+    if(typeof showToast === 'function'){
+      showToast('Could not send message: ' + (e.message || 'Unknown error'));
+    }
+
+    // Reload to remove the temporary failed message
+    if(typeof loadMessages === 'function'){
+      loadMessages(currentConvId);
+    }
+  }
+};
+</script>
    Paste directly before </body>
    ========================================================= */
 
