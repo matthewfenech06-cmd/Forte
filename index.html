@@ -5789,9 +5789,621 @@ function startWorkoutFromEx(name,group){
 }
 
 // call renderBrowseCats after exercises load
-init();
-</script>
+/* =========================================================
+   FORTE FRONTEND REPAIR PATCH
+   HOW TO USE:
+   In index.html, find the final line inside the main <script> block:
+     init();
+   Replace that one line with this whole patch.
+   Then redeploy to Vercel.
+   ========================================================= */
 
+(function forteRepairPatch(){
+  console.log('Forte repair patch loaded');
+
+  // ---------- CSS / SCROLL FIXES ----------
+  const style=document.createElement('style');
+  style.textContent=`
+    html,body{height:100%;overflow:hidden!important;position:relative!important;}
+    #app{height:100dvh!important;overflow:hidden!important;}
+    .screen.active{height:100dvh!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior-y:contain!important;padding-bottom:calc(var(--nav-h) + 150px)!important;}
+    .workout-post img,.workout-post video{display:block;max-height:none!important;}
+    .modal textarea,.modal input,.modal select{pointer-events:auto!important;touch-action:auto!important;}
+    .profile-stat{cursor:pointer;border-radius:10px;padding:8px 4px;}
+    .profile-stat:active{background:var(--bg3);}
+    .action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .mini-action{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;}
+    .accept-btn{background:#00c864!important;color:#06180d!important;border:none!important;}
+    .decline-btn{background:var(--bg3)!important;color:var(--red)!important;border:1px solid rgba(255,79,79,.25)!important;}
+    .view-workout-btn{background:var(--accent-dim);border:1px solid rgba(255,0,144,.25);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;}
+    .readonly-macro{opacity:.75;}
+  `;
+  document.head.appendChild(style);
+
+  // ---------- HELPERS ----------
+  window.forteToday=function(){
+    const d=new Date();
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,'0');
+    const day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  };
+
+  window.sbSafe=async function(label,promise){
+    try{
+      const res=await promise;
+      if(res?.error){console.error('[Supabase]',label,res.error);showToast?.(`${label}: ${res.error.message}`);}
+      return res;
+    }catch(e){console.error('[JS/Supabase]',label,e);showToast?.(`${label} failed`);return {data:null,error:e};}
+  };
+
+  window.escapeHtml=function(str){
+    return String(str??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  };
+
+  window.cleanDateAgo=function(ts){
+    if(!ts)return 'just now';
+    const diff=Date.now()-new Date(ts).getTime();
+    if(diff<0||diff<30000)return 'just now';
+    const m=Math.floor(diff/60000);
+    if(m<60)return m+'m ago';
+    const h=Math.floor(m/60);
+    if(h<24)return h+'h ago';
+    const d=Math.floor(h/24);
+    if(d<7)return d+'d ago';
+    return new Date(ts).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  };
+  window.getTimeAgo=window.cleanDateAgo;
+
+  window.workoutSummaryHtml=function(snapshot){
+    const arr=Array.isArray(snapshot)?snapshot:[];
+    if(!arr.length)return '';
+    const visible=arr.slice(0,3).map(ex=>{
+      const sets=(ex.sets||[]).filter(s=>s.reps||s.weight);
+      const setTxt=sets.map(s=>`${s.weight||0}kg × ${s.reps||0}`).join(', ');
+      return `<div style="font-size:13px;color:var(--text2);margin-top:5px"><strong style="color:var(--text)">${escapeHtml(ex.name)}</strong>${setTxt?` · ${escapeHtml(setTxt)}`:''}</div>`;
+    }).join('');
+    const more=arr.length>3?`<div style="font-size:12px;color:var(--text3);margin-top:6px">+${arr.length-3} more exercise${arr.length-3===1?'':'s'}</div>`:'';
+    return `<div style="background:var(--bg3);border-radius:10px;padding:10px 12px;margin:0 16px 12px"><div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:3px">Logged a workout!</div>${visible}${more}</div>`;
+  };
+
+  // ---------- INIT FIX ----------
+  const oldInit=window.init;
+  window.init=async function(){
+    try{
+      if(window.location.hash&&window.location.hash.includes('error')) history.replaceState(null,'',window.location.pathname);
+      const {data:{session}}=await sb.auth.getSession();
+      if(session){
+        user=session.user;
+        await loadProfile();
+        const exRes=await sbSafe('Load exercises',sb.from('exercises').select('*').order('name'));
+        if(exRes.data&&exRes.data.length) exercises=exRes.data;
+        if(typeof loadCustomExercises==='function') await loadCustomExercises();
+        enterApp();
+        await Promise.allSettled([loadFeedPosts(), renderLB('weekly'), loadFeedLeagues(), checkUnreadNotifications?.()]);
+      }else{
+        document.getElementById('bottom-nav')?.classList.remove('visible');
+        document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+        const auth=document.getElementById('auth-screen');
+        if(auth){auth.style.display='flex';auth.classList.add('active');}
+      }
+      repairDomButtons();
+    }catch(e){console.error('Init repair error',e); if(oldInit) oldInit();}
+  };
+
+  // ---------- AUTH / ONBOARDING ----------
+  window.handleSignup=async function(){
+    const name=document.getElementById('signup-name').value.trim();
+    const uname=document.getElementById('signup-username').value.replace('@','').trim();
+    const email=document.getElementById('signup-email').value.trim();
+    const pass=document.getElementById('signup-pass').value;
+    if(!name||!uname||!email||!pass)return showErr('Please fill in all fields');
+    if(pass.length<6)return showErr('Password must be at least 6 characters');
+    const btn=document.querySelector('#signup-form .btn-primary');btn.textContent='Creating...';btn.disabled=true;
+    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username:uname}}});
+    btn.textContent='Create account';btn.disabled=false;
+    if(error)return showErr(error.message||'Could not create account');
+    if(!data.user)return showErr('Something went wrong. Please try again.');
+    if(!data.session){
+      switchAuthTab('login');
+      document.getElementById('login-email').value=email;
+      const el=document.getElementById('auth-error');
+      el.className='auth-error ok';el.style.display='block';el.style.background='rgba(0,200,100,.1)';el.style.border='1px solid rgba(0,200,100,.3)';el.style.color='#00c864';
+      el.textContent='✅ Account created! Check your email and click the confirmation link, then sign in.';
+      return;
+    }
+    user=data.user;
+    await sbSafe('Create profile',sb.from('profiles').upsert({id:user.id,username:uname,full_name:name,points:0,streak:0,onboarding_done:false},{onConflict:'id'}));
+    await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');
+  };
+
+  const oldObStep=window.obStep;
+  window.obStep=function(n){
+    if(oldObStep) oldObStep(n);
+    if(n===5) setTimeout(()=>loadObSuggested?.(),50);
+  };
+
+  // ---------- DOM REPAIR ----------
+  window.repairDomButtons=function(){
+    const profActions=document.querySelector('#profile-screen .profile-actions');
+    if(profActions){
+      const leagueBtn=profActions.querySelector('.btn-filled');
+      if(leagueBtn){leagueBtn.textContent='My leagues';leagueBtn.onclick=()=>showScreen('leagues');}
+    }
+    const stepsCard=document.querySelector('#exercise-screen [id="step-tracking-status"]')?.parentElement?.parentElement;
+    if(stepsCard && !document.getElementById('activate-steps-btn')){
+      const btn=document.createElement('button');
+      btn.id='activate-steps-btn';
+      btn.className='btn-primary';
+      btn.style.marginTop='12px';
+      btn.textContent='Activate step tracking';
+      btn.onclick=enableStepTracking;
+      stepsCard.appendChild(btn);
+    }
+    const logMenu=document.querySelector('#log-menu .modal > div:nth-child(3)');
+    if(logMenu && !document.getElementById('quick-create-post-btn')){
+      const makeBtn=(id,txt,fn)=>{
+        const b=document.createElement('button');b.id=id;b.innerHTML=txt;b.style.cssText='background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;color:var(--text);text-align:left';b.onclick=fn;return b;
+      };
+      logMenu.appendChild(makeBtn('quick-create-post-btn','<div style="font-size:24px">📸</div><div><div style="font-size:15px;font-weight:700">Create post</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Share a caption, photo or video</div></div>',()=>{closeModal('log-menu');openCreatePost();}));
+      logMenu.appendChild(makeBtn('quick-create-recipe-btn','<div style="font-size:24px">🍽️</div><div><div style="font-size:15px;font-weight:700">Create recipe</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Add a public or private recipe</div></div>',()=>{closeModal('log-menu');openCreateRecipe();}));
+      logMenu.appendChild(makeBtn('quick-create-story-btn','<div style="font-size:24px">⭕</div><div><div style="font-size:15px;font-weight:700">Add story</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Post another story</div></div>',()=>{closeModal('log-menu');openAddStory();}));
+    }
+    ['food-cal-base','food-pro-base','food-carb-base','food-fat-base'].forEach(id=>{
+      const el=document.getElementById(id); if(el){el.readOnly=true;el.classList.add('readonly-macro');}
+    });
+  };
+
+  // ---------- PROFILE STATS ----------
+  window.syncProfile=async function(){
+    if(!profile)return;
+    const n=profile.full_name||profile.username||'Forte';
+    try{document.getElementById('feed-username').textContent=n.split(' ')[0];}catch(e){}
+    ['stat-pts','profile-pts'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=profile.points||0;});
+    const st=document.getElementById('stat-streak'); if(st)st.textContent=(profile.streak||0)+'🔥';
+    const pn=document.getElementById('profile-name'); if(pn)pn.textContent=n;
+    const pu=document.getElementById('profile-uname'); if(pu)pu.textContent='@'+(profile.username||'');
+    const title=document.getElementById('profile-username-title'); if(title)title.textContent='@'+(profile.username||'');
+    const letter=document.getElementById('profile-avatar-letter'); if(letter)letter.textContent=n[0].toUpperCase();
+    const avatarImg=document.getElementById('profile-avatar-img');
+    if(avatarImg){
+      if(profile.avatar_url){avatarImg.src=profile.avatar_url;avatarImg.style.display='block';letter&&(letter.style.display='none');}
+      else{avatarImg.style.display='none';letter&&(letter.style.display='block');}
+    }
+    const ps=document.getElementById('profile-streak'); if(ps)ps.textContent=profile.streak||0;
+    if(profile.calorie_goal)goals={cal:profile.calorie_goal,pro:profile.protein_goal||150,carb:profile.carb_goal||250,fat:profile.fat_goal||65};
+    renderBodySection?.();
+    await renderProfileStatRow();
+    if(document.getElementById('ptab-workouts')) setProfileTab('workouts');
+    repairDomButtons();
+  };
+
+  window.renderProfileStatRow=async function(){
+    if(!user)return;
+    const row=document.querySelector('#profile-screen .profile-stats'); if(!row)return;
+    const friendRes=await sb.from('friendships').select('*',{count:'exact',head:true}).or(`and(requester_id.eq.${user.id},status.eq.accepted),and(addressee_id.eq.${user.id},status.eq.accepted)`);
+    const wkRes=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',user.id).eq('is_public',true);
+    const recRes=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',user.id).eq('is_private',false);
+    row.innerHTML=`
+      <div class="profile-stat" onclick="showScreen('friends')"><div class="profile-stat-val" id="profile-friends">${friendRes.count||0}</div><div class="profile-stat-label">Friends</div></div>
+      <div class="profile-stat"><div class="profile-stat-val" style="color:var(--accent)" id="profile-pts">${profile.points||0}</div><div class="profile-stat-label">Points</div></div>
+      <div class="profile-stat" onclick="setProfileTab('workouts')"><div class="profile-stat-val" id="profile-workouts-count">${wkRes.count||0}</div><div class="profile-stat-label">Workouts</div></div>
+      <div class="profile-stat" onclick="setProfileTab('recipes')"><div class="profile-stat-val" id="profile-recipes-count">${recRes.count||0}</div><div class="profile-stat-label">Recipes</div></div>`;
+    row.style.gridTemplateColumns='repeat(4,1fr)';
+  };
+
+  // ---------- WORKOUT SAVE + SHARE ----------
+  let workoutSaving=false;
+  window.saveWorkout=async function(){
+    if(workoutSaving)return;
+    if(!user)return showToast('Please sign in first');
+    const title=document.getElementById('workout-title').value.trim()||'Logged a workout!';
+    if(!wkExs.length)return showToast('Add at least one exercise');
+    workoutSaving=true;
+    const snapshot=wkExs.map(ex=>({name:ex.name,group:ex.group,sets:(ex.sets||[]).filter(s=>s.reps||s.weight).map(s=>({reps:parseInt(s.reps)||0,weight:parseFloat(s.weight)||0}))})).filter(e=>e.sets.length);
+    const totalSets=snapshot.reduce((a,e)=>a+e.sets.length,0);
+    try{stopWorkoutTimer();}catch(e){}
+    const wkRes=await sbSafe('Save workout',sb.from('workouts').insert({user_id:user.id,title,is_public:true,points_earned:3,duration_seconds:wkSecs||0,exercise_count:snapshot.length,total_sets:totalSets,workout_snapshot:snapshot,created_at:new Date().toISOString()}).select().single());
+    if(!wkRes.data){workoutSaving=false;return;}
+    const wk=wkRes.data;
+    const rows=[];
+    snapshot.forEach(ex=>ex.sets.forEach((s,i)=>rows.push({workout_id:wk.id,exercise_name:ex.name,set_number:i+1,reps:s.reps,weight:s.weight})));
+    if(rows.length) await sbSafe('Save workout sets',sb.from('workout_sets').insert(rows));
+    await sbSafe('Log workout points',sb.from('points_log').insert({user_id:user.id,points:3,reason:'Workout: '+title,workout_id:wk.id,earned_at:new Date().toISOString()}));
+    const newPts=(profile?.points||0)+3;
+    await sbSafe('Update points',sb.from('profiles').update({points:newPts}).eq('id',user.id));
+    if(profile)profile.points=newPts;
+    closeModal('workout-modal');syncProfile();loadExerciseScreen?.();showToast('Workout saved! +3 pts 🔥');
+    setTimeout(()=>openShareModal(wk.id,title,snapshot),250);
+    workoutSaving=false;
+  };
+
+  window.openShareModal=function(workoutId,title,snapshot){
+    pendingWorkoutId=workoutId||null;
+    window.pendingWorkoutSnapshot=Array.isArray(snapshot)?snapshot:[];
+    const preview=document.getElementById('share-workout-preview');
+    if(preview){preview.style.display=workoutId?'block':'none';}
+    const n=document.getElementById('share-workout-name'); if(n)n.textContent=title||'Create post';
+    const s=document.getElementById('share-workout-stats'); if(s)s.innerHTML=workoutId?`${window.pendingWorkoutSnapshot.length} exercises · ${window.pendingWorkoutSnapshot.reduce((a,e)=>a+(e.sets?.length||0),0)} sets`:'';
+    document.getElementById('share-caption').value='';
+    document.getElementById('share-media-input').value='';
+    document.getElementById('share-media-preview').style.display='none';
+    document.getElementById('share-img-preview').style.display='none';
+    document.getElementById('share-vid-preview').style.display='none';
+    document.getElementById('share-media-label-text').textContent='Tap to add photo or video';
+    document.getElementById('share-submit-btn').textContent=workoutId?'Share workout':'Post';
+    document.getElementById('share-modal').classList.add('open');
+    setTimeout(()=>document.getElementById('share-caption')?.focus(),150);
+  };
+
+  window.openCreatePost=function(){openShareModal(null,'Create post',[]);};
+
+  window.submitPost=async function(){
+    if(!user)return showToast('Sign in first');
+    const btn=document.getElementById('share-submit-btn');btn.textContent='Posting...';btn.disabled=true;
+    const caption=document.getElementById('share-caption').value.trim();
+    const mediaFile=document.getElementById('share-media-input').files[0];
+    let mediaUrl=null,mediaType=null;
+    if(mediaFile){
+      const ext=mediaFile.name.split('.').pop();
+      const path=`posts/${user.id}/${Date.now()}.${ext}`;
+      const up=await sbSafe('Upload post media',sb.storage.from('forte-media').upload(path,mediaFile,{upsert:true,contentType:mediaFile.type}));
+      if(!up.error){const {data:{publicUrl}}=sb.storage.from('forte-media').getPublicUrl(path);mediaUrl=publicUrl;mediaType=mediaFile.type.startsWith('video')?'video':'image';}
+    }
+    const post={user_id:user.id,workout_id:pendingWorkoutId||null,caption,media_url:mediaUrl,media_type:mediaType,likes_count:0,comments_count:0,workout_snapshot:window.pendingWorkoutSnapshot||[],is_public:true,created_at:new Date().toISOString()};
+    const res=await sbSafe('Create post',sb.from('posts').insert(post));
+    btn.textContent='Share to feed';btn.disabled=false;
+    if(!res.error){closeModal('share-modal');showToast('Posted! 🔥');loadFeedPosts();loadProfilePosts?.();}
+  };
+
+  // ---------- FEED POSTS / COMMENTS ----------
+  window.loadFeedPosts=async function(){
+    await loadStories?.();
+    const res=await sbSafe('Load feed',sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(id,title,workout_snapshot,exercise_count,total_sets)').order('created_at',{ascending:false}).limit(30));
+    const posts=res.data||[];
+    const wrap=document.getElementById('feed-posts'); if(!wrap)return;
+    if(!posts.length){wrap.innerHTML='<div class="empty-state"><p>No posts yet. Log a workout or create a post!</p></div>';return;}
+    wrap.innerHTML=posts.map((p,i)=>postCard(p,i)).join('');
+  };
+
+  window.postCard=function(p,i=0){
+    const u=p.profiles||{};
+    const snap=(p.workout_snapshot&&p.workout_snapshot.length?p.workout_snapshot:(p.workouts?.workout_snapshot||[]));
+    const isOwn=user&&p.user_id===user.id;
+    return `<div class="workout-post fade-up" style="animation-delay:${i*.03}s">
+      <div class="post-header" onclick="viewProfile('${u.id||p.user_id}')">${avatarEl(u,36)}<div><div class="post-user">${escapeHtml(u.full_name||u.username||'User')}</div><div class="post-time">${cleanDateAgo(p.created_at)}</div></div>${isOwn?`<button onclick="event.stopPropagation();deletePost('${p.id}')" class="mini-action" style="margin-left:auto;color:var(--red)">Delete</button>`:''}</div>
+      ${p.media_url&&p.media_type==='image'?`<img src="${p.media_url}" style="width:100%;object-fit:cover;cursor:pointer" onclick="openPost('${p.id}')">`:''}
+      ${p.media_url&&p.media_type==='video'?`<video src="${p.media_url}" style="width:100%" controls playsinline></video>`:''}
+      ${p.workout_id?`<div class="post-workout-title">Logged a workout!</div>${workoutSummaryHtml(snap)}<div style="padding:0 16px 12px"><button class="view-workout-btn" onclick="viewWorkoutFromPost('${p.id}')">View workout</button></div>`:''}
+      ${p.caption?`<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);white-space:pre-wrap">${escapeHtml(p.caption)}</div>`:''}
+      <div class="post-actions">
+        <div class="post-action" onclick="toggleLike('${p.id}',this)">❤️ <span id="like-count-${p.id}">${p.likes_count||0}</span></div>
+        <div class="post-action" onclick="openPost('${p.id}')">💬 <span id="comment-count-${p.id}">${p.comments_count||0}</span> comment${(p.comments_count||0)===1?'':'s'}</div>
+      </div>
+    </div>`;
+  };
+
+  window.deletePost=async function(postId){
+    if(!confirm('Delete this post?'))return;
+    const res=await sbSafe('Delete post',sb.from('posts').delete().eq('id',postId).eq('user_id',user.id));
+    if(!res.error){showToast('Post deleted');loadFeedPosts();loadProfilePosts?.();}
+  };
+
+  window.toggleLike=async function(postId,el){
+    if(!user)return showToast('Sign in first');
+    const existing=await sb.from('post_likes').select('id').eq('user_id',user.id).eq('post_id',postId).maybeSingle();
+    if(existing.data){await sb.from('post_likes').delete().eq('id',existing.data.id);}
+    else{
+      await sb.from('post_likes').insert({user_id:user.id,post_id:postId});
+      const post=await sb.from('posts').select('user_id').eq('id',postId).single();
+      if(post.data&&post.data.user_id!==user.id) await sendNotification(post.data.user_id,'like',`${profile?.full_name||profile?.username||'Someone'} liked your post ❤️`,null,{post_id:postId});
+    }
+    await sb.rpc?.('refresh_post_counts',{p_post_id:postId}).catch(()=>{});
+    const count=await sb.from('post_likes').select('*',{count:'exact',head:true}).eq('post_id',postId);
+    const c=document.getElementById('like-count-'+postId);if(c)c.textContent=count.count||0;
+  };
+
+  window.viewWorkoutFromPost=async function(postId){
+    const res=await sb.from('posts').select('*,workouts(*)').eq('id',postId).single();
+    const p=res.data;if(!p)return;
+    const snap=(p.workout_snapshot&&p.workout_snapshot.length?p.workout_snapshot:(p.workouts?.workout_snapshot||[]));
+    document.getElementById('post-modal-content').innerHTML=`<div style="font-size:18px;font-weight:700;margin-bottom:8px">Logged a workout!</div>${workoutSummaryHtml(snap)}${snap.map(ex=>`<div style="margin:12px 0"><div style="font-size:15px;font-weight:700;margin-bottom:6px">${escapeHtml(ex.name)}</div>${(ex.sets||[]).map((s,i)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span>Set ${i+1}</span><span>${s.weight||0}kg × ${s.reps||0} reps</span></div>`).join('')}</div>`).join('')}`;
+    document.getElementById('post-modal').classList.add('open');
+  };
+
+  window.openPost=async function(postId){
+    const postRes=await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(*)').eq('id',postId).single();
+    const post=postRes.data;if(!post)return;
+    const comRes=await sb.from('comments').select('*,profiles!comments_user_id_fkey(id,username,full_name,avatar_url)').eq('post_id',postId).order('created_at');
+    const comments=comRes.data||[];
+    const snap=(post.workout_snapshot&&post.workout_snapshot.length?post.workout_snapshot:(post.workouts?.workout_snapshot||[]));
+    document.getElementById('post-modal-content').innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">${avatarEl(post.profiles||{},36)}<div><div style="font-size:14px;font-weight:600">${escapeHtml(post.profiles?.full_name||post.profiles?.username||'User')}</div><div style="font-size:12px;color:var(--text3)">${cleanDateAgo(post.created_at)}</div></div>${post.user_id===user?.id?`<button onclick="deletePost('${post.id}');closeModal('post-modal')" class="mini-action" style="margin-left:auto;color:var(--red)">Delete</button>`:''}</div>
+      ${post.media_url&&post.media_type==='image'?`<img src="${post.media_url}" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px;object-fit:cover">`:''}
+      ${post.workout_id?`<div style="font-size:15px;font-weight:700;margin-bottom:8px">Logged a workout!</div>${workoutSummaryHtml(snap)}<button class="view-workout-btn" onclick="viewWorkoutFromPost('${post.id}')">View workout details</button>`:''}
+      ${post.caption?`<div style="font-size:14px;margin:14px 0;white-space:pre-wrap">${escapeHtml(post.caption)}</div>`:''}
+      <div style="font-size:12px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 10px">Comments (${comments.length})</div>
+      <div id="comments-wrap" style="max-height:260px;overflow-y:auto">${comments.map(commentHtml).join('')||'<div style="color:var(--text3);font-size:13px">No comments yet</div>'}</div>`;
+    const inp=document.getElementById('comment-inp');inp.dataset.postId=postId;inp.dataset.parentId='';inp.placeholder='Add a comment...';
+    document.getElementById('post-modal').classList.add('open');
+  };
+
+  window.commentHtml=function(c){
+    const u=c.profiles||{};
+    return `<div style="display:flex;gap:10px;margin-bottom:12px" id="comment-${c.id}">${avatarEl(u,28)}<div style="flex:1"><div style="font-size:13px;font-weight:600">${escapeHtml(u.username||'User')}</div><div style="font-size:13px;color:var(--text2);white-space:pre-wrap">${escapeHtml(c.content)}</div><div class="action-row"><button class="mini-action" onclick="toggleCommentLike('${c.id}',this)">❤️ ${c.likes_count||0}</button><button class="mini-action" onclick="replyToComment('${c.id}','${escapeHtml(u.username||'user')}')">Reply</button>${c.user_id===user?.id?`<button class="mini-action" style="color:var(--red)" onclick="deleteComment('${c.id}')">Delete</button>`:''}</div></div></div>`;
+  };
+
+  window.submitComment=async function(){
+    const inp=document.getElementById('comment-inp');
+    const postId=inp.dataset.postId; const parentId=inp.dataset.parentId||null; const content=inp.value.trim();
+    if(!content||!postId||!user)return;
+    const res=await sbSafe('Post comment',sb.from('comments').insert({user_id:user.id,post_id:postId,parent_id:parentId,content}));
+    if(!res.error){inp.value='';inp.dataset.parentId='';inp.placeholder='Add a comment...';openPost(postId);loadFeedPosts();}
+  };
+
+  window.replyToComment=function(id,username){const inp=document.getElementById('comment-inp');inp.dataset.parentId=id;inp.placeholder='Reply to @'+username;inp.focus();};
+
+  window.toggleCommentLike=async function(commentId,btn){
+    const ex=await sb.from('comment_likes').select('id').eq('comment_id',commentId).eq('user_id',user.id).maybeSingle();
+    if(ex.data) await sb.from('comment_likes').delete().eq('id',ex.data.id); else await sb.from('comment_likes').insert({comment_id:commentId,user_id:user.id});
+    const cnt=await sb.from('comment_likes').select('*',{count:'exact',head:true}).eq('comment_id',commentId);
+    await sb.from('comments').update({likes_count:cnt.count||0}).eq('id',commentId);
+    btn.textContent='❤️ '+(cnt.count||0);
+  };
+
+  window.deleteComment=async function(id){
+    await sb.from('comments').delete().eq('id',id).eq('user_id',user.id);
+    showToast('Comment deleted');
+    document.getElementById('post-modal').classList.remove('open');
+    loadFeedPosts();
+  };
+
+  // ---------- FRIENDS + PROFILES + DMS ----------
+  window.sendNotification=async function(userId,type,title,body,data={}){
+    return sb.from('notifications').insert({user_id:userId,actor_id:user?.id||null,type,title,body,data});
+  };
+
+  window.sendFriendRequest=async function(toId){
+    if(!user)return showToast('Sign in first');
+    if(toId===user.id)return;
+    const res=await sbSafe('Send friend request',sb.from('friendships').upsert({requester_id:user.id,addressee_id:toId,status:'pending',updated_at:new Date().toISOString()},{onConflict:'requester_id,addressee_id'}).select().single());
+    if(res.data){await sendNotification(toId,'friend_request',`${profile?.full_name||profile?.username||'Someone'} sent you a friend request`,'Accept or decline the request.',{friendship_id:res.data.id,requester_id:user.id});showToast('Friend request sent! 🤝');}
+  };
+
+  window.acceptFriend=async function(fromIdOrFriendshipId){
+    let q=sb.from('friendships').update({status:'accepted',updated_at:new Date().toISOString()});
+    if(String(fromIdOrFriendshipId).length>30) q=q.eq('id',fromIdOrFriendshipId); else q=q.eq('requester_id',fromIdOrFriendshipId).eq('addressee_id',user.id);
+    await sbSafe('Accept friend',q);
+    showToast('Friend accepted!');loadFriends();loadNotifications();renderProfileStatRow();
+  };
+
+  window.declineFriend=async function(fromIdOrFriendshipId){
+    let q=sb.from('friendships').update({status:'declined',updated_at:new Date().toISOString()});
+    if(String(fromIdOrFriendshipId).length>30) q=q.eq('id',fromIdOrFriendshipId); else q=q.eq('requester_id',fromIdOrFriendshipId).eq('addressee_id',user.id);
+    await sbSafe('Decline friend',q);showToast('Request declined');loadFriends();loadNotifications();
+  };
+
+  window.userCard=function(u,showFollow){
+    return `<div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;cursor:pointer" onclick="viewProfile('${u.id}')">${avatarEl(u,40)}<div style="flex:1"><div style="font-size:14px;font-weight:600">${escapeHtml(u.full_name||u.username)}</div><div style="font-size:12px;color:var(--text3)">@${escapeHtml(u.username||'')} · ${u.points||0} pts</div></div>${showFollow?`<button onclick="event.stopPropagation();sendFriendRequest('${u.id}')" class="mini-action">Follow</button>`:`<button onclick="event.stopPropagation();startDM('${u.id}')" class="mini-action">Message</button>`}</div>`;
+  };
+
+  window.viewProfile=async function(userId){
+    if(!userId)return;
+    const pRes=await sb.from('profiles').select('*').eq('id',userId).single();
+    const p=pRes.data;if(!p)return showToast('Profile not found');
+    const w=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',userId).eq('is_public',true);
+    const r=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',userId).eq('is_private',false);
+    document.getElementById('profile-view-content').innerHTML=`<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">${avatarEl(p,68)}<div><div style="font-size:18px;font-weight:700">${escapeHtml(p.full_name||p.username)}</div><div style="font-size:13px;color:var(--text3)">@${escapeHtml(p.username||'')}</div><div style="display:flex;gap:16px;margin-top:10px"><div><strong>${p.points||0}</strong><div style="font-size:11px;color:var(--text3)">Points</div></div><div><strong>${w.count||0}</strong><div style="font-size:11px;color:var(--text3)">Workouts</div></div><div><strong>${r.count||0}</strong><div style="font-size:11px;color:var(--text3)">Recipes</div></div></div></div></div>${userId!==user?.id?`<div style="display:flex;gap:8px;margin-bottom:16px"><button onclick="sendFriendRequest('${p.id}')" class="btn-primary" style="margin-top:0">Follow</button><button onclick="closeModal('profile-view-modal');startDM('${p.id}')" class="btn-secondary">Message</button></div>`:''}<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="btn-secondary" onclick="loadPublicUserWorkouts('${p.id}')">Public workouts</button><button class="btn-secondary" onclick="loadPublicUserRecipes('${p.id}')">Public recipes</button></div><div id="public-user-content" style="margin-top:14px"></div>`;
+    document.getElementById('profile-view-modal').classList.add('open');
+  };
+
+  window.loadPublicUserWorkouts=async function(uid){
+    const res=await sb.from('workouts').select('*').eq('user_id',uid).eq('is_public',true).order('created_at',{ascending:false});
+    document.getElementById('public-user-content').innerHTML=(res.data||[]).map(w=>`<div class="workout-thumb" style="margin-bottom:8px"><div class="workout-thumb-title">${escapeHtml(w.title||'Workout')}</div><div class="workout-thumb-sub">${new Date(w.created_at).toLocaleDateString('en-GB')}</div><div class="workout-thumb-pts">${w.exercise_count||0} exercises · ${w.total_sets||0} sets</div></div>`).join('')||'<div class="empty-state"><p>No public workouts</p></div>';
+  };
+
+  window.loadPublicUserRecipes=async function(uid){
+    const res=await sb.from('recipes').select('*').eq('user_id',uid).eq('is_private',false).order('created_at',{ascending:false});
+    document.getElementById('public-user-content').innerHTML=(res.data||[]).map(r=>`<div onclick="viewRecipe('${r.id}')" class="workout-thumb" style="margin-bottom:8px"><div class="workout-thumb-title">${escapeHtml(r.title)}</div><div class="workout-thumb-sub">${r.calories||0} kcal · ${r.protein||0}g protein</div></div>`).join('')||'<div class="empty-state"><p>No public recipes</p></div>';
+  };
+
+  window.startDM=async function(otherUserId){
+    if(!user)return showToast('Sign in first');
+    const mine=await sb.from('conversation_members').select('conversation_id').eq('user_id',user.id);
+    let convId=null;
+    if(mine.data?.length){
+      const shared=await sb.from('conversation_members').select('conversation_id').eq('user_id',otherUserId).in('conversation_id',mine.data.map(x=>x.conversation_id));
+      if(shared.data?.length)convId=shared.data[0].conversation_id;
+    }
+    if(!convId){
+      const c=await sbSafe('Create conversation',sb.from('conversations').insert({}).select().single());
+      if(!c.data)return;
+      convId=c.data.id;
+      await sbSafe('Add DM members',sb.from('conversation_members').insert([{conversation_id:convId,user_id:user.id},{conversation_id:convId,user_id:otherUserId}]));
+    }
+    openChat(convId,otherUserId);
+  };
+
+  // ---------- LEAGUES ----------
+  window.renderLBList=function(list){
+    const ranks=['gold','silver','bronze'];
+    document.getElementById('lb-list').innerHTML=list.length?list.map((u,i)=>`<div class="lb-item"><div class="lb-rank ${ranks[i]||''}">${i+1}</div>${avatarEl(u,36)}<div class="lb-info"><div class="lb-name">${escapeHtml(u.full_name||u.username)}</div><div class="lb-sub">${u.workouts??0} workouts · ${u.recipes??0} recipes</div></div><div class="lb-pts">${u.points||0}</div></div>`).join(''):'<div class="empty-state"><p>No leaderboard data yet</p></div>';
+  };
+
+  window.renderLB=async function(period='weekly'){
+    const res=await sb.from('profiles').select('id,username,full_name,avatar_url,points,streak').order('points',{ascending:false}).limit(20);
+    renderLBList(res.data||[]);
+  };
+
+  window.loadFeedLeagues=async function(){
+    if(!user)return;
+    const inviteRes=await sb.from('league_members').select('id,status,leagues(id,name,description)').eq('user_id',user.id).eq('status','pending');
+    const myRes=await sb.from('league_members').select('leagues(id,name,is_private)').eq('user_id',user.id).eq('status','accepted').limit(10);
+    const el=document.getElementById('feed-leagues'); if(!el)return;
+    const invites=(inviteRes.data||[]).map(m=>`<div style="background:rgba(0,200,100,.08);border:1px solid rgba(0,200,100,.25);border-radius:var(--radius-sm);padding:12px 14px;min-width:220px;flex-shrink:0"><div style="font-size:13px;font-weight:700">Invite: ${escapeHtml(m.leagues?.name||'League')}</div><div class="action-row"><button class="mini-action accept-btn" onclick="acceptLeagueInvite('${m.id}')">✓ Join</button><button class="mini-action decline-btn" onclick="declineLeagueInvite('${m.id}')">× Decline</button></div></div>`);
+    const leagues=(myRes.data||[]).map(d=>d.leagues).filter(Boolean).map(l=>`<div onclick="openLeague('${l.id}')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;flex-shrink:0"><div style="font-size:13px;font-weight:700">${escapeHtml(l.name)}</div><div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private?'🔒 Private':'Public'}</div></div>`);
+    el.innerHTML=[...invites,...leagues].join('')||`<div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">+ Create or join a league</div>`;
+  };
+
+  window.inviteToLeague=async function(leagueId,userId){
+    const res=await sbSafe('Invite to league',sb.from('league_members').upsert({league_id:leagueId,user_id:userId,invited_by:user.id,status:'pending'},{onConflict:'league_id,user_id'}).select().single());
+    if(res.data){
+      await sendNotification(userId,'league_invite',`${profile?.full_name||profile?.username||'Someone'} invited you to a league`,'Accept or decline the invite.',{league_member_id:res.data.id,league_id:leagueId});
+      try{
+        await startDM(userId);
+        await sb.from('messages').insert({conversation_id:currentConvId,sender_id:user.id,content:'I invited you to join my Forte league. Check your notifications to accept ✅'});
+      }catch(e){}
+      showToast('Invite sent!');
+    }
+  };
+
+  window.acceptLeagueInvite=async function(memberId){
+    await sbSafe('Accept league invite',sb.from('league_members').update({status:'accepted',joined_at:new Date().toISOString()}).eq('id',memberId));
+    showToast('Joined league!');
+    loadFeedLeagues();loadLeagues();loadNotifications();
+  };
+
+  window.declineLeagueInvite=async function(memberId){
+    await sbSafe('Decline league invite',sb.from('league_members').update({status:'declined'}).eq('id',memberId));
+    showToast('Invite declined');
+    loadFeedLeagues();loadNotifications();
+  };
+
+  window.openLeague=async function(leagueId){
+    const league=(await sb.from('leagues').select('*').eq('id',leagueId).single()).data; if(!league)return;
+    const members=(await sb.from('league_members').select('user_id,joined_at,profiles(id,username,full_name,avatar_url,points)').eq('league_id',leagueId).eq('status','accepted')).data||[];
+    const rows=[];
+    for(const m of members){
+      const start=m.joined_at||league.created_at;
+      const pts=(await sb.from('points_log').select('points').eq('user_id',m.user_id).gte('earned_at',start)).data||[];
+      const wk=await sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start);
+      const rc=await sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start);
+      rows.push({...m.profiles,points:pts.reduce((a,x)=>a+(x.points||0),0),workouts:wk.count||0,recipes:rc.count||0});
+    }
+    rows.sort((a,b)=>(b.points||0)-(a.points||0));
+    document.getElementById('post-modal-content').innerHTML=`<div style="font-size:18px;font-weight:700;margin-bottom:4px">${escapeHtml(league.name)}</div>${league.description?`<div style="font-size:13px;color:var(--text2);margin-bottom:12px">${escapeHtml(league.description)}</div>`:''}<div style="display:grid;grid-template-columns:40px 1fr 70px 70px 70px;gap:6px;font-size:11px;color:var(--text3);text-transform:uppercase;margin-bottom:8px"><div>#</div><div>User</div><div>Points</div><div>Workouts</div><div>Recipes</div></div>${rows.map((u,i)=>`<div style="display:grid;grid-template-columns:40px 1fr 70px 70px 70px;gap:6px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><div style="font-weight:700">${i+1}</div><div style="display:flex;gap:8px;align-items:center">${avatarEl(u,28)}<span style="font-size:13px;font-weight:600">${escapeHtml(u.username||'user')}</span></div><div style="color:var(--accent);font-weight:700">${u.points||0}</div><div>${u.workouts||0}</div><div>${u.recipes||0}</div></div>`).join('')||'<div class="empty-state"><p>No members yet</p></div>'}<div style="margin-top:14px"><div style="font-size:12px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:8px">Invite friends</div><div id="league-invite-list-${leagueId}"></div></div>`;
+    document.getElementById('post-modal').classList.add('open');
+    loadFriendsForInvite(leagueId);
+  };
+
+  window.loadFriendsForInvite=async function(leagueId){
+    const sent=await sb.from('friendships').select('addressee_id,profiles!friendships_addressee_id_fkey(id,username,full_name,avatar_url)').eq('requester_id',user.id).eq('status','accepted');
+    const rec=await sb.from('friendships').select('requester_id,profiles!friendships_requester_id_fkey(id,username,full_name,avatar_url)').eq('addressee_id',user.id).eq('status','accepted');
+    const friends=[...(sent.data||[]).map(f=>f.profiles),...(rec.data||[]).map(f=>f.profiles)].filter(Boolean);
+    const el=document.getElementById('league-invite-list-'+leagueId); if(!el)return;
+    el.innerHTML=friends.length?friends.map(u=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><div style="display:flex;gap:8px;align-items:center">${avatarEl(u,30)}<span style="font-size:13px;font-weight:600">${escapeHtml(u.username||'')}</span></div><button onclick="inviteToLeague('${leagueId}','${u.id}')" class="mini-action">Invite</button></div>`).join(''):'<div style="font-size:12px;color:var(--text3)">No friends to invite yet</div>';
+  };
+
+  // ---------- NOTIFICATIONS ----------
+  window.loadNotifications=async function(){
+    if(!user)return;
+    const res=await sb.from('notifications').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(40);
+    const list=res.data||[]; const el=document.getElementById('notif-list'); if(!el)return;
+    if(!list.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:14px">No notifications yet</div>';return;}
+    el.innerHTML=list.map(n=>`<div style="padding:14px 12px;border-radius:var(--radius-sm);background:${n.read?'transparent':'rgba(255,0,144,.04)'};border-bottom:1px solid var(--border)"><div style="display:flex;gap:12px"><div style="font-size:22px">${n.type==='friend_request'?'👤':n.type==='league_invite'?'🏆':n.type==='like'?'❤️':n.type==='comment'?'💬':'🔔'}</div><div style="flex:1"><div style="font-size:14px;font-weight:600">${escapeHtml(n.title||'Notification')}</div>${n.body?`<div style="font-size:13px;color:var(--text2);margin-top:3px">${escapeHtml(n.body)}</div>`:''}<div style="font-size:11px;color:var(--text3);margin-top:4px">${cleanDateAgo(n.created_at)}</div>${notificationActions(n)}</div></div></div>`).join('');
+    const unread=list.filter(n=>!n.read).length; const dot=document.getElementById('notif-dot'); if(dot)dot.style.display=unread?'block':'none';
+  };
+
+  window.notificationActions=function(n){
+    const d=n.data||{};
+    if(n.type==='friend_request')return `<div class="action-row"><button class="mini-action accept-btn" onclick="acceptFriend('${d.friendship_id||d.requester_id}');markRead('${n.id}',this)">✓ Accept</button><button class="mini-action decline-btn" onclick="declineFriend('${d.friendship_id||d.requester_id}');markRead('${n.id}',this)">× Decline</button></div>`;
+    if(n.type==='league_invite')return `<div class="action-row"><button class="mini-action accept-btn" onclick="acceptLeagueInvite('${d.league_member_id}');markRead('${n.id}',this)">✓ Join</button><button class="mini-action decline-btn" onclick="declineLeagueInvite('${d.league_member_id}');markRead('${n.id}',this)">× Decline</button></div>`;
+    return '';
+  };
+
+  // ---------- STORIES ----------
+  window.loadStories=async function(){
+    const row=document.getElementById('stories-row'); if(!row)return;
+    const res=await sb.from('stories').select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)').gt('expires_at',new Date().toISOString()).order('created_at',{ascending:false});
+    const groups={}; const order=[];
+    if(user){groups[user.id]={profile:profile,stories:[],isMe:true};order.push(user.id);}
+    (res.data||[]).forEach(s=>{if(!groups[s.user_id]){groups[s.user_id]={profile:s.profiles,stories:[],isMe:s.user_id===user?.id};order.push(s.user_id);}groups[s.user_id].stories.push(s);});
+    storyGroups=order.map(uid=>groups[uid]);
+    row.innerHTML=storyGroups.map((g,i)=>{
+      const p=g.profile||{};
+      const has=g.stories.length>0;
+      const allViewed=has&&g.stories.every(s=>localStorage.getItem('viewed_story_'+s.id));
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" onclick="${has?`openStoryViewer(${i})`:'openAddStory()'}"><div style="position:relative"><div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${has&&!allViewed?'linear-gradient(135deg,var(--accent),#ff9500)':'var(--bg3)'}"><div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">${p.avatar_url?`<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:`<div style="font-size:17px;font-weight:700;color:var(--accent)">${escapeHtml((p.full_name||p.username||'?')[0]).toUpperCase()}</div>`}</div></div>${g.isMe?`<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);font-size:15px;font-weight:700;color:#0a0a0a;line-height:1;cursor:pointer">+</button>`:''}</div><div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.isMe?'Your story':escapeHtml(p.username||'')}</div></div>`;
+    }).join('')||'<div style="font-size:13px;color:var(--text3);padding:8px 0">No stories yet.</div>';
+  };
+
+  const oldShowStory=window.showStory;
+  window.showStory=function(groupIdx,storyIdx){ if(oldShowStory) oldShowStory(groupIdx,storyIdx); setTimeout(loadStories,100); };
+  const oldCloseStory=window.closeStoryViewer;
+  window.closeStoryViewer=function(){ if(oldCloseStory) oldCloseStory(); setTimeout(loadStories,100); };
+
+  // ---------- NUTRITION ----------
+  window.selectSearchResult=function(el){
+    fillFoodForm(el.dataset.name,parseFloat(el.dataset.cal)||0,parseFloat(el.dataset.pro)||0,parseFloat(el.dataset.carb)||0,parseFloat(el.dataset.fat)||0,100,'g');
+    document.getElementById('food-search-results').style.display='none';
+    document.getElementById('food-search-inp').value=el.dataset.name;
+  };
+
+  window.fillFoodForm=function(name,cal,pro,carb,fat,servingAmt=100,servingUnit='g'){
+    document.getElementById('food-name').value=name||'';
+    document.getElementById('food-cal-base').value=cal||0;
+    document.getElementById('food-pro-base').value=pro||0;
+    document.getElementById('food-carb-base').value=carb||0;
+    document.getElementById('food-fat-base').value=fat||0;
+    document.getElementById('food-serving-amount').value=servingAmt||100;
+    document.getElementById('food-serving-unit').value=servingUnit||'g';
+    recalcMacros();
+  };
+
+  window.recalcMacros=function(){
+    const amount=parseFloat(document.getElementById('food-serving-amount').value)||0;
+    const unit=document.getElementById('food-serving-unit').value||'g';
+    const factor=(amount*(UNIT_TO_G[unit]||1))/100;
+    const cal=parseFloat(document.getElementById('food-cal-base').value)||0;
+    const pro=parseFloat(document.getElementById('food-pro-base').value)||0;
+    const carb=parseFloat(document.getElementById('food-carb-base').value)||0;
+    const fat=parseFloat(document.getElementById('food-fat-base').value)||0;
+    document.getElementById('food-cal-total').textContent=Math.round(cal*factor);
+    document.getElementById('food-pro-total').textContent=(Math.round(pro*factor*10)/10)+'g';
+    document.getElementById('food-carb-total').textContent=(Math.round(carb*factor*10)/10)+'g';
+    document.getElementById('food-fat-total').textContent=(Math.round(fat*factor*10)/10)+'g';
+  };
+
+  window.saveFood=async function(){
+    if(!user)return showToast('Please sign in first');
+    const name=document.getElementById('food-name').value.trim(); if(!name)return showToast('Choose a food first');
+    const amount=parseFloat(document.getElementById('food-serving-amount').value)||100;
+    const unit=document.getElementById('food-serving-unit').value||'g';
+    const factor=(amount*(UNIT_TO_G[unit]||1))/100;
+    const entry={user_id:user.id,food_name:`${name} (${amount}${unit})`,meal_type:document.getElementById('food-meal').value,calories:Math.round((parseFloat(document.getElementById('food-cal-base').value)||0)*factor),protein:Math.round((parseFloat(document.getElementById('food-pro-base').value)||0)*factor*10)/10,carbs:Math.round((parseFloat(document.getElementById('food-carb-base').value)||0)*factor*10)/10,fats:Math.round((parseFloat(document.getElementById('food-fat-base').value)||0)*factor*10)/10,serving_amount:amount,serving_unit:unit,log_date:forteToday()};
+    const res=await sbSafe('Log food',sb.from('nutrition_logs').insert(entry));
+    if(!res.error){closeModal('food-modal');showToast('Food logged! 🥗');await loadNutrition();}
+  };
+
+  window.loadNutrition=async function(){
+    if(!user)return;
+    const res=await sbSafe('Load nutrition',sb.from('nutrition_logs').select('*').eq('user_id',user.id).eq('log_date',forteToday()).order('created_at',{ascending:true}));
+    nutLogs=res.data||[]; renderNutrition();
+  };
+
+  // ---------- STEPS ----------
+  window.enableStepTracking=async function(){
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+      const perm=await DeviceMotionEvent.requestPermission().catch(()=>null);
+      if(perm!=='granted')return showToast('Motion permission is needed for steps');
+    }
+    localStorage.setItem('forte_step_tracking','active');
+    startPedometerTracking();
+    const btn=document.getElementById('activate-steps-btn'); if(btn)btn.textContent='Tracking active';
+    showToast('Step tracking activated 👟');
+  };
+
+  window.simulateStepsForTesting=function(){
+    if(location.hostname==='localhost'){
+      const sim=setInterval(()=>{if(!stepTrackingActive){clearInterval(sim);return;}stepCount++;updateStepDisplay();},3000);
+    }
+  };
+
+  const oldShowScreen=window.showScreen;
+  window.showScreen=function(name){ oldShowScreen(name); setTimeout(repairDomButtons,100); };
+})();
+
+init();
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
