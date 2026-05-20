@@ -9211,6 +9211,220 @@ loadFeedLeagues = async function(){
     `;
   }
 };
+  /* =========================================================
+   FORTE LEAGUE INVITE BUTTONS INSIDE DMS
+   - League invite DM becomes an interactive card
+   - Friend can join/decline directly inside chat
+   Paste above init();
+   ========================================================= */
+
+function forteLeagueInviteMessage(league){
+  return `[[FORTE_LEAGUE_INVITE:${league.id}:${encodeURIComponent(league.name || 'League')}]]`;
+}
+
+function parseForteLeagueInvite(content){
+  const match = String(content || '').match(/\[\[FORTE_LEAGUE_INVITE:([^:]+):(.+?)\]\]/);
+  if(!match) return null;
+
+  return {
+    leagueId: match[1],
+    leagueName: decodeURIComponent(match[2] || 'League')
+  };
+}
+
+/* Replace the previous DM invite sender */
+sendLeagueInviteDM = async function(invitedUserId, league){
+  const u = await forteLeagueUser();
+  if(!u || !invitedUserId || !league) return;
+
+  try{
+    const { data:convId, error:rpcError } = await sb.rpc('start_dm', {
+      other_user_id: invitedUserId
+    });
+
+    if(rpcError) throw rpcError;
+    if(!convId) throw new Error('No conversation returned');
+
+    const { error:msgError } = await sb
+      .from('messages')
+      .insert({
+        conversation_id: convId,
+        sender_id: u.id,
+        content: forteLeagueInviteMessage(league)
+      });
+
+    if(msgError) throw msgError;
+
+  }catch(err){
+    console.error('LEAGUE INVITE DM ERROR:', err);
+  }
+};
+
+async function acceptLeagueInviteFromDM(leagueId){
+  await acceptLeagueInvite(leagueId);
+
+  if(currentConvId){
+    await loadMessages(currentConvId);
+  }
+}
+
+async function declineLeagueInviteFromDM(leagueId){
+  await declineLeagueInvite(leagueId);
+
+  if(currentConvId){
+    await loadMessages(currentConvId);
+  }
+}
+
+function leagueInviteCardHtml(invite, isMe){
+  if(isMe){
+    return `
+      <div style="min-width:230px">
+        <div style="font-size:12px;font-weight:800;color:#fff;opacity:.85;margin-bottom:6px">
+          🏆 League invite sent
+        </div>
+        <div style="font-size:16px;font-weight:900;color:#fff;margin-bottom:4px">
+          ${forteLeagueEsc(invite.leagueName)}
+        </div>
+        <div style="font-size:12px;color:rgba(255,255,255,.8)">
+          Waiting for them to accept
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="min-width:240px">
+      <div style="font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">
+        League invite
+      </div>
+
+      <div style="font-size:17px;font-weight:900;color:var(--text);margin-bottom:4px">
+        🏆 ${forteLeagueEsc(invite.leagueName)}
+      </div>
+
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+        You’ve been invited to join this league.
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="event.stopPropagation();acceptLeagueInviteFromDM('${invite.leagueId}')"
+          style="
+            flex:1;
+            background:#00c853;
+            border:none;
+            border-radius:10px;
+            padding:10px;
+            color:#fff;
+            font-size:13px;
+            font-weight:900;
+            cursor:pointer;
+          ">
+          Join
+        </button>
+
+        <button onclick="event.stopPropagation();declineLeagueInviteFromDM('${invite.leagueId}')"
+          style="
+            flex:1;
+            background:#ff3b30;
+            border:none;
+            border-radius:10px;
+            padding:10px;
+            color:#fff;
+            font-size:13px;
+            font-weight:900;
+            cursor:pointer;
+          ">
+          Decline
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+/* Override chat bubble renderer again so league invites show as buttons */
+chatMessageHtml = function(m){
+  const isMe = m.sender_id === user?.id;
+  const p = m.profiles || {};
+  const time = forteTime(m.created_at);
+
+  const invite = parseForteLeagueInvite(m.content);
+
+  let bubbleContent = '';
+
+  if(invite){
+    bubbleContent = leagueInviteCardHtml(invite, isMe);
+  }else{
+    if(m.media_url && m.media_type === 'image'){
+      bubbleContent += `
+        <img src="${m.media_url}" onclick="event.stopPropagation();window.open('${m.media_url}','_blank')"
+          style="max-width:260px;width:100%;border-radius:14px;display:block;cursor:pointer;margin-bottom:${m.content ? '8px' : '0'}">
+      `;
+    }
+
+    if(m.media_url && m.media_type === 'video'){
+      bubbleContent += `
+        <video src="${m.media_url}" controls playsinline onclick="event.stopPropagation()"
+          style="max-width:260px;width:100%;border-radius:14px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></video>
+      `;
+    }
+
+    if(m.media_url && m.media_type === 'audio'){
+      bubbleContent += `
+        <audio src="${m.media_url}" controls onclick="event.stopPropagation()"
+          style="width:240px;display:block;margin-bottom:${m.content ? '8px' : '0'}"></audio>
+      `;
+    }
+
+    if(m.content){
+      bubbleContent += `<div>${forteEsc(m.content)}</div>`;
+    }
+
+    if(!bubbleContent){
+      bubbleContent = `<div></div>`;
+    }
+  }
+
+  const bg = isMe ? '#ff0090' : 'var(--bg2)';
+  const color = isMe ? '#fff' : 'var(--text)';
+  const radius = isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px';
+  const status = forteMessageStatus(m);
+  const reactionsHtml = forteReactionSummary(m.id);
+
+  return `
+    <div style="display:flex;flex-direction:${isMe?'row-reverse':'row'};align-items:flex-end;gap:8px;margin-bottom:8px">
+      ${!isMe ? avatarEl(p,28) : ''}
+      <div style="max-width:78%;display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'}">
+        <div
+          onclick="${invite ? '' : `openForteEmojiTray(event,'${m.id}')`}"
+          ontouchstart="${invite ? '' : `this.dataset.pressTimer=setTimeout(()=>openForteEmojiTray(event,'${m.id}'),350)`}"
+          ontouchend="${invite ? '' : `clearTimeout(this.dataset.pressTimer)`}"
+          oncontextmenu="${invite ? 'return false;' : `openForteEmojiTray(event,'${m.id}');return false;`}"
+          style="
+            background:${bg};
+            color:${color};
+            padding:${invite ? '14px' : (m.media_url ? '6px' : '10px 14px')};
+            border-radius:${radius};
+            font-size:14px;
+            line-height:1.5;
+            word-break:break-word;
+            cursor:${invite ? 'default' : 'pointer'};
+            user-select:none;
+            -webkit-user-select:none;
+            border:${invite && !isMe ? '1px solid var(--border)' : 'none'};
+          ">
+          ${bubbleContent}
+        </div>
+
+        ${reactionsHtml}
+
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;text-align:${isMe?'right':'left'}">
+          ${time}${isMe ? ` · ${status}` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+};
 init();
 </script>
 
