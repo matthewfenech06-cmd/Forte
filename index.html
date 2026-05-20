@@ -9925,6 +9925,278 @@ fillFoodForm = function(name, cal, pro, carb, fat, servingAmt, servingUnit){
 };
 
 setTimeout(moveServingTotalsAboveBaseValues, 700);
+  /* =========================================================
+   FORTE SIGNUP + PROFILE LOAD FIX
+   - Fixes "Cannot set properties of null" after signup
+   - Makes signup create profile safely
+   - Gives real signup error messages
+   Paste above init();
+   ========================================================= */
+
+function forteSignupToast(msg){
+  if(typeof forteToast === 'function') return forteToast(msg);
+  if(typeof safeToast === 'function') return safeToast(msg);
+  if(typeof showToast === 'function') return showToast(msg);
+  console.log(msg);
+}
+
+function forteSafeSetText(id, value){
+  const el = document.getElementById(id);
+  if(el) el.textContent = value;
+}
+
+function forteShowAuthMessage(msg, ok=false){
+  const el = document.getElementById('auth-error');
+  if(!el) return alert(msg);
+
+  el.className = ok ? 'auth-error ok' : 'auth-error err';
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function cleanForteUsername(v){
+  return String(v || '')
+    .replace('@','')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+/* Fix crashing function */
+loadWkCount = async function(){
+  if(!user) return;
+
+  try{
+    const { count, error } = await sb
+      .from('workouts')
+      .select('*', { count:'exact', head:true })
+      .eq('user_id', user.id);
+
+    if(error){
+      console.warn('loadWkCount error:', error);
+      return;
+    }
+
+    forteSafeSetText('stat-workouts', count || 0);
+    forteSafeSetText('profile-workouts-count', count || 0);
+
+    if(typeof loadMyWorkouts === 'function'){
+      await loadMyWorkouts();
+    }
+
+  }catch(err){
+    console.warn('loadWkCount crashed safely:', err);
+  }
+};
+
+/* Safer profile sync */
+const oldForteSyncProfile = typeof syncProfile === 'function' ? syncProfile : null;
+
+syncProfile = function(){
+  if(!profile) return;
+
+  const n = profile.full_name || profile.username || 'User';
+
+  forteSafeSetText('feed-username', n.split(' ')[0]);
+  forteSafeSetText('stat-pts', profile.points || 0);
+  forteSafeSetText('stat-streak', (profile.streak || 0) + '🔥');
+  forteSafeSetText('profile-name', n);
+  forteSafeSetText('profile-uname', '@' + (profile.username || ''));
+  forteSafeSetText('profile-avatar-letter', n[0]?.toUpperCase() || 'F');
+  forteSafeSetText('profile-pts', profile.points || 0);
+  forteSafeSetText('profile-streak', profile.streak || 0);
+
+  const avatarImg = document.getElementById('profile-avatar-img');
+  const avatarLetter = document.getElementById('profile-avatar-letter');
+
+  if(avatarImg && avatarLetter){
+    if(profile.avatar_url){
+      avatarImg.src = profile.avatar_url;
+      avatarImg.style.display = 'block';
+      avatarLetter.style.display = 'none';
+    }else{
+      avatarImg.style.display = 'none';
+      avatarLetter.style.display = 'block';
+    }
+  }
+
+  if(profile.calorie_goal){
+    goals = {
+      cal: profile.calorie_goal,
+      pro: profile.protein_goal || 150,
+      carb: profile.carb_goal || 250,
+      fat: profile.fat_goal || 65
+    };
+  }
+
+  try{
+    if(typeof renderBodySection === 'function') renderBodySection();
+  }catch(e){
+    console.warn('renderBodySection skipped:', e);
+  }
+
+  try{
+    loadWkCount();
+  }catch(e){
+    console.warn('loadWkCount skipped:', e);
+  }
+
+  try{
+    if(document.getElementById('ptab-workouts') && typeof setProfileTab === 'function'){
+      setProfileTab('workouts');
+    }
+  }catch(e){}
+};
+
+/* Safer profile loader */
+loadProfile = async function(){
+  if(!user) return;
+
+  try{
+    const { data, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if(error) throw error;
+
+    if(data){
+      profile = data;
+      syncProfile();
+      return;
+    }
+
+    const meta = user.user_metadata || {};
+    const username = cleanForteUsername(meta.username || user.email?.split('@')[0] || ('user_' + Date.now()));
+    const fullName = meta.full_name || username;
+
+    const { data:newProfile, error:insertError } = await sb
+      .from('profiles')
+      .insert({
+        id: user.id,
+        username,
+        full_name: fullName,
+        points: 0,
+        streak: 0,
+        onboarding_done: false
+      })
+      .select()
+      .single();
+
+    if(insertError) throw insertError;
+
+    profile = newProfile;
+    syncProfile();
+
+  }catch(err){
+    console.error('LOAD PROFILE ERROR:', err);
+    throw err;
+  }
+};
+
+/* Replace signup */
+handleSignup = async function(){
+  const name = document.getElementById('signup-name')?.value?.trim();
+  const unameRaw = document.getElementById('signup-username')?.value;
+  const uname = cleanForteUsername(unameRaw);
+  const email = document.getElementById('signup-email')?.value?.trim();
+  const pass = document.getElementById('signup-pass')?.value;
+
+  if(!name || !uname || !email || !pass){
+    return forteShowAuthMessage('Please fill in all fields');
+  }
+
+  if(uname.length < 3){
+    return forteShowAuthMessage('Username must be at least 3 characters');
+  }
+
+  if(pass.length < 6){
+    return forteShowAuthMessage('Password must be at least 6 characters');
+  }
+
+  const btn = document.querySelector('#signup-form .btn-primary');
+  if(btn){
+    btn.textContent = 'Creating...';
+    btn.disabled = true;
+  }
+
+  try{
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password: pass,
+      options: {
+        data: {
+          full_name: name,
+          username: uname
+        }
+      }
+    });
+
+    if(error) throw error;
+
+    if(!data.user){
+      throw new Error('No user returned from Supabase');
+    }
+
+    /* If email confirmation is ON, Supabase returns user but no session */
+    if(!data.session){
+      forteShowAuthMessage('✅ Account created! Check your email and click the confirmation link, then sign in.', true);
+      switchAuthTab('login');
+      const loginEmail = document.getElementById('login-email');
+      if(loginEmail) loginEmail.value = email;
+      return;
+    }
+
+    user = data.user;
+
+    const { data:newProfile, error:profileError } = await sb
+      .from('profiles')
+      .insert({
+        id: user.id,
+        username: uname,
+        full_name: name,
+        points: 0,
+        streak: 0,
+        onboarding_done: false
+      })
+      .select()
+      .single();
+
+    if(profileError) throw profileError;
+
+    profile = newProfile;
+
+    if(typeof enterApp === 'function'){
+      enterApp();
+    }
+
+    forteSignupToast('Welcome to Forte! 🎉');
+
+  }catch(err){
+    console.error('SIGNUP ERROR:', err);
+
+    const msg = String(err.message || '');
+
+    if(msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')){
+      forteShowAuthMessage('An account with this email already exists. Try signing in.');
+    }else if(msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('profiles_username')){
+      forteShowAuthMessage('That username is already taken. Try another one.');
+    }else if(msg.toLowerCase().includes('rate limit')){
+      forteShowAuthMessage('Too many attempts. Wait a minute and try again.');
+    }else if(msg.toLowerCase().includes('invalid email')){
+      forteShowAuthMessage('Please enter a valid email address.');
+    }else{
+      forteShowAuthMessage('Could not create account: ' + msg);
+    }
+
+  }finally{
+    if(btn){
+      btn.textContent = 'Create account';
+      btn.disabled = false;
+    }
+  }
+};
 init();
 </script>
 
