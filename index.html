@@ -10392,4 +10392,213 @@ if('serviceWorker' in navigator){
 }
 </script>
 </body>
+  <script>
+/* =========================================================
+   FINAL SIGNUP + ONBOARDING FIX
+   Paste this directly before </body>
+   ========================================================= */
+
+function forteAuthMsg(msg, ok = false){
+  const el = document.getElementById('auth-error');
+  if(!el){
+    alert(msg);
+    return;
+  }
+  el.className = ok ? 'auth-error ok' : 'auth-error err';
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function forteCleanUsername(v){
+  return String(v || '')
+    .replace('@', '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+async function forteGetOrCreateProfile(authUser, wantedUsername, wantedName){
+  if(!authUser) throw new Error('No user returned');
+
+  const fallbackUsername = forteCleanUsername(authUser.email?.split('@')[0] || 'user');
+  const username = forteCleanUsername(wantedUsername || fallbackUsername);
+  const fullName = String(wantedName || username).trim();
+
+  // First check if profile already exists by auth user id
+  const existing = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', authUser.id)
+    .maybeSingle();
+
+  if(existing.data){
+    return existing.data;
+  }
+
+  // If username is already used by another person, show real username error
+  const usernameCheck = await sb
+    .from('profiles')
+    .select('id')
+    .eq('username', username)
+    .maybeSingle();
+
+  if(usernameCheck.data && usernameCheck.data.id !== authUser.id){
+    throw new Error('USERNAME_TAKEN');
+  }
+
+  // Create profile safely
+  const created = await sb
+    .from('profiles')
+    .upsert({
+      id: authUser.id,
+      username: username,
+      full_name: fullName,
+      points: 0,
+      streak: 0,
+      onboarding_done: false
+    }, {
+      onConflict: 'id'
+    })
+    .select('*')
+    .single();
+
+  if(created.error){
+    // If DB trigger created it at the same time, fetch it instead of failing
+    const retry = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if(retry.data){
+      return retry.data;
+    }
+
+    throw created.error;
+  }
+
+  return created.data;
+}
+
+window.handleSignup = async function(){
+  const name = document.getElementById('signup-name')?.value?.trim() || '';
+  const username = forteCleanUsername(document.getElementById('signup-username')?.value || '');
+  const email = document.getElementById('signup-email')?.value?.trim() || '';
+  const pass = document.getElementById('signup-pass')?.value || '';
+
+  if(!name || !username || !email || !pass){
+    return forteAuthMsg('Please fill in all fields');
+  }
+
+  if(username.length < 3){
+    return forteAuthMsg('Username must be at least 3 characters');
+  }
+
+  if(pass.length < 6){
+    return forteAuthMsg('Password must be at least 6 characters');
+  }
+
+  const btn = document.querySelector('#signup-form .btn-primary');
+  if(btn){
+    btn.textContent = 'Creating...';
+    btn.disabled = true;
+  }
+
+  try{
+    const result = await sb.auth.signUp({
+      email,
+      password: pass,
+      options: {
+        data: {
+          full_name: name,
+          username: username
+        }
+      }
+    });
+
+    if(result.error) throw result.error;
+
+    const authUser = result.data?.user;
+    const session = result.data?.session;
+
+    if(!authUser){
+      throw new Error('No user returned from Supabase');
+    }
+
+    // If email confirmation is ON, no session is returned
+    if(!session){
+      forteAuthMsg('✅ Account created! Check your email, confirm it, then sign in.', true);
+      switchAuthTab('login');
+      const loginEmail = document.getElementById('login-email');
+      if(loginEmail) loginEmail.value = email;
+      return;
+    }
+
+    user = authUser;
+    profile = await forteGetOrCreateProfile(authUser, username, name);
+
+    if(typeof syncProfile === 'function') syncProfile();
+    if(typeof enterApp === 'function') enterApp();
+    if(typeof showToast === 'function') showToast('Welcome to Forte! 🎉');
+
+  }catch(err){
+    console.error('FINAL SIGNUP ERROR:', err);
+
+    const msg = String(err?.message || '');
+    const code = String(err?.code || '');
+
+    if(msg === 'USERNAME_TAKEN'){
+      forteAuthMsg('That username is already taken. Try another one.');
+    }else if(msg.toLowerCase().includes('user already registered')){
+      forteAuthMsg('An account with this email already exists. Try signing in.');
+    }else if(msg.toLowerCase().includes('email rate limit') || msg.includes('429')){
+      forteAuthMsg('Signup email limit reached. Please wait and try again later.');
+    }else if(code === '23505' || msg.toLowerCase().includes('profiles_pkey')){
+      // This means account/profile already exists. Try to enter the app instead of showing false error.
+      const sessionResult = await sb.auth.getSession();
+      if(sessionResult.data?.session?.user){
+        user = sessionResult.data.session.user;
+        await loadProfile();
+        enterApp();
+        return;
+      }
+      forteAuthMsg('Account was created. Please sign in.');
+    }else{
+      forteAuthMsg('Could not create account: ' + msg);
+    }
+
+  }finally{
+    if(btn){
+      btn.textContent = 'Create account';
+      btn.disabled = false;
+    }
+  }
+};
+
+/* Fix onboarding crash */
+window.obFinish = async function(){
+  hideOnboarding();
+
+  try{
+    if(user){
+      await sb
+        .from('profiles')
+        .update({ onboarding_done: true })
+        .eq('id', user.id);
+
+      if(profile) profile.onboarding_done = true;
+    }
+  }catch(e){
+    console.warn('Could not mark onboarding complete:', e);
+  }
+
+  if(typeof showToast === 'function'){
+    showToast('Welcome to forte! 🔥');
+  }
+
+  if(typeof loadFeedPosts === 'function'){
+    loadFeedPosts();
+  }
+};
+</script>
 </html>
