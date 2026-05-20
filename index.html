@@ -10413,6 +10413,568 @@ if('serviceWorker' in navigator){
    - Message appears instantly after pressing send
    - Still saves to Supabase
    - Still creates notification for receiver
+   <script>
+/* =========================================================
+   FORTE PRIVACY + PUBLIC PROFILE FEED FIX
+   Paste directly before </body>
+   ========================================================= */
+
+function forteEscHtml(v){
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+async function forteCurrentUser(){
+  if(user) return user;
+  const { data:{ user:authUser } } = await sb.auth.getUser();
+  if(authUser) user = authUser;
+  return user;
+}
+
+/* ---------- STORIES: ONLY SELF + ACCEPTED FRIENDS/FOLLOWING ---------- */
+
+async function forteGetVisibleStoryUserIds(){
+  const u = await forteCurrentUser();
+  if(!u) return [];
+
+  const ids = new Set([u.id]);
+
+  try{
+    const { data:following } = await sb
+      .from('friendships')
+      .select('requester_id,addressee_id,status')
+      .or(`requester_id.eq.${u.id},addressee_id.eq.${u.id}`)
+      .eq('status','accepted');
+
+    (following || []).forEach(f => {
+      if(f.requester_id === u.id) ids.add(f.addressee_id);
+      if(f.addressee_id === u.id) ids.add(f.requester_id);
+    });
+  }catch(e){
+    console.warn('Could not load story friends:', e);
+  }
+
+  return Array.from(ids);
+}
+
+loadStories = async function(){
+  const row = document.getElementById('stories-row');
+  if(!row) return;
+
+  const u = await forteCurrentUser();
+  if(!u){
+    row.innerHTML = '';
+    return;
+  }
+
+  const visibleIds = await forteGetVisibleStoryUserIds();
+
+  let stories = [];
+
+  try{
+    const { data, error } = await sb
+      .from('stories')
+      .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
+      .in('user_id', visibleIds)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending:false });
+
+    if(error) throw error;
+    stories = data || [];
+  }catch(e){
+    console.warn('Story load failed:', e);
+    stories = [];
+  }
+
+  const groups = {};
+  const order = [];
+
+  groups[u.id] = { profile: profile || { id:u.id, username:'You', full_name:'You' }, stories:[], isMe:true };
+  order.push(u.id);
+
+  stories.forEach(s => {
+    const uid = s.user_id;
+    if(!groups[uid]){
+      groups[uid] = { profile:s.profiles, stories:[], isMe:uid === u.id };
+      order.push(uid);
+    }
+    groups[uid].stories.push(s);
+  });
+
+  storyGroups = order.map(uid => groups[uid]);
+
+  row.innerHTML = storyGroups.map((g, i) => {
+    const p = g.profile || {};
+    const hasStory = g.stories.length > 0;
+    const isMe = g.isMe;
+
+    const allViewed = hasStory && g.stories.every(st => localStorage.getItem('viewed_story_' + st.id));
+    const ring = hasStory && !allViewed
+      ? 'linear-gradient(135deg,var(--accent),#ff9500)'
+      : 'var(--bg3)';
+
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0"
+        onclick="${isMe && !hasStory ? 'openAddStory()' : 'openStoryViewer(' + i + ')'}">
+        <div style="position:relative">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ring}">
+            <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
+              ${p.avatar_url
+                ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`
+                : `<div style="font-family:'Inter',sans-serif;font-size:17px;font-weight:600;color:var(--accent)">${forteEscHtml((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`
+              }
+            </div>
+          </div>
+
+          ${isMe ? `
+            <div onclick="event.stopPropagation();openAddStory()" style="
+              position:absolute;
+              bottom:0;
+              right:0;
+              width:20px;
+              height:20px;
+              background:var(--accent);
+              border-radius:50%;
+              border:2px solid var(--bg);
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              font-size:14px;
+              font-weight:700;
+              color:#0a0a0a;
+              line-height:1;
+            ">+</div>
+          ` : ''}
+        </div>
+
+        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${isMe ? 'Your story' : forteEscHtml(p.username || '')}
+        </div>
+      </div>
+    `;
+  }).join('');
+};
+
+
+/* ---------- PRIVATE LEAGUES: FRONTEND FILTER TOO ---------- */
+
+loadLeagues = async function(){
+  const u = await forteCurrentUser();
+  const list = document.getElementById('leagues-list');
+  if(!u || !list) return;
+
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading...</div>';
+
+  try{
+    if(currentLeagueTab === 'my'){
+      const { data, error } = await sb
+        .from('league_members')
+        .select('leagues(*)')
+        .eq('user_id', u.id)
+        .eq('status','accepted');
+
+      if(error) throw error;
+
+      const leagues = (data || []).map(d => d.leagues).filter(Boolean);
+
+      if(!leagues.length){
+        list.innerHTML = '<div class="empty-state"><p>No leagues yet.<br>Create one or join a public league!</p></div>';
+        return;
+      }
+
+      const cards = await Promise.all(leagues.map(l => renderLeagueCard(l)));
+      list.innerHTML = cards.join('');
+      return;
+    }
+
+    const { data, error } = await sb
+      .from('leagues')
+      .select('*')
+      .eq('is_private', false)
+      .order('created_at', { ascending:false })
+      .limit(30);
+
+    if(error) throw error;
+
+    if(!data || !data.length){
+      list.innerHTML = '<div class="empty-state"><p>No public leagues yet.</p></div>';
+      return;
+    }
+
+    const cards = await Promise.all(data.map(l => renderLeagueCard(l, true)));
+    list.innerHTML = cards.join('');
+
+  }catch(e){
+    console.error('LOAD LEAGUES PRIVACY ERROR:', e);
+    list.innerHTML = '<div style="padding:20px;color:var(--red);text-align:center">Could not load leagues</div>';
+  }
+};
+
+loadFeedLeagues = async function(){
+  const u = await forteCurrentUser();
+  const el = document.getElementById('feed-leagues');
+  if(!u || !el) return;
+
+  try{
+    const { data:pendingRows } = await sb
+      .from('league_members')
+      .select('league_id,invited_by,leagues(id,name,description,reward,is_private,created_by),profiles!league_members_invited_by_fkey(username,full_name,avatar_url)')
+      .eq('user_id', u.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending:false });
+
+    const { data:acceptedRows } = await sb
+      .from('league_members')
+      .select('leagues(id,name,is_private)')
+      .eq('user_id', u.id)
+      .eq('status', 'accepted')
+      .limit(8);
+
+    const pending = pendingRows || [];
+    const accepted = (acceptedRows || []).map(r => r.leagues).filter(Boolean);
+
+    let html = '';
+
+    if(pending.length){
+      html += pending.map(row => {
+        const l = row.leagues || {};
+        const inviter = row.profiles || {};
+        const inviterName = inviter.full_name || inviter.username || 'Someone';
+
+        return `
+          <div style="background:linear-gradient(135deg,rgba(255,0,144,.16),rgba(255,0,144,.04));border:1.5px solid rgba(255,0,144,.35);border-radius:var(--radius-sm);padding:12px;min-width:230px;flex-shrink:0">
+            <div style="font-size:11px;color:var(--accent);font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">League invite</div>
+            <div style="font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🏆 ${forteEscHtml(l.name || 'League')}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Invited by ${forteEscHtml(inviterName)}</div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button onclick="event.stopPropagation();acceptLeagueInvite('${l.id}')" style="flex:1;background:#00c853;border:none;border-radius:8px;padding:8px;font-size:14px;font-weight:900;color:#fff;cursor:pointer">✓</button>
+              <button onclick="event.stopPropagation();declineLeagueInvite('${l.id}')" style="flex:1;background:#ff3b30;border:none;border-radius:8px;padding:8px;font-size:14px;font-weight:900;color:#fff;cursor:pointer">×</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if(accepted.length){
+      html += accepted.map(l => `
+        <div onclick="openLeague('${l.id}')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700">${forteEscHtml(l.name)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private ? '🔒 Private' : 'Public'}</div>
+        </div>
+      `).join('');
+    }
+
+    if(!html){
+      html = `
+        <div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">
+          + Create or join a league
+        </div>
+      `;
+    }
+
+    el.innerHTML = html;
+
+  }catch(e){
+    console.error('FEED LEAGUES PRIVACY ERROR:', e);
+    el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Could not load leagues</div>';
+  }
+};
+
+
+/* ---------- INSTAGRAM-STYLE PUBLIC PROFILE SCREEN ---------- */
+
+let viewedProfileId = null;
+
+function ensureUserProfileScreen(){
+  let screen = document.getElementById('user-profile-screen');
+  if(screen) return screen;
+
+  const app = document.getElementById('app');
+  screen = document.createElement('div');
+  screen.id = 'user-profile-screen';
+  screen.className = 'screen';
+
+  screen.innerHTML = `
+    <div class="topbar">
+      <button class="icon-btn" onclick="showScreen('feed')" style="margin-right:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+      </button>
+      <div class="topbar-title" id="view-profile-title">Profile</div>
+      <div></div>
+    </div>
+
+    <div class="profile-hero">
+      <div class="profile-top">
+        <div class="profile-avatar" id="view-profile-avatar"></div>
+        <div>
+          <div class="profile-name" id="view-profile-name">Loading...</div>
+          <div class="profile-username" id="view-profile-username">@username</div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button id="view-profile-follow-btn" class="btn-filled" style="padding:8px 16px;font-size:13px" onclick="followFromProfile()">Follow</button>
+            <button class="btn-outline" style="padding:8px 16px;font-size:13px" onclick="startDM(viewedProfileId)">Message</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-stats">
+        <div class="profile-stat" onclick="loadViewedProfilePosts()" style="cursor:pointer">
+          <div class="profile-stat-val" id="view-profile-friends">0</div>
+          <div class="profile-stat-label">Friends</div>
+        </div>
+        <div class="profile-stat">
+          <div class="profile-stat-val" style="color:var(--accent)" id="view-profile-points">0</div>
+          <div class="profile-stat-label">Points</div>
+        </div>
+        <div class="profile-stat" onclick="loadViewedProfileWorkouts()" style="cursor:pointer">
+          <div class="profile-stat-val" id="view-profile-workouts">0</div>
+          <div class="profile-stat-label">Workouts</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:2px">
+      <button id="view-tab-posts" onclick="setViewedProfileTab('posts')" style="flex:1;padding:12px;background:none;border:none;color:#ff0090;font-size:12px;font-weight:700;border-bottom:2px solid #ff0090">POSTS</button>
+      <button id="view-tab-workouts" onclick="setViewedProfileTab('workouts')" style="flex:1;padding:12px;background:none;border:none;color:var(--text3);font-size:12px;font-weight:700;border-bottom:2px solid transparent">WORKOUTS</button>
+      <button id="view-tab-recipes" onclick="setViewedProfileTab('recipes')" style="flex:1;padding:12px;background:none;border:none;color:var(--text3);font-size:12px;font-weight:700;border-bottom:2px solid transparent">RECIPES</button>
+    </div>
+
+    <div id="view-profile-content"></div>
+  `;
+
+  app.appendChild(screen);
+  return screen;
+}
+
+function showUserProfileScreen(){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  ensureUserProfileScreen().classList.add('active');
+}
+
+async function isFollowingUser(targetId){
+  const u = await forteCurrentUser();
+  if(!u || !targetId) return false;
+
+  const { data } = await sb
+    .from('friendships')
+    .select('id')
+    .or(`and(requester_id.eq.${u.id},addressee_id.eq.${targetId}),and(requester_id.eq.${targetId},addressee_id.eq.${u.id})`)
+    .eq('status','accepted')
+    .maybeSingle();
+
+  return !!data;
+}
+
+viewProfile = async function(userId){
+  const u = await forteCurrentUser();
+  if(!userId) return;
+
+  if(u && userId === u.id){
+    showScreen('profile');
+    return;
+  }
+
+  viewedProfileId = userId;
+  showUserProfileScreen();
+
+  const avatar = document.getElementById('view-profile-avatar');
+  const content = document.getElementById('view-profile-content');
+
+  if(content) content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">Loading profile...</div>';
+
+  try{
+    const { data:p, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if(error) throw error;
+
+    document.getElementById('view-profile-title').textContent = '@' + (p.username || '');
+    document.getElementById('view-profile-name').textContent = p.full_name || p.username || 'User';
+    document.getElementById('view-profile-username').textContent = '@' + (p.username || '');
+
+    avatar.innerHTML = p.avatar_url
+      ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      : `<span>${forteEscHtml((p.full_name || p.username || '?')[0]).toUpperCase()}</span>`;
+
+    document.getElementById('view-profile-points').textContent = p.points || 0;
+
+    const [{ count:workouts }, { count:recipes }, { count:friends }] = await Promise.all([
+      sb.from('workouts').select('*', { count:'exact', head:true }).eq('user_id', userId).eq('is_public', true),
+      sb.from('recipes').select('*', { count:'exact', head:true }).eq('user_id', userId).eq('is_private', false),
+      sb.from('friendships').select('*', { count:'exact', head:true }).or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).eq('status','accepted')
+    ]);
+
+    document.getElementById('view-profile-workouts').textContent = workouts || 0;
+    document.getElementById('view-profile-friends').textContent = friends || 0;
+
+    const followBtn = document.getElementById('view-profile-follow-btn');
+    const following = await isFollowingUser(userId);
+    followBtn.textContent = following ? 'Following' : 'Follow';
+    followBtn.style.background = following ? 'var(--bg3)' : 'var(--accent)';
+    followBtn.style.color = following ? 'var(--text2)' : '#0a0a0a';
+    followBtn.style.border = following ? '1.5px solid var(--border)' : 'none';
+
+    setViewedProfileTab('posts');
+
+  }catch(e){
+    console.error('VIEW PROFILE SCREEN ERROR:', e);
+    if(content) content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--red)">Could not load profile</div>';
+  }
+};
+
+async function followFromProfile(){
+  if(!viewedProfileId) return;
+  const btn = document.getElementById('view-profile-follow-btn');
+  if(typeof toggleFollow === 'function'){
+    await toggleFollow(viewedProfileId, btn);
+  }
+  viewProfile(viewedProfileId);
+}
+
+function setViewedProfileTab(tab){
+  ['posts','workouts','recipes'].forEach(t => {
+    const btn = document.getElementById('view-tab-' + t);
+    if(!btn) return;
+    const active = t === tab;
+    btn.style.color = active ? '#ff0090' : 'var(--text3)';
+    btn.style.borderBottom = active ? '2px solid #ff0090' : '2px solid transparent';
+  });
+
+  if(tab === 'posts') loadViewedProfilePosts();
+  if(tab === 'workouts') loadViewedProfileWorkouts();
+  if(tab === 'recipes') loadViewedProfileRecipes();
+}
+
+async function loadViewedProfilePosts(){
+  const el = document.getElementById('view-profile-content');
+  if(!el || !viewedProfileId) return;
+
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading posts...</div>';
+
+  const { data, error } = await sb
+    .from('posts')
+    .select('*,workouts(title)')
+    .eq('user_id', viewedProfileId)
+    .order('created_at', { ascending:false })
+    .limit(30);
+
+  if(error || !data || !data.length){
+    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)">No public posts yet</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px">
+      ${data.map(p => `
+        <div onclick="openPost('${p.id}')" style="aspect-ratio:1;background:var(--bg3);cursor:pointer;overflow:hidden">
+          ${p.media_url && p.media_type === 'image'
+            ? `<img src="${p.media_url}" style="width:100%;height:100%;object-fit:cover">`
+            : p.media_url && p.media_type === 'video'
+            ? `<video src="${p.media_url}" style="width:100%;height:100%;object-fit:cover"></video>`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text3);padding:8px">${forteEscHtml(p.workouts?.title || 'Workout')}</div>`
+          }
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function loadViewedProfileWorkouts(){
+  const el = document.getElementById('view-profile-content');
+  if(!el || !viewedProfileId) return;
+
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading workouts...</div>';
+
+  const { data } = await sb
+    .from('workouts')
+    .select('*')
+    .eq('user_id', viewedProfileId)
+    .eq('is_public', true)
+    .order('created_at', { ascending:false })
+    .limit(30);
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)">No public workouts yet</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="padding:12px 16px">
+      ${data.map(w => `
+        <div onclick="viewPastWorkout('${w.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;cursor:pointer">
+          <div style="font-size:14px;font-weight:700">${forteEscHtml(w.title || 'Workout')}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${new Date(w.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:6px">+${w.points_earned || 0} pts</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function loadViewedProfileRecipes(){
+  const el = document.getElementById('view-profile-content');
+  if(!el || !viewedProfileId) return;
+
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading recipes...</div>';
+
+  const { data } = await sb
+    .from('recipes')
+    .select('*')
+    .eq('user_id', viewedProfileId)
+    .eq('is_private', false)
+    .order('created_at', { ascending:false })
+    .limit(30);
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)">No public recipes yet</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="padding:12px 16px">
+      ${data.map(r => `
+        <div onclick="viewRecipe('${r.id}')" style="display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer">
+          <div style="width:64px;height:64px;border-radius:10px;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0">
+            ${r.image_url ? `<img src="${r.image_url}" style="width:100%;height:100%;object-fit:cover">` : '🍽️'}
+          </div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:700">${forteEscHtml(r.title)}</div>
+            <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:4px">${r.calories || 0} kcal · ${r.protein || 0}g protein</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">${getTimeAgo(r.created_at)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+
+/* Make username/profile clicks use the full profile screen */
+document.addEventListener('click', function(e){
+  const profileNode = e.target.closest('[data-profile-id]');
+  if(profileNode){
+    e.preventDefault();
+    e.stopPropagation();
+    viewProfile(profileNode.dataset.profileId);
+  }
+}, true);
+
+setTimeout(() => {
+  if(typeof loadStories === 'function') loadStories();
+  if(typeof loadFeedLeagues === 'function') loadFeedLeagues();
+}, 1500);
+</script>
    Paste directly before </body>
    ========================================================= */
 
