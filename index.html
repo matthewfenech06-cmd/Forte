@@ -8815,6 +8815,402 @@ async function tapExistingReaction(messageId, emoji, mine){
 
   await reactToMessage(messageId, emoji);
 }
+  /* =========================================================
+   FORTE LEAGUE INVITES FIX
+   - Invite button sends league invite
+   - Sends DM to invited user
+   - Shows pending league invites on main feed league section
+   - Green tick accepts, red cross declines
+   Paste above init();
+   ========================================================= */
+
+async function forteLeagueUser(){
+  if(typeof getCurrentUserSafe === 'function'){
+    return await getCurrentUserSafe();
+  }
+
+  const { data:{ user } } = await sb.auth.getUser();
+  return user;
+}
+
+function forteLeagueToast(msg){
+  if(typeof forteToast === 'function') return forteToast(msg);
+  if(typeof safeToast === 'function') return safeToast(msg);
+  if(typeof showToast === 'function') return showToast(msg);
+  alert(msg);
+}
+
+function forteLeagueEsc(v){
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+async function sendLeagueInviteDM(invitedUserId, league){
+  const u = await forteLeagueUser();
+  if(!u || !invitedUserId || !league) return;
+
+  try{
+    const { data:convId, error:rpcError } = await sb.rpc('start_dm', {
+      other_user_id: invitedUserId
+    });
+
+    if(rpcError) throw rpcError;
+    if(!convId) throw new Error('No conversation returned');
+
+    const inviteText =
+      `🏆 League invite\n\n` +
+      `${profile?.full_name || profile?.username || 'Someone'} invited you to join "${league.name}".\n\n` +
+      `Open Forte and accept it from the leagues section on your feed.`;
+
+    const { error:msgError } = await sb
+      .from('messages')
+      .insert({
+        conversation_id: convId,
+        sender_id: u.id,
+        content: inviteText
+      });
+
+    if(msgError) throw msgError;
+
+  }catch(err){
+    console.error('LEAGUE INVITE DM ERROR:', err);
+    // Do not block invite if DM fails.
+  }
+}
+
+/* Replace old invite function */
+inviteToLeague = async function(leagueId, invitedUserId){
+  const u = await forteLeagueUser();
+
+  if(!u) return forteLeagueToast('Please sign in first');
+  if(!leagueId) return forteLeagueToast('No league selected');
+  if(!invitedUserId) return forteLeagueToast('No user selected');
+  if(invitedUserId === u.id) return forteLeagueToast('You are already in this league');
+
+  try{
+    const { data:league, error:leagueError } = await sb
+      .from('leagues')
+      .select('*')
+      .eq('id', leagueId)
+      .single();
+
+    if(leagueError) throw leagueError;
+    if(!league) throw new Error('League not found');
+
+    const { data:existing } = await sb
+      .from('league_members')
+      .select('id,status')
+      .eq('league_id', leagueId)
+      .eq('user_id', invitedUserId)
+      .maybeSingle();
+
+    if(existing?.status === 'accepted'){
+      return forteLeagueToast('They are already in this league');
+    }
+
+    if(existing){
+      const { error:updateError } = await sb
+        .from('league_members')
+        .update({
+          status: 'pending',
+          invited_by: u.id
+        })
+        .eq('id', existing.id);
+
+      if(updateError) throw updateError;
+    }else{
+      const { error:insertError } = await sb
+        .from('league_members')
+        .insert({
+          league_id: leagueId,
+          user_id: invitedUserId,
+          status: 'pending',
+          invited_by: u.id
+        });
+
+      if(insertError) throw insertError;
+    }
+
+    await sendLeagueInviteDM(invitedUserId, league);
+
+    try{
+      await sb.from('notifications').insert({
+        user_id: invitedUserId,
+        type: 'league_invite',
+        title: 'League invite 🏆',
+        body: `${profile?.full_name || profile?.username || 'Someone'} invited you to join "${league.name}"`,
+        data: {
+          league_id: leagueId,
+          invited_by: u.id
+        }
+      });
+    }catch(e){}
+
+    forteLeagueToast('Invite sent by DM 🏆');
+
+  }catch(err){
+    console.error('INVITE TO LEAGUE ERROR:', err);
+    forteLeagueToast('Could not invite: ' + (err.message || 'unknown error'));
+  }
+};
+
+async function acceptLeagueInvite(leagueId){
+  const u = await forteLeagueUser();
+  if(!u) return forteLeagueToast('Please sign in first');
+
+  try{
+    const { data:membership, error:memberError } = await sb
+      .from('league_members')
+      .select('id,invited_by,leagues(name)')
+      .eq('league_id', leagueId)
+      .eq('user_id', u.id)
+      .eq('status', 'pending')
+      .single();
+
+    if(memberError) throw memberError;
+
+    const { error:updateError } = await sb
+      .from('league_members')
+      .update({
+        status: 'accepted',
+        joined_at: new Date().toISOString()
+      })
+      .eq('id', membership.id);
+
+    if(updateError) throw updateError;
+
+    if(membership.invited_by){
+      try{
+        const { data:convId } = await sb.rpc('start_dm', {
+          other_user_id: membership.invited_by
+        });
+
+        if(convId){
+          await sb.from('messages').insert({
+            conversation_id: convId,
+            sender_id: u.id,
+            content: `✅ I accepted your invite to join "${membership.leagues?.name || 'your league'}".`
+          });
+        }
+      }catch(e){}
+    }
+
+    forteLeagueToast('Joined league ✅');
+
+    if(typeof loadFeedLeagues === 'function') await loadFeedLeagues();
+    if(typeof loadLeagues === 'function') await loadLeagues();
+
+  }catch(err){
+    console.error('ACCEPT LEAGUE INVITE ERROR:', err);
+    forteLeagueToast('Could not join: ' + (err.message || 'unknown error'));
+  }
+}
+
+async function declineLeagueInvite(leagueId){
+  const u = await forteLeagueUser();
+  if(!u) return forteLeagueToast('Please sign in first');
+
+  try{
+    const { data:membership } = await sb
+      .from('league_members')
+      .select('id,invited_by,leagues(name)')
+      .eq('league_id', leagueId)
+      .eq('user_id', u.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    const { error:deleteError } = await sb
+      .from('league_members')
+      .delete()
+      .eq('league_id', leagueId)
+      .eq('user_id', u.id)
+      .eq('status', 'pending');
+
+    if(deleteError) throw deleteError;
+
+    if(membership?.invited_by){
+      try{
+        const { data:convId } = await sb.rpc('start_dm', {
+          other_user_id: membership.invited_by
+        });
+
+        if(convId){
+          await sb.from('messages').insert({
+            conversation_id: convId,
+            sender_id: u.id,
+            content: `❌ I declined your invite to join "${membership.leagues?.name || 'your league'}".`
+          });
+        }
+      }catch(e){}
+    }
+
+    forteLeagueToast('Invite declined');
+
+    if(typeof loadFeedLeagues === 'function') await loadFeedLeagues();
+
+  }catch(err){
+    console.error('DECLINE LEAGUE INVITE ERROR:', err);
+    forteLeagueToast('Could not decline: ' + (err.message || 'unknown error'));
+  }
+}
+
+/* Replace feed league loader so pending invites show at top */
+loadFeedLeagues = async function(){
+  const u = await forteLeagueUser();
+
+  const el = document.getElementById('feed-leagues');
+  if(!el) return;
+
+  if(!u){
+    el.innerHTML = '';
+    return;
+  }
+
+  try{
+    const { data:pendingRows, error:pendingError } = await sb
+      .from('league_members')
+      .select('league_id,invited_by,leagues(id,name,description,reward,is_private,created_by),profiles!league_members_invited_by_fkey(username,full_name,avatar_url)')
+      .eq('user_id', u.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending:false });
+
+    if(pendingError) throw pendingError;
+
+    const { data:acceptedRows, error:acceptedError } = await sb
+      .from('league_members')
+      .select('leagues(id,name,is_private)')
+      .eq('user_id', u.id)
+      .eq('status', 'accepted')
+      .limit(8);
+
+    if(acceptedError) throw acceptedError;
+
+    const pending = pendingRows || [];
+    const accepted = (acceptedRows || []).map(r => r.leagues).filter(Boolean);
+
+    let html = '';
+
+    if(pending.length){
+      html += pending.map(row => {
+        const l = row.leagues || {};
+        const inviter = row.profiles || {};
+        const inviterName = inviter.full_name || inviter.username || 'Someone';
+
+        return `
+          <div style="
+            background:linear-gradient(135deg,rgba(255,0,144,.16),rgba(255,0,144,.04));
+            border:1.5px solid rgba(255,0,144,.35);
+            border-radius:var(--radius-sm);
+            padding:12px;
+            min-width:230px;
+            flex-shrink:0;
+          ">
+            <div style="font-size:11px;color:var(--accent);font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">
+              League invite
+            </div>
+
+            <div style="font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              🏆 ${forteLeagueEsc(l.name || 'League')}
+            </div>
+
+            <div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              Invited by ${forteLeagueEsc(inviterName)}
+            </div>
+
+            ${l.reward ? `
+              <div style="font-size:11px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                Reward: ${forteLeagueEsc(l.reward)}
+              </div>
+            ` : ''}
+
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button onclick="event.stopPropagation();acceptLeagueInvite('${l.id}')"
+                style="
+                  flex:1;
+                  background:#00c853;
+                  border:none;
+                  border-radius:8px;
+                  padding:8px;
+                  font-size:14px;
+                  font-weight:900;
+                  color:#fff;
+                  cursor:pointer;
+                ">
+                ✓
+              </button>
+
+              <button onclick="event.stopPropagation();declineLeagueInvite('${l.id}')"
+                style="
+                  flex:1;
+                  background:#ff3b30;
+                  border:none;
+                  border-radius:8px;
+                  padding:8px;
+                  font-size:14px;
+                  font-weight:900;
+                  color:#fff;
+                  cursor:pointer;
+                ">
+                ×
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if(accepted.length){
+      html += accepted.map(l => `
+        <div onclick="openLeague('${l.id}')"
+          style="
+            background:var(--bg2);
+            border-radius:var(--radius-sm);
+            border:1px solid var(--border);
+            padding:12px 16px;
+            white-space:nowrap;
+            cursor:pointer;
+            flex-shrink:0;
+          ">
+          <div style="font-size:13px;font-weight:700">${forteLeagueEsc(l.name)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private ? '🔒 Private' : 'Public'}</div>
+        </div>
+      `).join('');
+    }
+
+    if(!html){
+      html = `
+        <div onclick="showScreen('leagues')"
+          style="
+            background:var(--bg3);
+            border-radius:var(--radius-sm);
+            border:1.5px dashed var(--border);
+            padding:12px 16px;
+            white-space:nowrap;
+            cursor:pointer;
+            font-size:13px;
+            color:var(--text3);
+          ">
+          + Create or join a league
+        </div>
+      `;
+    }
+
+    el.innerHTML = html;
+
+  }catch(err){
+    console.error('LOAD FEED LEAGUES ERROR:', err);
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--text3);padding:8px 0">
+        Could not load leagues
+      </div>
+    `;
+  }
+};
 init();
 </script>
 
