@@ -15685,333 +15685,7 @@ if('serviceWorker' in navigator){
 /* =========================================================
   <script>
 /* =========================================================
-   FORTE FINAL DELETE PATCH
-   Directly renders delete buttons into food logs, past workouts,
-   and active workout sets.
-   ========================================================= */
 
-(function(){
-  function toast(msg){
-    if(typeof showToast === 'function') return showToast(msg);
-    if(typeof fpToast === 'function') return fpToast(msg);
-    if(typeof safeToast === 'function') return safeToast(msg);
-    alert(msg);
-  }
-
-  function esc(v){
-    return String(v ?? '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;',
-      '<':'&lt;',
-      '>':'&gt;',
-      '"':'&quot;',
-      "'":'&#39;'
-    }[c]));
-  }
-
-  async function getUser(){
-    if(window.user && window.user.id) return window.user;
-    const { data } = await sb.auth.getUser();
-    if(data && data.user){
-      window.user = data.user;
-      return data.user;
-    }
-    return null;
-  }
-
-  function roundMacro(v){
-    const n = Number(v || 0);
-    return Math.round(n * 10) / 10;
-  }
-
-  function pct(v,g){
-    if(!g) return 0;
-    return Math.min(100, Math.round((Number(v || 0) / Number(g || 1)) * 100));
-  }
-
-  window.deleteFoodLog = async function(id){
-    const u = await getUser();
-    if(!u) return toast('Sign in first');
-    if(!id) return toast('Missing food log');
-
-    if(!confirm('Delete this food log?')) return;
-
-    const { error } = await sb
-      .from('nutrition_logs')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', u.id);
-
-    if(error){
-      console.error('DELETE FOOD ERROR:', error);
-      return toast('Could not delete food: ' + error.message);
-    }
-
-    if(typeof nutLogs !== 'undefined' && Array.isArray(nutLogs)){
-      nutLogs = nutLogs.filter(x => x.id !== id);
-      window.nutLogs = nutLogs;
-    }
-
-    toast('Food deleted ✅');
-
-    try{ await loadNutrition(); }catch(e){}
-    try{ renderNutrition(); }catch(e){}
-  };
-
-  window.deleteWorkoutLog = async function(id){
-    const u = await getUser();
-    if(!u) return toast('Sign in first');
-    if(!id) return toast('Missing workout');
-
-    if(!confirm('Delete this workout?')) return;
-
-    try{
-      await sb.from('workout_sets').delete().eq('workout_id', id);
-
-      const { error } = await sb
-        .from('workouts')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', u.id);
-
-      if(error) throw error;
-
-      toast('Workout deleted ✅');
-
-      try{ await loadPastWorkouts(); }catch(e){}
-      try{ await loadWkCount(); }catch(e){}
-      try{ await loadFeedPosts(); }catch(e){}
-      try{ await loadProfilePosts(); }catch(e){}
-    }catch(e){
-      console.error('DELETE WORKOUT ERROR:', e);
-      toast('Could not delete workout: ' + (e.message || 'unknown error'));
-    }
-  };
-
-  window.removeWorkoutSet = function(ei, si){
-    if(typeof wkExs === 'undefined' || !wkExs[ei] || !wkExs[ei].sets) return;
-
-    if(wkExs[ei].sets.length <= 1){
-      wkExs[ei].sets[0] = { reps:'', weight:'', done:false };
-    }else{
-      wkExs[ei].sets.splice(si, 1);
-    }
-
-    renderExBlocks();
-  };
-
-  /* -----------------------------
-     FOOD: override renderNutrition
-  ----------------------------- */
-  window.renderNutrition = function(){
-    if(typeof nutLogs === 'undefined') window.nutLogs = [];
-    const logs = Array.isArray(nutLogs) ? nutLogs : [];
-
-    const t = logs.reduce((a,l)=>({
-      cal: a.cal + Number(l.calories || 0),
-      pro: a.pro + Number(l.protein || 0),
-      carb: a.carb + Number(l.carbs || 0),
-      fat: a.fat + Number(l.fats || 0)
-    }), { cal:0, pro:0, carb:0, fat:0 });
-
-    const setText = (id, val) => {
-      const el = document.getElementById(id);
-      if(el) el.textContent = val;
-    };
-
-    setText('tot-cal', Math.round(t.cal));
-    setText('tot-pro', roundMacro(t.pro) + 'g');
-    setText('tot-carb', roundMacro(t.carb) + 'g');
-    setText('tot-fat', roundMacro(t.fat) + 'g');
-
-    const macro = document.getElementById('macro-progress');
-    if(macro){
-      macro.innerHTML = `
-        <div class="prog-row"><div class="prog-label">Calories</div><div class="prog-track"><div class="prog-fill" style="width:${pct(t.cal,goals.cal)}%;background:var(--accent)"></div></div><div class="prog-right">${Math.round(t.cal)} / ${goals.cal}</div></div>
-        <div class="prog-row"><div class="prog-label">Protein</div><div class="prog-track"><div class="prog-fill" style="width:${pct(t.pro,goals.pro)}%;background:#4f9fff"></div></div><div class="prog-right">${roundMacro(t.pro)}g / ${goals.pro}g</div></div>
-        <div class="prog-row"><div class="prog-label">Carbs</div><div class="prog-track"><div class="prog-fill" style="width:${pct(t.carb,goals.carb)}%;background:#f0a500"></div></div><div class="prog-right">${roundMacro(t.carb)}g / ${goals.carb}g</div></div>
-        <div class="prog-row"><div class="prog-label">Fats</div><div class="prog-track"><div class="prog-fill" style="width:${pct(t.fat,goals.fat)}%;background:#ff4f9f"></div></div><div class="prog-right">${roundMacro(t.fat)}g / ${goals.fat}g</div></div>
-      `;
-    }
-
-    const meals = ['Breakfast','Lunch','Dinner','Snack'];
-    const mealBox = document.getElementById('meal-sections');
-    if(!mealBox) return;
-
-    mealBox.innerHTML = meals.map(meal => {
-      const items = logs.filter(l => l.meal_type === meal);
-
-      return `
-        <div class="meal-section">
-          <div class="meal-header">
-            <div class="meal-title">${meal}</div>
-            <button class="meal-add" onclick="openAddFood('${meal}')">+ Add</button>
-          </div>
-
-          ${
-            items.length
-            ? items.map(i => `
-              <div class="food-item" style="gap:10px">
-                <div style="min-width:0;flex:1">
-                  <div class="food-name">${esc(i.food_name)}</div>
-                  <div class="food-macros">
-                    <span>P: ${roundMacro(i.protein)}g</span>
-                    <span>C: ${roundMacro(i.carbs)}g</span>
-                    <span>F: ${roundMacro(i.fats)}g</span>
-                  </div>
-                </div>
-
-                <div class="food-cals" style="white-space:nowrap">${Math.round(Number(i.calories || 0))} kcal</div>
-
-                ${i.id ? `
-                  <button onclick="event.stopPropagation();deleteFoodLog('${i.id}')" style="
-                    background:rgba(255,79,79,.12);
-                    border:1px solid rgba(255,79,79,.4);
-                    color:#ff4f4f;
-                    border-radius:8px;
-                    padding:7px 9px;
-                    font-size:11px;
-                    font-weight:900;
-                    cursor:pointer;
-                    flex-shrink:0;
-                  ">Delete</button>
-                ` : ''}
-              </div>
-            `).join('')
-            : '<div style="color:var(--text3);font-size:13px;padding:8px 0">Nothing logged yet</div>'
-          }
-        </div>
-      `;
-    }).join('');
-  };
-
-  /* -----------------------------
-     WORKOUTS: override loadPastWorkouts
-  ----------------------------- */
-  window.loadPastWorkouts = async function(){
-    const u = await getUser();
-    if(!u) return;
-
-    const { data, error } = await sb
-      .from('workouts')
-      .select('*')
-      .eq('user_id', u.id)
-      .order('created_at', { ascending:false })
-      .limit(10);
-
-    const el = document.getElementById('ex-past-workouts');
-    if(!el) return;
-
-    if(error){
-      console.error('LOAD PAST WORKOUTS ERROR:', error);
-      el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">Could not load workouts</div>';
-      return;
-    }
-
-    if(!data || !data.length){
-      el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No workouts logged yet</div>';
-      return;
-    }
-
-    el.innerHTML = data.map(w => `
-      <div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px 16px;cursor:pointer" onclick="viewPastWorkout('${w.id}')">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <div style="min-width:0;flex:1">
-            <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.title || 'Workout')}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px">${new Date(w.created_at).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
-          </div>
-
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-size:13px;color:var(--accent);font-weight:600">+${w.points_earned || 0} pts</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px">→</div>
-          </div>
-
-          <button onclick="event.stopPropagation();deleteWorkoutLog('${w.id}')" style="
-            background:rgba(255,79,79,.12);
-            border:1px solid rgba(255,79,79,.4);
-            color:#ff4f4f;
-            border-radius:8px;
-            padding:7px 9px;
-            font-size:11px;
-            font-weight:900;
-            cursor:pointer;
-            flex-shrink:0;
-          ">Delete</button>
-        </div>
-      </div>
-    `).join('');
-  };
-
-  /* -----------------------------
-     ACTIVE WORKOUT: override renderExBlocks
-  ----------------------------- */
-  window.renderExBlocks = function(){
-    const box = document.getElementById('exercise-blocks');
-    if(!box) return;
-
-    if(typeof wkExs === 'undefined') window.wkExs = [];
-
-    box.innerHTML = (wkExs || []).map((ex, ei) => {
-      const prevTxt = ex.prev && ex.prev.length
-        ? 'Previous: ' + ex.prev.slice(0,3).map(p => `${p.weight || 0}kg × ${p.reps || 0}`).join(', ')
-        : '';
-
-      const rows = (ex.sets || []).map((s, si) => `
-        <div class="set-row">
-          <div class="set-num">${si + 1}</div>
-          <input class="set-inp" type="number" value="${esc(s.weight || '')}" placeholder="kg" oninput="wkExs[${ei}].sets[${si}].weight=this.value">
-          <input class="set-inp" type="number" value="${esc(s.reps || '')}" placeholder="reps" oninput="wkExs[${ei}].sets[${si}].reps=this.value">
-          <button class="set-check ${s.done ? 'done' : ''}" onclick="toggleDone(${ei},${si})">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          </button>
-          <button onclick="removeWorkoutSet(${ei},${si})" style="
-            width:30px;
-            height:30px;
-            border-radius:50%;
-            border:1px solid rgba(255,79,79,.4);
-            background:rgba(255,79,79,.12);
-            color:#ff4f4f;
-            font-size:18px;
-            font-weight:900;
-            cursor:pointer;
-          ">×</button>
-        </div>
-      `).join('');
-
-      return `
-        <div class="exercise-block">
-          <div class="ex-block-header">
-            <div>
-              <div class="ex-block-name">${esc(ex.name)}</div>
-              ${prevTxt ? `<div class="ex-block-prev">${esc(prevTxt)}</div>` : ''}
-            </div>
-            <button class="ex-remove" onclick="wkExs.splice(${ei},1);renderExBlocks()">×</button>
-          </div>
-
-          <div class="sets-table">
-            <div class="sets-header" style="grid-template-columns:36px 1fr 1fr 36px 36px">
-              <span>Set</span>
-              <span>kg</span>
-              <span>Reps</span>
-              <span>✓</span>
-              <span>×</span>
-            </div>
-            ${rows}
-          </div>
-
-          <button class="add-set-btn" onclick="wkExs[${ei}].sets.push({reps:'',weight:'',done:false});renderExBlocks()">+ Add set</button>
-        </div>
-      `;
-    }).join('');
-  };
-
-  /* Boot refresh */
-  setTimeout(() => {
-    try{ renderNutrition(); }catch(e){}
-    try{ loadPastWorkouts(); }catch(e){}
-    try{ renderExBlocks(); }catch(e){}
-  }, 800);
-})();
-</script>
      FOOD LOG DELETE BUTTONS
   ------------------------------------------------------- */
   function addFoodDeleteButtons(){
@@ -17658,5 +17332,333 @@ window.obFinish = async function(){
     loadFeedPosts();
   }
 };
+</script>
+              <script>
+/* =========================================================
+   FORTE REAL FINAL DELETE FIX
+   MUST BE THE LAST SCRIPT IN THE WHOLE FILE.
+   Fixes:
+   - Food delete buttons
+   - Past workout delete buttons
+   - Active workout set remove buttons
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  function esc(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  function r1(v){
+    const n = Number(v || 0);
+    return Math.round(n * 10) / 10;
+  }
+
+  function pcent(v,g){
+    if(!g) return 0;
+    return Math.min(100, Math.round((Number(v || 0) / Number(g || 1)) * 100));
+  }
+
+  window.deleteFoodLog = async function(id){
+    if(!id) return toast('Missing food log');
+    if(!confirm('Delete this food log?')) return;
+
+    const { data, error } = await sb.rpc('delete_food_log_for_app', {
+      log_uuid: id
+    });
+
+    if(error || !data || data.ok === false){
+      console.error('DELETE FOOD ERROR:', error || data);
+      return toast('Could not delete food: ' + ((error && error.message) || (data && data.message) || 'unknown error'));
+    }
+
+    if(typeof nutLogs !== 'undefined' && Array.isArray(nutLogs)){
+      nutLogs = nutLogs.filter(x => x.id !== id);
+      window.nutLogs = nutLogs;
+    }
+
+    toast('Food deleted ✅');
+
+    try{ await loadNutrition(); }catch(e){}
+    try{ renderNutrition(); }catch(e){}
+  };
+
+  window.deleteWorkoutLog = async function(id){
+    if(!id) return toast('Missing workout');
+    if(!confirm('Delete this workout?')) return;
+
+    const { data, error } = await sb.rpc('delete_workout_for_app', {
+      workout_uuid: id
+    });
+
+    if(error || !data || data.ok === false){
+      console.error('DELETE WORKOUT ERROR:', error || data);
+      return toast('Could not delete workout: ' + ((error && error.message) || (data && data.message) || 'unknown error'));
+    }
+
+    toast('Workout deleted ✅');
+
+    try{ await loadPastWorkouts(); }catch(e){}
+    try{ await loadWkCount(); }catch(e){}
+    try{ await loadExerciseScreen(); }catch(e){}
+    try{ await loadFeedPosts(); }catch(e){}
+    try{ await loadProfilePosts(); }catch(e){}
+  };
+
+  window.removeWorkoutSet = function(ei, si){
+    if(typeof wkExs === 'undefined') return;
+    if(!wkExs[ei] || !Array.isArray(wkExs[ei].sets)) return;
+
+    if(wkExs[ei].sets.length <= 1){
+      wkExs[ei].sets[0] = { reps:'', weight:'', done:false };
+    }else{
+      wkExs[ei].sets.splice(si, 1);
+    }
+
+    renderExBlocks();
+  };
+
+  window.renderNutrition = function(){
+    const logs = typeof nutLogs !== 'undefined' && Array.isArray(nutLogs) ? nutLogs : [];
+
+    const totals = logs.reduce((a,l)=>({
+      cal: a.cal + Number(l.calories || 0),
+      pro: a.pro + Number(l.protein || 0),
+      carb: a.carb + Number(l.carbs || 0),
+      fat: a.fat + Number(l.fats || 0)
+    }), { cal:0, pro:0, carb:0, fat:0 });
+
+    const set = (id,val) => {
+      const el = document.getElementById(id);
+      if(el) el.textContent = val;
+    };
+
+    set('tot-cal', Math.round(totals.cal));
+    set('tot-pro', r1(totals.pro) + 'g');
+    set('tot-carb', r1(totals.carb) + 'g');
+    set('tot-fat', r1(totals.fat) + 'g');
+
+    const macro = document.getElementById('macro-progress');
+    if(macro && typeof goals !== 'undefined'){
+      macro.innerHTML = `
+        <div class="prog-row"><div class="prog-label">Calories</div><div class="prog-track"><div class="prog-fill" style="width:${pcent(totals.cal,goals.cal)}%;background:var(--accent)"></div></div><div class="prog-right">${Math.round(totals.cal)} / ${goals.cal}</div></div>
+        <div class="prog-row"><div class="prog-label">Protein</div><div class="prog-track"><div class="prog-fill" style="width:${pcent(totals.pro,goals.pro)}%;background:#4f9fff"></div></div><div class="prog-right">${r1(totals.pro)}g / ${goals.pro}g</div></div>
+        <div class="prog-row"><div class="prog-label">Carbs</div><div class="prog-track"><div class="prog-fill" style="width:${pcent(totals.carb,goals.carb)}%;background:#f0a500"></div></div><div class="prog-right">${r1(totals.carb)}g / ${goals.carb}g</div></div>
+        <div class="prog-row"><div class="prog-label">Fats</div><div class="prog-track"><div class="prog-fill" style="width:${pcent(totals.fat,goals.fat)}%;background:#ff4f9f"></div></div><div class="prog-right">${r1(totals.fat)}g / ${goals.fat}g</div></div>
+      `;
+    }
+
+    const box = document.getElementById('meal-sections');
+    if(!box) return;
+
+    const meals = ['Breakfast','Lunch','Dinner','Snack'];
+
+    box.innerHTML = meals.map(meal => {
+      const items = logs.filter(l => l.meal_type === meal);
+
+      return `
+        <div class="meal-section">
+          <div class="meal-header">
+            <div class="meal-title">${meal}</div>
+            <button class="meal-add" onclick="openAddFood('${meal}')">+ Add</button>
+          </div>
+
+          ${
+            items.length
+            ? items.map(i => `
+              <div class="food-item" style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center">
+                <div style="min-width:0">
+                  <div class="food-name">${esc(i.food_name || 'Food')}</div>
+                  <div class="food-macros">
+                    <span>P: ${r1(i.protein)}g</span>
+                    <span>C: ${r1(i.carbs)}g</span>
+                    <span>F: ${r1(i.fats)}g</span>
+                  </div>
+                </div>
+
+                <div class="food-cals">${Math.round(Number(i.calories || 0))}<br>kcal</div>
+
+                <button onclick="event.stopPropagation();deleteFoodLog('${i.id}')" style="
+                  background:rgba(255,79,79,.12);
+                  border:1px solid rgba(255,79,79,.45);
+                  color:#ff4f4f;
+                  border-radius:8px;
+                  padding:7px 9px;
+                  font-size:11px;
+                  font-weight:900;
+                  cursor:pointer;
+                ">Delete</button>
+              </div>
+            `).join('')
+            : '<div style="color:var(--text3);font-size:13px;padding:8px 0">Nothing logged yet</div>'
+          }
+        </div>
+      `;
+    }).join('');
+  };
+
+  window.loadPastWorkouts = async function(){
+    const u = await getUser();
+    if(!u) return;
+
+    const el = document.getElementById('ex-past-workouts');
+    if(!el) return;
+
+    const { data, error } = await sb
+      .from('workouts')
+      .select('*')
+      .eq('user_id', u.id)
+      .order('created_at', { ascending:false })
+      .limit(20);
+
+    if(error){
+      console.error('LOAD PAST WORKOUTS ERROR:', error);
+      el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">Could not load workouts</div>';
+      return;
+    }
+
+    if(!data || !data.length){
+      el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No workouts logged yet</div>';
+      return;
+    }
+
+    el.innerHTML = data.map(w => `
+      <div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px 16px;cursor:pointer" onclick="viewPastWorkout('${w.id}')">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center">
+          <div style="min-width:0">
+            <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.title || 'Workout')}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">${new Date(w.created_at).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+          </div>
+
+          <div style="text-align:right">
+            <div style="font-size:13px;color:var(--accent);font-weight:700">+${w.points_earned || 0} pts</div>
+            <div style="font-size:12px;color:var(--text3)">→</div>
+          </div>
+
+          <button onclick="event.stopPropagation();deleteWorkoutLog('${w.id}')" style="
+            background:rgba(255,79,79,.12);
+            border:1px solid rgba(255,79,79,.45);
+            color:#ff4f4f;
+            border-radius:8px;
+            padding:7px 9px;
+            font-size:11px;
+            font-weight:900;
+            cursor:pointer;
+          ">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  };
+
+  window.renderExBlocks = function(){
+    const box = document.getElementById('exercise-blocks');
+    if(!box) return;
+
+    const exs = typeof wkExs !== 'undefined' && Array.isArray(wkExs) ? wkExs : [];
+
+    box.innerHTML = exs.map((ex, ei) => {
+      let prevTxt = '';
+      if(ex.prev && ex.prev.length){
+        const l = ex.prev[0];
+        prevTxt = `📈 Last: ${l.weight}kg × ${l.reps} reps`;
+      }
+
+      const rows = (ex.sets || []).map((s, si) => `
+        <div class="set-row" style="grid-template-columns:36px 1fr 1fr 36px 36px">
+          <div class="set-num">${si + 1}</div>
+
+          <input class="set-inp" type="number" value="${esc(s.weight || '')}" placeholder="${ex.prev && ex.prev[si] ? ex.prev[si].weight : '0'}" onchange="wkExs[${ei}].sets[${si}].weight=this.value">
+
+          <input class="set-inp" type="number" value="${esc(s.reps || '')}" placeholder="${ex.prev && ex.prev[si] ? ex.prev[si].reps : '0'}" onchange="wkExs[${ei}].sets[${si}].reps=this.value">
+
+          <button class="set-check ${s.done ? 'done' : ''}" onclick="toggleDone(${ei},${si})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+
+          <button onclick="removeWorkoutSet(${ei},${si})" style="
+            width:30px;
+            height:30px;
+            border-radius:50%;
+            border:1px solid rgba(255,79,79,.45);
+            background:rgba(255,79,79,.12);
+            color:#ff4f4f;
+            font-size:18px;
+            font-weight:900;
+            cursor:pointer;
+          ">×</button>
+        </div>
+      `).join('');
+
+      return `
+        <div class="exercise-block">
+          <div class="ex-block-header">
+            <div>
+              <div class="ex-block-name">${esc(ex.name)}</div>
+              ${prevTxt ? `<div class="ex-block-prev">${esc(prevTxt)}</div>` : ''}
+            </div>
+            <button class="ex-remove" onclick="wkExs.splice(${ei},1);renderExBlocks()">×</button>
+          </div>
+
+          <div class="sets-table">
+            <div class="sets-header" style="grid-template-columns:36px 1fr 1fr 36px 36px">
+              <span>Set</span><span>kg</span><span>Reps</span><span>✓</span><span>×</span>
+            </div>
+            ${rows}
+          </div>
+
+          <button class="add-set-btn" onclick="wkExs[${ei}].sets.push({reps:'',weight:'',done:false});renderExBlocks()">+ Add set</button>
+        </div>
+      `;
+    }).join('');
+  };
+
+  const oldShowScreenDeleteFix = window.showScreen;
+  if(typeof oldShowScreenDeleteFix === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreenDeleteFix.apply(this, arguments);
+
+      setTimeout(() => {
+        if(name === 'nutrition'){
+          try{ renderNutrition(); }catch(e){}
+        }
+
+        if(name === 'exercise'){
+          try{ loadPastWorkouts(); }catch(e){}
+          try{ renderExBlocks(); }catch(e){}
+        }
+      }, 250);
+
+      return result;
+    };
+  }
+
+  setTimeout(() => {
+    try{ renderNutrition(); }catch(e){}
+    try{ loadPastWorkouts(); }catch(e){}
+    try{ renderExBlocks(); }catch(e){}
+  }, 1000);
+})();
 </script>
 </html>
