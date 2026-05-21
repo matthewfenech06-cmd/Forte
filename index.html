@@ -10643,6 +10643,624 @@ if('serviceWorker' in navigator){
   setInterval(attachSavePatch, 1500);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE FIX — STATS SAVE SUPABASE DETECTION
+   Paste BELOW the previous stats patch
+   ========================================================= */
+
+(function () {
+  function getForteSupabase() {
+    try {
+      if (typeof sb !== "undefined" && sb) return sb;
+      if (window.sb) return window.sb;
+      if (window.supabaseClient) return window.supabaseClient;
+      if (window._supabase) return window._supabase;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getInputByLabels(possibleLabels) {
+    const labels = possibleLabels.map(x => x.toLowerCase());
+
+    const all = Array.from(document.querySelectorAll("input, select"));
+
+    for (const el of all) {
+      const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+      const placeholder = (el.getAttribute("placeholder") || "").toLowerCase();
+      const name = (el.name || "").toLowerCase();
+      const id = (el.id || "").toLowerCase();
+      const value = (el.value || "").toLowerCase();
+
+      const nearby = (
+        (el.closest("label")?.innerText || "") + " " +
+        (el.parentElement?.innerText || "") + " " +
+        (el.parentElement?.previousElementSibling?.innerText || "")
+      ).toLowerCase();
+
+      if (labels.some(l =>
+        aria.includes(l) ||
+        placeholder.includes(l) ||
+        name.includes(l) ||
+        id.includes(l) ||
+        nearby.includes(l)
+      )) {
+        return el;
+      }
+    }
+
+    return null;
+  }
+
+  function numberFrom(el) {
+    if (!el) return null;
+    const n = parseFloat(String(el.value || "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function textFrom(el) {
+    if (!el) return null;
+    return String(el.value || el.textContent || "").trim() || null;
+  }
+
+  function calcTargets(d) {
+    const weight = Number(d.weight_kg || 0);
+    const height = Number(d.height_cm || 0);
+    const age = Number(d.age || 0);
+    const sex = String(d.sex || "").toLowerCase();
+    const activity = String(d.activity_level || "").toLowerCase();
+    const goalType = String(d.goal_type || "").toLowerCase();
+    const goalWeight = Number(d.goal_weight_kg || 0);
+    const weeks = Number(d.goal_weeks || 0);
+
+    if (!weight || !height || !age) {
+      return {
+        calorie_goal: null,
+        protein_goal: null,
+        carbs_goal: null,
+        fats_goal: null
+      };
+    }
+
+    let bmr = sex.includes("female")
+      ? 10 * weight + 6.25 * height - 5 * age - 161
+      : 10 * weight + 6.25 * height - 5 * age + 5;
+
+    let mult = 1.2;
+
+    if (activity.includes("light")) mult = 1.375;
+    if (activity.includes("moderate")) mult = 1.55;
+    if (activity.includes("very")) mult = 1.725;
+    if (activity.includes("athlete") || activity.includes("extra")) mult = 1.9;
+
+    let calories = bmr * mult;
+
+    if (goalType.includes("lose")) calories -= 400;
+    if (goalType.includes("gain") || goalType.includes("bulk")) calories += 300;
+
+    if (goalWeight && weeks && goalWeight !== weight) {
+      const kgDiff = goalWeight - weight;
+      const kcalDiffTotal = kgDiff * 7700;
+      const dailyChange = kcalDiffTotal / (weeks * 7);
+      calories += dailyChange;
+    }
+
+    calories = Math.max(1200, Math.round(calories));
+
+    const protein = Math.round(weight * 2);
+    const fats = Math.round((calories * 0.25) / 9);
+    const carbs = Math.max(0, Math.round((calories - protein * 4 - fats * 9) / 4));
+
+    return {
+      calorie_goal: calories,
+      protein_goal: protein,
+      carbs_goal: carbs,
+      fats_goal: fats
+    };
+  }
+
+  async function fixedSaveStatsGoals() {
+    const client = getForteSupabase();
+
+    if (!client) {
+      alert("Supabase is still loading. Wait 2 seconds and press Save again.");
+      return;
+    }
+
+    try {
+      const userRes = await client.auth.getUser();
+      const user = userRes?.data?.user;
+
+      if (!user) {
+        alert("You need to be logged in first.");
+        return;
+      }
+
+      const weightEl = getInputByLabels(["weight"]);
+      const heightEl = getInputByLabels(["height"]);
+      const ageEl = getInputByLabels(["age"]);
+      const sexEl = getInputByLabels(["sex"]);
+      const activityEl = getInputByLabels(["activity"]);
+      const goalWeightEl = getInputByLabels(["goal weight"]);
+      const weeksEl = getInputByLabels(["timeframe", "weeks"]);
+      const goalTypeEl = getInputByLabels(["goal type"]);
+
+      const data = {
+        weight_kg: numberFrom(weightEl),
+        height_cm: numberFrom(heightEl),
+        age: numberFrom(ageEl),
+        sex: textFrom(sexEl),
+        activity_level: textFrom(activityEl),
+        goal_weight_kg: numberFrom(goalWeightEl),
+        goal_weeks: numberFrom(weeksEl),
+        goal_type: textFrom(goalTypeEl)
+      };
+
+      const targets = calcTargets(data);
+
+      const payload = {
+        ...data,
+        ...targets,
+        onboarding_complete: true,
+        stats_updated_at: new Date().toISOString()
+      };
+
+      const { error } = await client
+        .from("profiles")
+        .update(payload)
+        .eq("id", user.id);
+
+      if (error) {
+        console.error("STATS SAVE ERROR:", error);
+        alert("Could not save stats: " + error.message);
+        return;
+      }
+
+      window.currentProfile = {
+        ...(window.currentProfile || {}),
+        ...payload
+      };
+
+      if (typeof showToast === "function") {
+        showToast("Stats saved");
+      } else {
+        alert("Stats saved");
+      }
+
+      document.querySelectorAll(".modal, .sheet, .bottom-sheet").forEach(el => {
+        const txt = (el.innerText || "").toLowerCase();
+        if (txt.includes("stats") || txt.includes("goals")) {
+          el.style.display = "none";
+        }
+      });
+
+      if (typeof loadProfile === "function") {
+        try { await loadProfile(); } catch (e) {}
+      }
+
+      if (typeof renderProfile === "function") {
+        try { renderProfile(); } catch (e) {}
+      }
+
+      if (typeof renderNutrition === "function") {
+        try { renderNutrition(); } catch (e) {}
+      }
+
+    } catch (err) {
+      console.error("STATS SAVE CRASH:", err);
+      alert("Could not save stats: " + (err.message || "unknown error"));
+    }
+  }
+
+  window.fixedSaveStatsGoals = fixedSaveStatsGoals;
+  window.forteSaveStatsAndGoals = fixedSaveStatsGoals;
+
+  function forceStatsSaveButton() {
+    const buttons = Array.from(document.querySelectorAll("button"));
+
+    buttons.forEach(btn => {
+      const text = (btn.textContent || "").trim().toLowerCase();
+      const pageText = (document.body.innerText || "").toLowerCase();
+
+      if (
+        text === "save" &&
+        (
+          pageText.includes("stats & goals") ||
+          pageText.includes("calculate my targets") ||
+          pageText.includes("goal weight") ||
+          pageText.includes("timeframe")
+        )
+      ) {
+        btn.disabled = false;
+        btn.style.opacity = "1";
+
+        btn.onclick = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          fixedSaveStatsGoals();
+          return false;
+        };
+      }
+    });
+  }
+
+  setInterval(forceStatsSaveButton, 500);
+  setTimeout(forceStatsSaveButton, 500);
+  setTimeout(forceStatsSaveButton, 1500);
+  setTimeout(forceStatsSaveButton, 3000);
+})();
+</script>
+ <script>
+/* =========================================================
+   FORTE FIX — SESSION RESET + LEAGUE INVITE JOIN FIX
+   Fixes:
+   - old account showing after sign out/sign in
+   - delete button showing for wrong user
+   - private leagues leaking until refresh
+   - league invite green tick sending undefined UUID
+   ========================================================= */
+
+(function () {
+  function getSB() {
+    try {
+      if (typeof sb !== "undefined" && sb) return sb;
+      if (window.sb) return window.sb;
+      if (window.supabaseClient) return window.supabaseClient;
+      if (window._supabase) return window._supabase;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearForteUserCache() {
+    try {
+      window.currentUser = null;
+      window.currentProfile = null;
+      window.profile = null;
+      window.me = null;
+      window.activeProfile = null;
+      window.currentUserId = null;
+
+      sessionStorage.removeItem("currentUser");
+      sessionStorage.removeItem("currentProfile");
+      sessionStorage.removeItem("profile");
+      sessionStorage.removeItem("me");
+      sessionStorage.removeItem("activeProfile");
+      sessionStorage.removeItem("currentUserId");
+
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("currentProfile");
+      localStorage.removeItem("profile");
+      localStorage.removeItem("me");
+      localStorage.removeItem("activeProfile");
+      localStorage.removeItem("currentUserId");
+
+      document.querySelectorAll("[data-owner-id]").forEach(el => {
+        el.removeAttribute("data-owner-id");
+      });
+    } catch (e) {
+      console.warn("Cache clear skipped", e);
+    }
+  }
+
+  async function forceReloadCurrentAccount() {
+    const client = getSB();
+    if (!client) return;
+
+    try {
+      const userRes = await client.auth.getUser();
+      const user = userRes?.data?.user;
+
+      if (!user) {
+        clearForteUserCache();
+        return;
+      }
+
+      const { data: freshProfile } = await client
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      window.currentUser = user;
+      window.currentUserId = user.id;
+      window.currentProfile = freshProfile || null;
+      window.profile = freshProfile || null;
+      window.me = freshProfile || null;
+
+      try {
+        localStorage.setItem("currentUserId", user.id);
+      } catch (e) {}
+
+      if (typeof loadProfile === "function") {
+        try { await loadProfile(); } catch (e) {}
+      }
+
+      if (typeof loadFeed === "function") {
+        try { await loadFeed(); } catch (e) {}
+      }
+
+      if (typeof loadStories === "function") {
+        try { await loadStories(); } catch (e) {}
+      }
+
+      if (typeof loadLeagues === "function") {
+        try { await loadLeagues(); } catch (e) {}
+      }
+
+      if (typeof renderProfile === "function") {
+        try { renderProfile(); } catch (e) {}
+      }
+
+      if (typeof renderFeed === "function") {
+        try { renderFeed(); } catch (e) {}
+      }
+
+    } catch (err) {
+      console.error("forceReloadCurrentAccount error:", err);
+    }
+  }
+
+  function setupAuthChangeFix() {
+    const client = getSB();
+    if (!client || !client.auth || !client.auth.onAuthStateChange) {
+      setTimeout(setupAuthChangeFix, 700);
+      return;
+    }
+
+    if (window.__forteAuthChangeFixInstalled) return;
+    window.__forteAuthChangeFixInstalled = true;
+
+    client.auth.onAuthStateChange(async function (event, session) {
+      console.log("FORTE AUTH CHANGE:", event);
+
+      if (event === "SIGNED_OUT") {
+        clearForteUserCache();
+
+        setTimeout(function () {
+          location.reload();
+        }, 300);
+
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        clearForteUserCache();
+
+        setTimeout(async function () {
+          await forceReloadCurrentAccount();
+        }, 300);
+
+        setTimeout(async function () {
+          await forceReloadCurrentAccount();
+        }, 1200);
+      }
+    });
+  }
+
+  setupAuthChangeFix();
+
+  setTimeout(forceReloadCurrentAccount, 1000);
+
+  function getInviteIdFromButton(btn) {
+    if (!btn) return null;
+
+    const card = btn.closest("[data-invite-id], [data-league-invite-id], .league-invite, .invite-card, .league-card, div");
+
+    const direct =
+      btn.dataset.inviteId ||
+      btn.dataset.leagueInviteId ||
+      btn.getAttribute("data-invite-id") ||
+      btn.getAttribute("data-league-invite-id");
+
+    if (direct && direct !== "undefined") return direct;
+
+    if (card) {
+      const fromCard =
+        card.dataset?.inviteId ||
+        card.dataset?.leagueInviteId ||
+        card.getAttribute?.("data-invite-id") ||
+        card.getAttribute?.("data-league-invite-id");
+
+      if (fromCard && fromCard !== "undefined") return fromCard;
+    }
+
+    const onclickText = String(btn.getAttribute("onclick") || "");
+
+    const uuidMatch = onclickText.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuidMatch) return uuidMatch[0];
+
+    return null;
+  }
+
+  async function fixedAcceptLeagueInvite(inviteId) {
+    const client = getSB();
+
+    if (!client) {
+      alert("Supabase is not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteId || inviteId === "undefined") {
+      alert("Could not join: invite ID missing. Reload the app and try again.");
+      console.error("Missing invite ID:", inviteId);
+      return;
+    }
+
+    try {
+      const { data, error } = await client.rpc("accept_league_invite", {
+        invite_uuid: inviteId
+      });
+
+      if (error) {
+        console.error("ACCEPT LEAGUE INVITE ERROR:", error);
+        alert("Could not join: " + error.message);
+        return;
+      }
+
+      if (data && data.ok === false) {
+        alert(data.message || "Could not join league.");
+        return;
+      }
+
+      if (typeof showToast === "function") {
+        showToast("Joined league");
+      } else {
+        alert("Joined league");
+      }
+
+      if (typeof loadLeagues === "function") {
+        try { await loadLeagues(); } catch (e) {}
+      }
+
+      if (typeof loadFeed === "function") {
+        try { await loadFeed(); } catch (e) {}
+      }
+
+      if (typeof renderFeed === "function") {
+        try { renderFeed(); } catch (e) {}
+      }
+
+      setTimeout(function () {
+        location.reload();
+      }, 600);
+
+    } catch (err) {
+      console.error("JOIN LEAGUE CRASH:", err);
+      alert("Could not join: " + (err.message || "unknown error"));
+    }
+  }
+
+  async function fixedDeclineLeagueInvite(inviteId) {
+    const client = getSB();
+
+    if (!client) {
+      alert("Supabase is not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteId || inviteId === "undefined") {
+      alert("Could not decline: invite ID missing. Reload the app and try again.");
+      return;
+    }
+
+    try {
+      const { error } = await client.rpc("decline_league_invite", {
+        invite_uuid: inviteId
+      });
+
+      if (error) {
+        alert("Could not decline: " + error.message);
+        return;
+      }
+
+      if (typeof showToast === "function") {
+        showToast("Invite declined");
+      }
+
+      setTimeout(function () {
+        location.reload();
+      }, 500);
+
+    } catch (err) {
+      alert("Could not decline: " + (err.message || "unknown error"));
+    }
+  }
+
+  window.fixedAcceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.acceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.joinLeagueInvite = fixedAcceptLeagueInvite;
+
+  window.fixedDeclineLeagueInvite = fixedDeclineLeagueInvite;
+  window.declineLeagueInvite = fixedDeclineLeagueInvite;
+
+  function attachInviteButtons() {
+    const buttons = Array.from(document.querySelectorAll("button, div, span"));
+
+    buttons.forEach(btn => {
+      const txt = (btn.textContent || "").trim();
+
+      const isAccept =
+        txt === "✓" ||
+        txt === "✔" ||
+        txt.toLowerCase() === "accept" ||
+        txt.toLowerCase() === "join";
+
+      const isDecline =
+        txt === "×" ||
+        txt === "✕" ||
+        txt === "x" ||
+        txt.toLowerCase() === "decline" ||
+        txt.toLowerCase() === "reject";
+
+      if (!isAccept && !isDecline) return;
+
+      const nearby = (btn.closest(".league-invite, .invite-card, .league-card, div")?.innerText || "").toLowerCase();
+
+      if (!nearby.includes("league invite") && !nearby.includes("invited by")) return;
+
+      if (btn.__forteInviteFixed) return;
+      btn.__forteInviteFixed = true;
+
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const inviteId = getInviteIdFromButton(btn);
+
+        if (isAccept) {
+          fixedAcceptLeagueInvite(inviteId);
+        } else {
+          fixedDeclineLeagueInvite(inviteId);
+        }
+
+        return false;
+      }, true);
+    });
+  }
+
+  setInterval(attachInviteButtons, 600);
+  setTimeout(attachInviteButtons, 500);
+  setTimeout(attachInviteButtons, 1500);
+  setTimeout(attachInviteButtons, 3000);
+
+  function hideWrongDeleteButtons() {
+    const currentId =
+      window.currentUser?.id ||
+      window.currentUserId ||
+      window.currentProfile?.id ||
+      null;
+
+    if (!currentId) return;
+
+    document.querySelectorAll("button").forEach(btn => {
+      const txt = (btn.textContent || "").trim().toLowerCase();
+      if (txt !== "delete") return;
+
+      const post = btn.closest("[data-user-id], [data-owner-id], [data-author-id], .post-card, .feed-card, article, div");
+
+      if (!post) return;
+
+      const owner =
+        post.getAttribute("data-user-id") ||
+        post.getAttribute("data-owner-id") ||
+        post.getAttribute("data-author-id") ||
+        post.dataset?.userId ||
+        post.dataset?.ownerId ||
+        post.dataset?.authorId;
+
+      if (owner && owner !== currentId) {
+        btn.style.display = "none";
+      }
+    });
+  }
+
+  setInterval(hideWrongDeleteButtons, 700);
+})();
+</script> 
    Paste directly before </body>
    ========================================================= */
 
