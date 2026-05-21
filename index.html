@@ -11620,6 +11620,414 @@ if('serviceWorker' in navigator){
 })();
 </script>
 </script>
+  <script>
+/* =========================================================
+   FORTE TARGETED PATCH
+   - League members display properly for creator + joined users
+   - Accept/decline uses safe RPC
+   - Recipe save no longer stuck on Saving...
+   - Adds My recipes button to Log Food modal
+   ========================================================= */
+
+(function(){
+  function fToast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    if(typeof forteToast === 'function') return forteToast(msg);
+    alert(msg);
+  }
+
+  function fEsc(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function fUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  window.acceptLeagueInvite = async function(leagueId){
+    const u = await fUser();
+    if(!u) return fToast('Please sign in first');
+
+    const { data, error } = await sb.rpc('accept_league_invite_for_app', {
+      league_uuid: leagueId
+    });
+
+    if(error){
+      console.error('ACCEPT LEAGUE RPC ERROR:', error);
+      return fToast('Could not join: ' + error.message);
+    }
+
+    if(!data || data.ok === false){
+      return fToast((data && data.message) || 'Could not join league');
+    }
+
+    fToast('Joined league ✅');
+
+    try{ if(typeof loadFeedLeagues === 'function') await loadFeedLeagues(); }catch(e){}
+    try{ if(typeof loadLeagues === 'function') await loadLeagues(); }catch(e){}
+    try{ if(typeof loadNotifications === 'function') await loadNotifications(); }catch(e){}
+  };
+
+  window.declineLeagueInvite = async function(leagueId){
+    const u = await fUser();
+    if(!u) return fToast('Please sign in first');
+
+    const { data, error } = await sb.rpc('decline_league_invite_for_app', {
+      league_uuid: leagueId
+    });
+
+    if(error){
+      console.error('DECLINE LEAGUE RPC ERROR:', error);
+      return fToast('Could not decline: ' + error.message);
+    }
+
+    if(!data || data.ok === false){
+      return fToast((data && data.message) || 'Could not decline invite');
+    }
+
+    fToast('Invite declined');
+
+    try{ if(typeof loadFeedLeagues === 'function') await loadFeedLeagues(); }catch(e){}
+    try{ if(typeof loadLeagues === 'function') await loadLeagues(); }catch(e){}
+  };
+
+  window.openLeague = async function(leagueId){
+    const u = await fUser();
+    if(!u) return fToast('Please sign in first');
+
+    const { data: league, error: leagueErr } = await sb
+      .from('leagues')
+      .select('*')
+      .eq('id', leagueId)
+      .single();
+
+    if(leagueErr || !league){
+      console.error('OPEN LEAGUE ERROR:', leagueErr);
+      return fToast('League not found');
+    }
+
+    const { data: members, error: membersErr } = await sb.rpc('get_league_members_for_app', {
+      league_uuid: leagueId
+    });
+
+    if(membersErr){
+      console.error('GET LEAGUE MEMBERS ERROR:', membersErr);
+      return fToast('Could not load members: ' + membersErr.message);
+    }
+
+    const rows = members || [];
+    const isAdmin = league.created_by === u.id;
+    const isStarted = !!league.started_at;
+    const daysLeft = league.end_date ? Math.max(0, Math.ceil((new Date(league.end_date) - new Date()) / 86400000)) : null;
+
+    const medal = i => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : String(i + 1);
+
+    const content = document.getElementById('post-modal-content');
+    const modal = document.getElementById('post-modal');
+
+    if(!content || !modal) return;
+
+    content.innerHTML = `
+      <div style="margin-bottom:14px">
+        <div style="font-size:19px;font-weight:800;margin-bottom:4px">${fEsc(league.name)}</div>
+        ${league.description ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">${fEsc(league.description)}</div>` : ''}
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          ${daysLeft !== null ? `<span style="background:var(--bg3);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2)">⏳ ${daysLeft} days left</span>` : ''}
+          ${league.reward ? `<span style="background:rgba(255,0,144,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#ff0090;font-weight:700">🏆 ${fEsc(league.reward)}</span>` : ''}
+          <span style="background:var(--bg3);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2)">${rows.length} member${rows.length === 1 ? '' : 's'}</span>
+          ${isStarted ? `<span style="background:rgba(0,200,100,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#00c864;font-weight:700">🟢 Active</span>` : `<span style="background:rgba(255,165,0,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#f0a500;font-weight:700">⏳ Not started</span>`}
+        </div>
+
+        ${isAdmin && !isStarted ? `
+          <button onclick="startLeague('${leagueId}')" style="width:100%;background:#ff0090;border:none;border-radius:var(--radius-sm);padding:12px;font-size:14px;font-weight:800;color:#fff;cursor:pointer;margin-bottom:12px">
+            🚀 Start league
+          </button>
+        ` : ''}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.5fr .8fr .8fr .8fr;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase">
+        <div>Member</div>
+        <div style="text-align:center">Points</div>
+        <div style="text-align:center">Workouts</div>
+        <div style="text-align:center">Recipes</div>
+      </div>
+
+      ${
+        rows.length === 0
+        ? `<div style="font-size:13px;color:var(--text3);padding:14px 0">No accepted members yet</div>`
+        : rows.map((m, i) => `
+          <div style="display:grid;grid-template-columns:1.5fr .8fr .8fr .8fr;gap:6px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:9px;min-width:0">
+              <div style="width:24px;text-align:center;font-size:14px;font-weight:800">${medal(i)}</div>
+              <div style="width:34px;height:34px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--accent);flex-shrink:0">
+                ${m.avatar_url ? `<img src="${m.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : fEsc((m.full_name || m.username || '?')[0]).toUpperCase()}
+              </div>
+              <div style="min-width:0">
+                <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fEsc(m.full_name || m.username || 'User')}</div>
+                <div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${fEsc(m.username || '')}</div>
+              </div>
+            </div>
+            <div style="text-align:center;font-size:14px;font-weight:800;color:var(--accent)">${m.points || 0}</div>
+            <div style="text-align:center;font-size:14px;font-weight:800">${m.workouts_count || 0}</div>
+            <div style="text-align:center;font-size:14px;font-weight:800">${m.recipes_count || 0}</div>
+          </div>
+        `).join('')
+      }
+
+      <div style="margin-top:16px">
+        <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Invite friends</div>
+        <div id="league-invite-list-${leagueId}"></div>
+      </div>
+    `;
+
+    modal.classList.add('open');
+
+    try{
+      if(typeof loadFriendsForInvite === 'function'){
+        loadFriendsForInvite(leagueId);
+      }
+    }catch(e){}
+  };
+
+  window.saveRecipe = async function(){
+    const u = await fUser();
+    if(!u) return fToast('Sign in first');
+
+    const btn = document.querySelector('#create-recipe-modal .btn-primary');
+    const oldText = btn ? btn.textContent : 'Save recipe';
+
+    if(btn){
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+    }
+
+    try{
+      const title = document.getElementById('rc-title')?.value?.trim();
+      if(!title) throw new Error('Add a recipe name');
+
+      let imageUrl = null;
+      const imgInput = document.getElementById('rc-img-input');
+      const imgFile = imgInput && imgInput.files ? imgInput.files[0] : null;
+
+      if(imgFile){
+        const ext = (imgFile.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `recipes/${u.id}/${Date.now()}.${ext}`;
+
+        const upload = await sb.storage.from('forte-media').upload(path, imgFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+        if(upload.error) throw upload.error;
+
+        const pub = sb.storage.from('forte-media').getPublicUrl(path);
+        imageUrl = pub?.data?.publicUrl || null;
+      }
+
+      const now = new Date();
+      const leagueId = recipeLeagueEnabled ? (document.getElementById('rc-league-select')?.value || null) : null;
+
+      if(recipeLeagueEnabled && !leagueId){
+        throw new Error('Choose a league or turn off league vote');
+      }
+
+      const weekNum = typeof getWeekNumber === 'function' ? getWeekNumber(now) : null;
+
+      const recipe = {
+        user_id: u.id,
+        title,
+        description: document.getElementById('rc-desc')?.value || null,
+        ingredients: document.getElementById('rc-ingredients')?.value || null,
+        instructions: document.getElementById('rc-instructions')?.value || null,
+        calories: parseInt(document.getElementById('rc-cal')?.value) || 0,
+        protein: parseFloat(document.getElementById('rc-pro')?.value) || 0,
+        carbs: parseFloat(document.getElementById('rc-carb')?.value) || 0,
+        fats: parseFloat(document.getElementById('rc-fat')?.value) || 0,
+        servings: parseInt(document.getElementById('rc-servings')?.value) || 1,
+        prep_time: parseInt(document.getElementById('rc-prep')?.value) || null,
+        is_private: recipeVis === 'private',
+        image_url: imageUrl,
+        vote_count: 0,
+        week_number: leagueId ? weekNum : null,
+        year: leagueId ? now.getFullYear() : null,
+        league_id: leagueId
+      };
+
+      const { error } = await sb.from('recipes').insert(recipe);
+      if(error) throw error;
+
+      const modal = document.getElementById('create-recipe-modal');
+      if(modal) modal.classList.remove('open');
+
+      fToast('Recipe saved! 🍽️');
+
+      try{ if(typeof loadRecipes === 'function') await loadRecipes(currentRecipeTab || 'all'); }catch(e){}
+      try{ if(typeof loadFeedRecipes === 'function') await loadFeedRecipes(); }catch(e){}
+
+    }catch(err){
+      console.error('SAVE RECIPE ERROR:', err);
+      fToast('Could not save recipe: ' + (err.message || 'unknown error'));
+    }finally{
+      if(btn){
+        btn.textContent = oldText || 'Save recipe';
+        btn.disabled = false;
+      }
+    }
+  };
+
+  function ensureMyRecipesFoodButton(){
+    const modal = document.getElementById('food-modal');
+    if(!modal || document.getElementById('food-my-recipes-btn')) return;
+
+    const title = modal.querySelector('.modal-title');
+    const target = title ? title.parentElement : modal.querySelector('.modal');
+
+    if(!target) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'food-my-recipes-btn';
+    btn.type = 'button';
+    btn.textContent = '🍽️ My recipes';
+    btn.style.cssText = `
+      width:auto;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      margin:0 0 12px 0;
+      padding:7px 11px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:var(--bg3);
+      color:var(--text2);
+      font-size:12px;
+      font-weight:800;
+      cursor:pointer;
+    `;
+    btn.onclick = openMyRecipesFoodLog;
+
+    if(title){
+      title.insertAdjacentElement('afterend', btn);
+    }else{
+      target.prepend(btn);
+    }
+  }
+
+  window.openMyRecipesFoodLog = async function(){
+    const u = await fUser();
+    if(!u) return fToast('Sign in first');
+
+    const { data, error } = await sb
+      .from('recipes')
+      .select('id,title,calories,protein,carbs,fats,servings')
+      .eq('user_id', u.id)
+      .order('created_at', { ascending:false })
+      .limit(30);
+
+    if(error){
+      console.error('MY RECIPES FOOD ERROR:', error);
+      return fToast('Could not load your recipes');
+    }
+
+    let box = document.getElementById('my-recipes-food-box');
+
+    if(!box){
+      box = document.createElement('div');
+      box.id = 'my-recipes-food-box';
+      box.style.cssText = 'margin:0 0 14px 0;display:flex;flex-direction:column;gap:8px;';
+      const btn = document.getElementById('food-my-recipes-btn');
+      btn?.insertAdjacentElement('afterend', box);
+    }
+
+    if(!data || !data.length){
+      box.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">No recipes saved yet</div>';
+      return;
+    }
+
+    box.innerHTML = data.map(r => `
+      <button type="button" onclick="logRecipeAsFood('${r.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:left;color:var(--text);cursor:pointer">
+        <div style="font-size:13px;font-weight:800">${fEsc(r.title)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">${r.calories || 0} kcal · ${r.protein || 0}g P · ${r.carbs || 0}g C · ${r.fats || 0}g F</div>
+      </button>
+    `).join('');
+  };
+
+  window.logRecipeAsFood = async function(recipeId){
+    const u = await fUser();
+    if(!u) return fToast('Sign in first');
+
+    const { data: r, error } = await sb
+      .from('recipes')
+      .select('title,calories,protein,carbs,fats')
+      .eq('id', recipeId)
+      .single();
+
+    if(error || !r){
+      console.error('LOG RECIPE FOOD ERROR:', error);
+      return fToast('Could not log recipe');
+    }
+
+    const meal = document.getElementById('food-meal')?.value || 'Snack';
+    const today = new Date().toISOString().split('T')[0];
+
+    const entry = {
+      user_id: u.id,
+      food_name: r.title,
+      meal_type: meal,
+      calories: parseInt(r.calories) || 0,
+      protein: parseFloat(r.protein) || 0,
+      carbs: parseFloat(r.carbs) || 0,
+      fats: parseFloat(r.fats) || 0,
+      log_date: today
+    };
+
+    const insert = await sb.from('nutrition_logs').insert(entry).select().single();
+
+    if(insert.error){
+      console.error('INSERT RECIPE FOOD ERROR:', insert.error);
+      return fToast('Could not log recipe: ' + insert.error.message);
+    }
+
+    if(Array.isArray(nutLogs)){
+      nutLogs.push(insert.data || entry);
+    }
+
+    try{ if(typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+    try{ if(typeof loadNutrition === 'function') await loadNutrition(); }catch(e){}
+
+    const modal = document.getElementById('food-modal');
+    if(modal) modal.classList.remove('open');
+
+    fToast('Recipe logged ✅');
+  };
+
+  const oldOpenAddFoodForRecipes = typeof openAddFood === 'function' ? openAddFood : null;
+
+  window.openAddFood = function(meal){
+    if(oldOpenAddFoodForRecipes){
+      oldOpenAddFoodForRecipes(meal);
+    }else{
+      const modal = document.getElementById('food-modal');
+      if(modal) modal.classList.add('open');
+    }
+
+    setTimeout(ensureMyRecipesFoodButton, 80);
+  };
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
