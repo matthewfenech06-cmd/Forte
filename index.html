@@ -10416,6 +10416,233 @@ if('serviceWorker' in navigator){
    <script>
 /* =========================================================
    FORTE PRIVACY + PUBLIC PROFILE FEED FIX
+   <script>
+/* =========================================================
+   FORTE PATCH — SAVE STATS & GOALS PROPERLY
+   ========================================================= */
+
+(function () {
+  function numVal(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const v = parseFloat(el.value);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function textVal(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    return String(el.value || "").trim() || null;
+  }
+
+  function calculateTargetsLocal(data) {
+    const weight = Number(data.weight_kg || 0);
+    const height = Number(data.height_cm || 0);
+    const age = Number(data.age || 0);
+    const sex = String(data.sex || "").toLowerCase();
+    const activity = String(data.activity_level || "").toLowerCase();
+    const goalType = String(data.goal_type || "").toLowerCase();
+
+    if (!weight || !height || !age) {
+      return {
+        calorie_goal: null,
+        protein_goal: null,
+        carbs_goal: null,
+        fats_goal: null
+      };
+    }
+
+    let bmr;
+
+    if (sex.includes("female")) {
+      bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+    } else {
+      bmr = 10 * weight + 6.25 * height - 5 * age + 5;
+    }
+
+    let multiplier = 1.2;
+
+    if (activity.includes("light")) multiplier = 1.375;
+    if (activity.includes("moderate")) multiplier = 1.55;
+    if (activity.includes("very")) multiplier = 1.725;
+    if (activity.includes("athlete") || activity.includes("extra")) multiplier = 1.9;
+
+    let calories = bmr * multiplier;
+
+    if (goalType.includes("lose")) calories -= 400;
+    if (goalType.includes("gain")) calories += 300;
+    if (goalType.includes("maintain")) calories += 0;
+
+    calories = Math.max(1200, Math.round(calories));
+
+    const protein = Math.round(weight * 2);
+    const fats = Math.round((calories * 0.25) / 9);
+    const carbs = Math.round((calories - protein * 4 - fats * 9) / 4);
+
+    return {
+      calorie_goal: calories,
+      protein_goal: protein,
+      carbs_goal: Math.max(0, carbs),
+      fats_goal: fats
+    };
+  }
+
+  async function forteSaveStatsAndGoals() {
+    try {
+      if (!window.sb) {
+        alert("Supabase is not ready yet. Reload and try again.");
+        return;
+      }
+
+      const authRes = await sb.auth.getUser();
+      const user = authRes && authRes.data && authRes.data.user;
+
+      if (!user) {
+        alert("You need to be logged in first.");
+        return;
+      }
+
+      const data = {
+        weight_kg:
+          numVal("weightKg") ??
+          numVal("weight_kg") ??
+          numVal("profileWeight") ??
+          numVal("statsWeight"),
+
+        height_cm:
+          numVal("heightCm") ??
+          numVal("height_cm") ??
+          numVal("profileHeight") ??
+          numVal("statsHeight"),
+
+        age:
+          numVal("age") ??
+          numVal("profileAge") ??
+          numVal("statsAge"),
+
+        sex:
+          textVal("sex") ??
+          textVal("profileSex") ??
+          textVal("statsSex"),
+
+        activity_level:
+          textVal("activityLevel") ??
+          textVal("activity_level") ??
+          textVal("profileActivity") ??
+          textVal("statsActivity"),
+
+        goal_weight_kg:
+          numVal("goalWeightKg") ??
+          numVal("goal_weight_kg") ??
+          numVal("goalWeight"),
+
+        goal_weeks:
+          numVal("goalWeeks") ??
+          numVal("goal_weeks") ??
+          numVal("timeframeWeeks"),
+
+        goal_type:
+          textVal("goalType") ??
+          textVal("goal_type") ??
+          textVal("profileGoalType")
+      };
+
+      const targets = calculateTargetsLocal(data);
+
+      const payload = {
+        ...data,
+        ...targets,
+        onboarding_complete: true,
+        stats_updated_at: new Date().toISOString()
+      };
+
+      const { error } = await sb
+        .from("profiles")
+        .update(payload)
+        .eq("id", user.id);
+
+      if (error) {
+        console.error("SAVE STATS ERROR:", error);
+        alert("Could not save stats: " + error.message);
+        return;
+      }
+
+      window.currentProfile = {
+        ...(window.currentProfile || {}),
+        ...payload
+      };
+
+      if (typeof showToast === "function") {
+        showToast("Stats saved");
+      } else {
+        alert("Stats saved");
+      }
+
+      const modal =
+        document.getElementById("statsModal") ||
+        document.getElementById("goalsModal") ||
+        document.querySelector(".stats-modal");
+
+      if (modal) modal.style.display = "none";
+
+      if (typeof loadProfile === "function") {
+        await loadProfile();
+      }
+
+      if (typeof renderProfile === "function") {
+        renderProfile();
+      }
+
+      if (typeof renderNutrition === "function") {
+        renderNutrition();
+      }
+
+    } catch (err) {
+      console.error("SAVE STATS CRASH:", err);
+      alert("Could not save stats.");
+    }
+  }
+
+  window.forteSaveStatsAndGoals = forteSaveStatsAndGoals;
+
+  function attachSavePatch() {
+    const buttons = Array.from(document.querySelectorAll("button"));
+
+    buttons.forEach(btn => {
+      const txt = (btn.textContent || "").trim().toLowerCase();
+
+      if (
+        txt === "save" &&
+        btn.closest("body") &&
+        (
+          document.body.innerText.includes("Stats & goals") ||
+          document.body.innerText.includes("Calculate my targets")
+        )
+      ) {
+        btn.onclick = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          forteSaveStatsAndGoals();
+        };
+      }
+    });
+  }
+
+  const oldOpenStats =
+    window.openStatsGoals ||
+    window.openStatsModal ||
+    window.openGoalsModal;
+
+  if (typeof oldOpenStats === "function") {
+    window.openStatsGoals = function () {
+      oldOpenStats.apply(this, arguments);
+      setTimeout(attachSavePatch, 300);
+    };
+  }
+
+  setInterval(attachSavePatch, 1500);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
