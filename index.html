@@ -11415,14 +11415,40 @@ if('serviceWorker' in navigator){
 </script>
   <script>
 /* =========================================================
-   FORTE FINAL LEAGUE INVITE BUTTON PATCH
-   Fixes old invite cards by accepting/declining through
-   the visible league name when the stored ID is wrong.
+  <script>
+/* =========================================================
+   FORTE LEAGUE INVITE PATCH - FIXED SUPABASE CLIENT VERSION
+   Fixes: sb.rpc is not a function
    ========================================================= */
 
 (function () {
-  function sbClient() {
-    return window.sb || window.supabaseClient || window.supabase || null;
+  function getRealSupabaseClient() {
+    const possible = [
+      window.sb,
+      window.supabaseClient,
+      window.supa,
+      window.client,
+      window.FORTE_SUPABASE,
+      window._supabase
+    ];
+
+    for (const c of possible) {
+      if (c && typeof c.rpc === "function" && c.auth) return c;
+    }
+
+    // Search window for the real Supabase client
+    for (const key in window) {
+      try {
+        const val = window[key];
+        if (val && typeof val.rpc === "function" && val.auth) {
+          console.log("FORTE found Supabase client at window." + key);
+          return val;
+        }
+      } catch (e) {}
+    }
+
+    console.error("FORTE could not find real Supabase client");
+    return null;
   }
 
   function cleanText(txt) {
@@ -11436,7 +11462,7 @@ if('serviceWorker' in navigator){
 
   function findInviteCard(el) {
     let node = el;
-    for (let i = 0; i < 8 && node; i++) {
+    for (let i = 0; i < 10 && node; i++) {
       const text = node.innerText || "";
       if (text.includes("LEAGUE INVITE")) return node;
       node = node.parentElement;
@@ -11447,35 +11473,26 @@ if('serviceWorker' in navigator){
   function getLeagueNameFromCard(card) {
     if (!card) return "";
 
-    const all = Array.from(card.querySelectorAll("*"))
-      .map(x => cleanText(x.innerText || x.textContent || ""))
-      .filter(Boolean);
-
-    for (const t of all) {
-      if (
-        t &&
-        !t.includes("Invited by") &&
-        !t.includes("Reward") &&
-        !t.includes("✓") &&
-        !t.includes("×") &&
-        t.toUpperCase() !== "LEAGUE INVITE"
-      ) {
-        return t;
-      }
-    }
-
     const lines = (card.innerText || "")
       .split("\n")
       .map(cleanText)
       .filter(Boolean);
 
-    return lines.find(x =>
-      x.toUpperCase() !== "LEAGUE INVITE" &&
-      !x.includes("Invited by") &&
-      !x.includes("Reward") &&
-      x !== "✓" &&
-      x !== "×"
-    ) || "";
+    for (const line of lines) {
+      if (
+        line &&
+        line.toUpperCase() !== "LEAGUE INVITE" &&
+        !line.toLowerCase().includes("invited by") &&
+        !line.toLowerCase().includes("reward") &&
+        line !== "✓" &&
+        line !== "×" &&
+        line !== "x"
+      ) {
+        return line;
+      }
+    }
+
+    return "";
   }
 
   async function refreshForte() {
@@ -11484,7 +11501,8 @@ if('serviceWorker' in navigator){
       "loadFeed",
       "renderFeed",
       "loadNotifications",
-      "loadMyLeagues"
+      "loadMyLeagues",
+      "init"
     ];
 
     for (const f of funcs) {
@@ -11497,9 +11515,10 @@ if('serviceWorker' in navigator){
   }
 
   async function acceptInviteSmart(card) {
-    const sb = sbClient();
+    const sb = getRealSupabaseClient();
+
     if (!sb) {
-      alert("Supabase not ready. Reload and try again.");
+      alert("Supabase client not found. Reload and try again.");
       return;
     }
 
@@ -11510,16 +11529,20 @@ if('serviceWorker' in navigator){
       return;
     }
 
+    console.log("FORTE accepting league invite by name:", leagueName);
+
     const { data, error } = await sb.rpc("accept_league_invite_by_name", {
       league_name_text: leagueName
     });
 
     if (error) {
+      console.error("FORTE accept invite error:", error);
       alert("Could not join: " + error.message);
       return;
     }
 
     if (!data || data.ok === false) {
+      console.error("FORTE accept invite returned false:", data);
       alert((data && data.message) ? data.message : "Invite not found");
       return;
     }
@@ -11531,9 +11554,10 @@ if('serviceWorker' in navigator){
   }
 
   async function declineInviteSmart(card) {
-    const sb = sbClient();
+    const sb = getRealSupabaseClient();
+
     if (!sb) {
-      alert("Supabase not ready. Reload and try again.");
+      alert("Supabase client not found. Reload and try again.");
       return;
     }
 
@@ -11544,16 +11568,20 @@ if('serviceWorker' in navigator){
       return;
     }
 
+    console.log("FORTE declining league invite by name:", leagueName);
+
     const { data, error } = await sb.rpc("decline_league_invite_by_name", {
       league_name_text: leagueName
     });
 
     if (error) {
+      console.error("FORTE decline invite error:", error);
       alert("Could not decline: " + error.message);
       return;
     }
 
     if (!data || data.ok === false) {
+      console.error("FORTE decline invite returned false:", data);
       alert((data && data.message) ? data.message : "Invite not found");
       return;
     }
@@ -11565,25 +11593,25 @@ if('serviceWorker' in navigator){
   }
 
   document.addEventListener("click", function (e) {
-    const target = e.target;
-    const card = findInviteCard(target);
+    const card = findInviteCard(e.target);
     if (!card) return;
 
-    const txt = (target.innerText || target.textContent || "").trim();
+    const btn = e.target.closest("button") || e.target;
+    const txt = (btn.innerText || btn.textContent || "").trim();
 
-    const isGreen =
+    const isAccept =
       txt === "✓" ||
       txt.includes("✓") ||
-      target.closest("button")?.style?.backgroundColor?.includes("0, 200") ||
-      target.closest("button")?.className?.toString().toLowerCase().includes("green");
+      btn.style.backgroundColor.includes("0, 200") ||
+      btn.className.toString().toLowerCase().includes("green");
 
-    const isRed =
+    const isDecline =
       txt === "×" ||
       txt === "x" ||
       txt.includes("×") ||
-      target.closest("button")?.className?.toString().toLowerCase().includes("red");
+      btn.className.toString().toLowerCase().includes("red");
 
-    if (isGreen) {
+    if (isAccept) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -11591,7 +11619,7 @@ if('serviceWorker' in navigator){
       return false;
     }
 
-    if (isRed) {
+    if (isDecline) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -11599,61 +11627,8 @@ if('serviceWorker' in navigator){
       return false;
     }
   }, true);
-
-  window.forteAcceptLeagueInvite = async function (idOrName) {
-    const sb = sbClient();
-    if (!sb) return alert("Supabase not ready. Reload and try again.");
-
-    if (idOrName && /^[0-9a-fA-F-]{36}$/.test(String(idOrName))) {
-      const { data, error } = await sb.rpc("accept_league_invite", {
-        invite_uuid: idOrName
-      });
-
-      if (!error && data && data.ok) {
-        alert("Joined league");
-        await refreshForte();
-        return;
-      }
-    }
-
-    const { data, error } = await sb.rpc("accept_league_invite_by_name", {
-      league_name_text: String(idOrName || "")
-    });
-
-    if (error) return alert("Could not join: " + error.message);
-    if (!data || data.ok === false) return alert((data && data.message) || "Invite not found");
-
-    alert("Joined league");
-    await refreshForte();
-  };
-
-  window.forteDeclineLeagueInvite = async function (idOrName) {
-    const sb = sbClient();
-    if (!sb) return alert("Supabase not ready. Reload and try again.");
-
-    if (idOrName && /^[0-9a-fA-F-]{36}$/.test(String(idOrName))) {
-      const { data, error } = await sb.rpc("decline_league_invite", {
-        invite_uuid: idOrName
-      });
-
-      if (!error && data && data.ok) {
-        alert("Invite declined");
-        await refreshForte();
-        return;
-      }
-    }
-
-    const { data, error } = await sb.rpc("decline_league_invite_by_name", {
-      league_name_text: String(idOrName || "")
-    });
-
-    if (error) return alert("Could not decline: " + error.message);
-    if (!data || data.ok === false) return alert((data && data.message) || "Invite not found");
-
-    alert("Invite declined");
-    await refreshForte();
-  };
 })();
+</script>
 </script>
    Paste directly before </body>
    ========================================================= */
