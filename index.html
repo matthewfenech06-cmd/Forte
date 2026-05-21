@@ -13032,6 +13032,337 @@ if('serviceWorker' in navigator){
   setTimeout(replaceLogRecipeButtons, 500);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE STATS + GOALS FINAL FIX
+   - Saves stats permanently
+   - Logs weight history
+   - Weekly prompt to update stats
+   - Progress bar toward goal
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  function n(id){
+    const el = document.getElementById(id);
+    const v = el ? parseFloat(el.value) : NaN;
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function i(id){
+    const el = document.getElementById(id);
+    const v = el ? parseInt(el.value, 10) : NaN;
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function s(id){
+    const el = document.getElementById(id);
+    return el ? el.value : null;
+  }
+
+  function calcGoalsFromStats(data){
+    const weight = Number(data.weight_kg || 75);
+    const height = Number(data.height_cm || 175);
+    const age = Number(data.age || 25);
+    const sex = String(data.sex || 'male').toLowerCase();
+    const activity = Number(data.activity_level || 1.55);
+    const goalType = String(data.goal_type || 'maintain').toLowerCase();
+
+    let bmr;
+
+    if(sex.includes('female')){
+      bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+    }else{
+      bmr = 10 * weight + 6.25 * height - 5 * age + 5;
+    }
+
+    let calories = bmr * activity;
+
+    if(goalType.includes('lose') || goalType.includes('cut')){
+      calories -= 400;
+    }else if(goalType.includes('gain') || goalType.includes('bulk')){
+      calories += 300;
+    }
+
+    calories = Math.max(1200, Math.round(calories));
+
+    const protein = Math.round(weight * 2);
+    const fats = Math.round((calories * 0.25) / 9);
+    const carbs = Math.max(0, Math.round((calories - protein * 4 - fats * 9) / 4));
+
+    return {
+      calorie_goal: calories,
+      protein_goal: protein,
+      carb_goal: carbs,
+      carbs_goal: carbs,
+      fat_goal: fats,
+      fats_goal: fats
+    };
+  }
+
+  async function getCurrentUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  async function reloadProfileFresh(){
+    const u = await getCurrentUser();
+    if(!u) return null;
+
+    const { data, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', u.id)
+      .single();
+
+    if(error){
+      console.error('RELOAD PROFILE ERROR:', error);
+      return null;
+    }
+
+    window.profile = data;
+    profile = data;
+
+    if(typeof syncProfile === 'function'){
+      try{ syncProfile(); }catch(e){}
+    }
+
+    return data;
+  }
+
+  window.saveBodyStats = async function(){
+    const u = await getCurrentUser();
+    if(!u) return toast('Sign in first');
+
+    const currentWeight = n('bs-weight');
+    const goalWeight = n('bs-goal-weight');
+
+    const oldStartWeight =
+      profile && profile.start_weight_kg
+        ? Number(profile.start_weight_kg)
+        : null;
+
+    const payloadBase = {
+      weight_kg: currentWeight,
+      height_cm: n('bs-height'),
+      age: i('bs-age'),
+      sex: s('bs-sex'),
+      activity_level: n('bs-act'),
+      goal_type: s('bs-goal'),
+      goal_weight_kg: goalWeight,
+      goal_weeks: i('bs-goal-weeks'),
+      stats_updated_at: new Date().toISOString()
+    };
+
+    const targets = calcGoalsFromStats(payloadBase);
+
+    const payload = {
+      ...payloadBase,
+      ...targets
+    };
+
+    // Start weight should be set once per goal, not overwritten every weekly update.
+    if(!oldStartWeight && currentWeight){
+      payload.start_weight_kg = currentWeight;
+      payload.goal_started_at = new Date().toISOString();
+    }
+
+    // If user changes goal weight, treat it as a new goal.
+    if(profile && goalWeight && Number(profile.goal_weight_kg || 0) !== Number(goalWeight)){
+      payload.start_weight_kg = currentWeight;
+      payload.goal_started_at = new Date().toISOString();
+    }
+
+    const { data, error } = await sb
+      .from('profiles')
+      .update(payload)
+      .eq('id', u.id)
+      .select()
+      .single();
+
+    if(error){
+      console.error('SAVE BODY STATS ERROR:', error);
+      return toast('Could not save stats: ' + error.message);
+    }
+
+    profile = data;
+    window.profile = data;
+
+    if(currentWeight){
+      await sb.from('weight_logs').insert({
+        user_id: u.id,
+        weight_kg: currentWeight,
+        logged_at: new Date().toISOString()
+      });
+    }
+
+    goals = {
+      cal: data.calorie_goal || targets.calorie_goal,
+      pro: data.protein_goal || targets.protein_goal,
+      carb: data.carb_goal || data.carbs_goal || targets.carb_goal,
+      fat: data.fat_goal || data.fats_goal || targets.fat_goal
+    };
+
+    try{ renderBodySection(); }catch(e){}
+    try{ renderNutrition(); }catch(e){}
+    try{ syncProfile(); }catch(e){}
+
+    closeModal('body-modal');
+    toast('Stats saved 💪');
+  };
+
+  function goalProgressHtml(){
+    if(!profile || !profile.weight_kg || !profile.goal_weight_kg){
+      return '';
+    }
+
+    const start = Number(profile.start_weight_kg || profile.weight_kg);
+    const current = Number(profile.weight_kg);
+    const goal = Number(profile.goal_weight_kg);
+
+    const total = Math.abs(goal - start);
+    const done = Math.abs(current - start);
+    const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((done / total) * 100))) : 0;
+    const remaining = Math.abs(goal - current).toFixed(1);
+    const direction = goal < start ? 'to lose' : goal > start ? 'to gain' : 'remaining';
+
+    return `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Goal progress</div>
+          <div style="font-size:13px;font-weight:900;color:var(--accent)">${pct}%</div>
+        </div>
+
+        <div style="height:9px;background:var(--bg3);border-radius:999px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:999px;transition:width .35s"></div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--text3)">
+          <span>${start}kg start</span>
+          <span>${current}kg now</span>
+          <span>${goal}kg goal</span>
+        </div>
+
+        <div style="font-size:12px;color:var(--text2);margin-top:8px">
+          ${pct >= 100 ? '🎉 Goal reached!' : `${remaining}kg ${direction}`}
+        </div>
+      </div>
+    `;
+  }
+
+  const oldRenderBodySection = typeof renderBodySection === 'function' ? renderBodySection : null;
+
+  window.renderBodySection = function(){
+    if(oldRenderBodySection){
+      oldRenderBodySection();
+    }
+
+    const section = document.getElementById('body-stats-section');
+    if(!section || !profile) return;
+
+    const existing = document.getElementById('forte-goal-progress-extra');
+    if(existing) existing.remove();
+
+    const html = goalProgressHtml();
+    if(!html) return;
+
+    const div = document.createElement('div');
+    div.id = 'forte-goal-progress-extra';
+    div.innerHTML = html;
+
+    const card = section.querySelector('.body-card') || section;
+    card.appendChild(div);
+  };
+
+  function needsWeeklyStatsUpdate(){
+    if(!profile || !profile.weight_kg) return false;
+
+    if(!profile.stats_updated_at) return true;
+
+    const last = new Date(profile.stats_updated_at).getTime();
+    if(!Number.isFinite(last)) return true;
+
+    return Date.now() - last >= 7 * 24 * 60 * 60 * 1000;
+  }
+
+  function showWeeklyStatsPrompt(){
+    if(!needsWeeklyStatsUpdate()) return;
+
+    const key = 'forte_weekly_stats_prompt_' + (user?.id || 'user');
+    const lastPrompt = Number(localStorage.getItem(key) || 0);
+
+    // Do not nag more than once per day.
+    if(Date.now() - lastPrompt < 24 * 60 * 60 * 1000) return;
+
+    localStorage.setItem(key, String(Date.now()));
+
+    setTimeout(() => {
+      const shouldOpen = confirm('Weekly check-in 💪\nUpdate your weight and stats to keep your progress accurate?');
+
+      if(shouldOpen && typeof openBodyStats === 'function'){
+        openBodyStats();
+      }
+    }, 1200);
+  }
+
+  const oldSyncProfileForStats = typeof syncProfile === 'function' ? syncProfile : null;
+
+  if(oldSyncProfileForStats){
+    window.syncProfile = function(){
+      oldSyncProfileForStats();
+      try{ showWeeklyStatsPrompt(); }catch(e){}
+      try{ renderBodySection(); }catch(e){}
+    };
+  }
+
+  const oldOpenBodyStats = typeof openBodyStats === 'function' ? openBodyStats : null;
+
+  if(oldOpenBodyStats){
+    window.openBodyStats = function(){
+      oldOpenBodyStats();
+
+      setTimeout(() => {
+        try{
+          if(profile){
+            const set = (id, v) => {
+              const el = document.getElementById(id);
+              if(el && v !== null && v !== undefined) el.value = v;
+            };
+
+            set('bs-weight', profile.weight_kg);
+            set('bs-height', profile.height_cm);
+            set('bs-age', profile.age);
+            set('bs-sex', profile.sex);
+            set('bs-act', profile.activity_level);
+            set('bs-goal', profile.goal_type);
+            set('bs-goal-weight', profile.goal_weight_kg);
+            set('bs-goal-weeks', profile.goal_weeks);
+          }
+        }catch(e){}
+      }, 120);
+    };
+  }
+
+  // Load fresh values once after app starts, so old cached profile values do not stay on screen.
+  setTimeout(async () => {
+    try{
+      await reloadProfileFresh();
+      showWeeklyStatsPrompt();
+    }catch(e){}
+  }, 1200);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
