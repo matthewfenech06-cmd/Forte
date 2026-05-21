@@ -16389,7 +16389,265 @@ setTimeout(() => {
 </script>
 
   
-  
+  <script>
+/* =========================================================
+   FORTE STORIES RESTORE + REFRESH ERROR FIX
+   - Restores stories row
+   - Stops "Could not refresh feed" toast
+   - Pull refresh only reloads stories/feed safely
+   ========================================================= */
+
+(function(){
+  function isFeedActive(){
+    return document.getElementById('feed-screen')?.classList.contains('active');
+  }
+
+  function addCSS(){
+    if(document.getElementById('forte-stories-refresh-fix-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-stories-refresh-fix-css';
+    style.textContent = `
+      /* make sure stories area is visible again */
+      #feed-screen .stories,
+      #feed-screen .stories-row,
+      #feed-screen #stories-row,
+      #feed-screen #stories,
+      #feed-screen [id*="stor"],
+      #feed-screen [class*="stor"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow-x: auto !important;
+        overflow-y: visible !important;
+      }
+
+      /* but don't touch story modal/viewer */
+      #story-viewer,
+      #story-modal,
+      #story-viewer-modal {
+        display: none;
+      }
+
+      #story-viewer.open,
+      #story-modal.open,
+      #story-viewer-modal.open {
+        display: block;
+      }
+
+      #forte-safe-refresh-spinner {
+        position: fixed;
+        left: 50%;
+        top: 104px;
+        transform: translateX(-50%);
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgba(20,20,20,.94);
+        border: 1px solid rgba(255,255,255,.18);
+        color: #ff0090;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 999999;
+        font-size: 20px;
+        pointer-events: none;
+      }
+
+      #forte-safe-refresh-spinner.show {
+        display: flex;
+        animation: forteSafeSpin .8s linear infinite;
+      }
+
+      @keyframes forteSafeSpin {
+        from { transform: translateX(-50%) rotate(0deg); }
+        to { transform: translateX(-50%) rotate(360deg); }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function restoreStoriesVisibility(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const search = Array.from(feed.querySelectorAll('*')).find(el =>
+      (el.textContent || '').trim().toLowerCase() === 'search'
+    );
+
+    const pillRow = Array.from(feed.querySelectorAll('*')).find(el => {
+      const txt = (el.innerText || '').toLowerCase();
+      return txt.includes('leagues') && txt.includes('recipes') && txt.includes('recipe vote');
+    });
+
+    if(!pillRow) return;
+
+    const pillTop = pillRow.getBoundingClientRect().top;
+
+    Array.from(feed.querySelectorAll('*')).forEach(el => {
+      const r = el.getBoundingClientRect();
+      const txt = (el.innerText || el.textContent || '').toLowerCase();
+
+      const isAbovePills = r.top > 250 && r.bottom < pillTop + 5;
+
+      const looksLikeStories =
+        txt.includes('your story') ||
+        txt.includes('+') ||
+        el.id.toLowerCase().includes('stor') ||
+        el.className.toString().toLowerCase().includes('stor');
+
+      if(isAbovePills && looksLikeStories){
+        el.classList.remove('forte-force-remove');
+        el.classList.remove('forte-remove-league-preview-final');
+        el.classList.remove('forte-kill-league-feed-block');
+        el.style.display = '';
+        el.style.visibility = '';
+        el.style.opacity = '';
+        el.style.height = '';
+        el.style.maxHeight = '';
+      }
+    });
+  }
+
+  async function safeRefreshFeed(){
+    let spinner = document.getElementById('forte-safe-refresh-spinner');
+
+    if(!spinner){
+      spinner = document.createElement('div');
+      spinner.id = 'forte-safe-refresh-spinner';
+      spinner.textContent = '⟳';
+      document.body.appendChild(spinner);
+    }
+
+    spinner.classList.add('show');
+
+    try{
+      try{
+        if(typeof loadStories === 'function') await loadStories();
+      }catch(e){
+        console.warn('Stories refresh failed:', e);
+      }
+
+      try{
+        if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+      }catch(e){
+        console.warn('Feed posts refresh failed:', e);
+      }
+
+      setTimeout(restoreStoriesVisibility, 100);
+      setTimeout(restoreStoriesVisibility, 500);
+
+    }finally{
+      setTimeout(() => {
+        spinner.classList.remove('show');
+      }, 450);
+    }
+  }
+
+  function replaceBadRefresh(){
+    // Remove old refresh indicators
+    document.getElementById('forte-pull-refresh')?.remove();
+    document.getElementById('forte-pull-refresh-final')?.remove();
+    document.getElementById('forte-pull-refresh-correct')?.remove();
+    document.getElementById('forte-real-pull-refresh')?.remove();
+
+    window.forteRefreshFeed = safeRefreshFeed;
+    window.refreshFeed = safeRefreshFeed;
+
+    if(window.__forteSafePullInstalled) return;
+    window.__forteSafePullInstalled = true;
+
+    let startY = null;
+    let startTop = false;
+
+    function atTop(){
+      return (
+        window.scrollY <= 2 &&
+        document.documentElement.scrollTop <= 2 &&
+        document.body.scrollTop <= 2
+      );
+    }
+
+    document.addEventListener('touchstart', function(e){
+      if(!isFeedActive()) return;
+
+      startY = e.touches[0].clientY;
+      startTop = atTop();
+    }, { passive:true, capture:true });
+
+    document.addEventListener('touchend', function(e){
+      if(!isFeedActive()) return;
+      if(startY === null) return;
+
+      const diff = e.changedTouches[0].clientY - startY;
+
+      if(startTop && atTop() && diff > 130){
+        safeRefreshFeed();
+      }
+
+      startY = null;
+      startTop = false;
+    }, { passive:true, capture:true });
+  }
+
+  function suppressOldErrorToast(){
+    const oldAlert = window.alert;
+
+    window.alert = function(msg){
+      if(String(msg || '').toLowerCase().includes('could not refresh feed')){
+        return;
+      }
+      return oldAlert.apply(this, arguments);
+    };
+
+    if(typeof window.showToast === 'function' && !window.__oldShowToastNoRefresh){
+      window.__oldShowToastNoRefresh = window.showToast;
+
+      window.showToast = function(msg){
+        if(String(msg || '').toLowerCase().includes('could not refresh feed')){
+          return;
+        }
+        return window.__oldShowToastNoRefresh.apply(this, arguments);
+      };
+    }
+  }
+
+  function run(){
+    addCSS();
+    replaceBadRefresh();
+    suppressOldErrorToast();
+    restoreStoriesVisibility();
+
+    try{
+      if(typeof loadStories === 'function') loadStories().then(() => {
+        setTimeout(restoreStoriesVisibility, 100);
+      });
+    }catch(e){}
+  }
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function' && !window.__forteStoriesRefreshWrapped){
+    window.__forteStoriesRefreshWrapped = true;
+
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(run, 150);
+        setTimeout(run, 700);
+      }
+
+      return result;
+    };
+  }
+
+  setTimeout(run, 300);
+  setTimeout(run, 1200);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
