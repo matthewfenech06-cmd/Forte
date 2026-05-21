@@ -12028,6 +12028,280 @@ if('serviceWorker' in navigator){
   };
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE RECIPE FEED + LOG BUTTON PATCH
+   - Public/friends recipes create a feed post
+   - Adds a Log button next to Save recipe
+   - Log button saves recipe and logs it to nutrition
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  function val(id){
+    return document.getElementById(id)?.value || '';
+  }
+
+  async function uploadRecipeImage(u){
+    const imgInput = document.getElementById('rc-img-input');
+    const imgFile = imgInput && imgInput.files ? imgInput.files[0] : null;
+
+    if(!imgFile) return null;
+
+    const ext = imgFile.name.split('.').pop() || 'jpg';
+    const path = `recipes/${u.id}/${Date.now()}.${ext}`;
+
+    const up = await sb.storage.from('forte-media').upload(path, imgFile, {
+      upsert: true,
+      contentType: imgFile.type || 'image/jpeg'
+    });
+
+    if(up.error) throw up.error;
+
+    return sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function createRecipeFeedPost(recipe, recipeId){
+    if(recipe.is_private) return;
+
+    const caption =
+      `🍽️ Shared a recipe: ${recipe.title}\n` +
+      `${recipe.calories || 0} kcal · ${recipe.protein || 0}g protein · ${recipe.carbs || 0}g carbs · ${recipe.fats || 0}g fats`;
+
+    const post = {
+      user_id: recipe.user_id,
+      caption,
+      media_url: recipe.image_url || null,
+      media_type: recipe.image_url ? 'image' : null,
+      likes_count: 0,
+      comments_count: 0,
+      created_at: new Date().toISOString(),
+      post_type: 'recipe',
+      recipe_id: recipeId,
+      recipe_snapshot: {
+        id: recipeId,
+        title: recipe.title,
+        description: recipe.description,
+        calories: recipe.calories,
+        protein: recipe.protein,
+        carbs: recipe.carbs,
+        fats: recipe.fats,
+        servings: recipe.servings,
+        prep_time: recipe.prep_time,
+        image_url: recipe.image_url
+      }
+    };
+
+    let res = await sb.from('posts').insert(post);
+
+    // Fallback in case your posts table rejects newer columns for any reason.
+    if(res.error){
+      console.warn('Recipe post rich insert failed, retrying basic post:', res.error);
+
+      const basicPost = {
+        user_id: recipe.user_id,
+        caption,
+        media_url: recipe.image_url || null,
+        media_type: recipe.image_url ? 'image' : null,
+        likes_count: 0,
+        comments_count: 0,
+        created_at: new Date().toISOString()
+      };
+
+      res = await sb.from('posts').insert(basicPost);
+    }
+
+    if(res.error){
+      console.error('Could not create recipe feed post:', res.error);
+      throw res.error;
+    }
+  }
+
+  async function logRecipeToNutrition(recipe){
+    const today = new Date().toISOString().split('T')[0];
+
+    const entry = {
+      user_id: recipe.user_id,
+      food_name: recipe.title,
+      meal_type: 'Snack',
+      calories: parseInt(recipe.calories) || 0,
+      protein: parseFloat(recipe.protein) || 0,
+      carbs: parseFloat(recipe.carbs) || 0,
+      fats: parseFloat(recipe.fats) || 0,
+      log_date: today
+    };
+
+    const { error } = await sb.from('nutrition_logs').insert(entry);
+    if(error) throw error;
+  }
+
+  async function saveRecipeFinal(logAfterSave){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    const title = val('rc-title').trim();
+    if(!title) return toast('Add a recipe name');
+
+    const saveBtn = document.querySelector('#create-recipe-modal .btn-primary');
+    const logBtn = document.getElementById('rc-save-log-btn');
+
+    const oldSaveText = saveBtn ? saveBtn.textContent : 'Save recipe';
+    const oldLogText = logBtn ? logBtn.textContent : 'Log';
+
+    if(saveBtn){
+      saveBtn.textContent = logAfterSave ? 'Posting...' : 'Saving...';
+      saveBtn.disabled = true;
+    }
+
+    if(logBtn){
+      logBtn.textContent = logAfterSave ? 'Logging...' : 'Log';
+      logBtn.disabled = true;
+    }
+
+    try{
+      const imageUrl = await uploadRecipeImage(u);
+
+      const now = new Date();
+      const leagueId = recipeLeagueEnabled ? (document.getElementById('rc-league-select')?.value || null) : null;
+      const weekNum = typeof getWeekNumber === 'function' ? getWeekNumber(now) : null;
+
+      const recipe = {
+        user_id: u.id,
+        title,
+        description: val('rc-desc') || null,
+        ingredients: val('rc-ingredients') || null,
+        instructions: val('rc-instructions') || null,
+        calories: parseInt(val('rc-cal')) || 0,
+        protein: parseFloat(val('rc-pro')) || 0,
+        carbs: parseFloat(val('rc-carb')) || 0,
+        fats: parseFloat(val('rc-fat')) || 0,
+        servings: parseInt(val('rc-servings')) || 1,
+        prep_time: parseInt(val('rc-prep')) || null,
+        is_private: recipeVis === 'private',
+        image_url: imageUrl,
+        vote_count: 0,
+        week_number: leagueId ? weekNum : null,
+        year: leagueId ? now.getFullYear() : null,
+        league_id: leagueId
+      };
+
+      const { data: savedRecipe, error } = await sb
+        .from('recipes')
+        .insert(recipe)
+        .select()
+        .single();
+
+      if(error) throw error;
+
+      await createRecipeFeedPost(recipe, savedRecipe.id);
+
+      if(logAfterSave){
+        await logRecipeToNutrition(recipe);
+      }
+
+      closeModal('create-recipe-modal');
+
+      toast(logAfterSave ? 'Recipe posted and logged ✅' : 'Recipe posted to feed 🍽️');
+
+      try{ if(typeof loadRecipes === 'function') await loadRecipes(currentRecipeTab || 'all'); }catch(e){}
+      try{ if(typeof loadProfileRecipes === 'function') await loadProfileRecipes(); }catch(e){}
+      try{ if(typeof loadFeedPosts === 'function') await loadFeedPosts(); }catch(e){}
+      try{ if(typeof loadFeedRecipes === 'function') await loadFeedRecipes(); }catch(e){}
+      try{ if(logAfterSave && typeof loadNutrition === 'function') await loadNutrition(); }catch(e){}
+      try{ if(logAfterSave && typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+
+    }catch(err){
+      console.error('SAVE / LOG RECIPE ERROR:', err);
+      toast('Could not save recipe: ' + (err.message || 'unknown error'));
+    }finally{
+      if(saveBtn){
+        saveBtn.textContent = oldSaveText || 'Save recipe';
+        saveBtn.disabled = false;
+      }
+
+      if(logBtn){
+        logBtn.textContent = oldLogText || 'Log';
+        logBtn.disabled = false;
+      }
+    }
+  }
+
+  window.saveRecipe = function(){
+    return saveRecipeFinal(false);
+  };
+
+  window.saveAndLogRecipe = function(){
+    return saveRecipeFinal(true);
+  };
+
+  function addRecipeLogButton(){
+    const modal = document.getElementById('create-recipe-modal');
+    if(!modal) return;
+
+    const saveBtn = modal.querySelector('.btn-primary');
+    if(!saveBtn) return;
+
+    if(document.getElementById('rc-save-log-btn')) return;
+
+    const logBtn = document.createElement('button');
+    logBtn.id = 'rc-save-log-btn';
+    logBtn.type = 'button';
+    logBtn.textContent = 'Log';
+    logBtn.onclick = window.saveAndLogRecipe;
+    logBtn.style.cssText = `
+      background:var(--bg3);
+      color:var(--text);
+      border:1.5px solid var(--border);
+      border-radius:var(--radius-sm);
+      padding:16px;
+      font-size:15px;
+      font-weight:800;
+      font-family:var(--fb);
+      cursor:pointer;
+      width:38%;
+      margin-top:8px;
+    `;
+
+    saveBtn.style.width = '60%';
+    saveBtn.style.marginTop = '8px';
+
+    const wrap = document.createElement('div');
+    wrap.id = 'rc-save-actions';
+    wrap.style.cssText = 'display:flex;gap:8px;width:100%;align-items:center;margin-top:8px;';
+
+    saveBtn.parentNode.insertBefore(wrap, saveBtn);
+    wrap.appendChild(saveBtn);
+    wrap.appendChild(logBtn);
+  }
+
+  const oldOpenCreateRecipe = typeof openCreateRecipe === 'function' ? openCreateRecipe : null;
+
+  window.openCreateRecipe = function(){
+    if(oldOpenCreateRecipe) oldOpenCreateRecipe();
+    setTimeout(addRecipeLogButton, 100);
+  };
+
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(addRecipeLogButton, 500);
+  });
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
