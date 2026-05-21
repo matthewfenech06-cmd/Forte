@@ -217,8 +217,89 @@ select.inp{appearance:none}
   <link rel="manifest" href="/manifest.json">
   <!-- Apple touch icon - inline SVG converted to data URI -->
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230a0a0a' rx='115'/%3E%3Crect x='72' y='338' width='62' height='112' fill='%23ff0090' opacity='.2'/%3E%3Crect x='165' y='262' width='62' height='188' fill='%23ff0090' opacity='.45'/%3E%3Crect x='258' y='184' width='62' height='266' fill='%23ff0090' opacity='.7'/%3E%3Crect x='350' y='92' width='62' height='358' fill='%23ff0090'/%3E%3C/svg%3E">
+  <style id="forte-instant-splash-css">
+  html.forte-booting body {
+    background: #050505 !important;
+  }
+
+  html.forte-booting #auth-screen,
+  html.forte-booting #app,
+  html.forte-booting .screen {
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+
+  #forte-instant-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    background: #050505;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .forte-instant-inner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transform: translateY(-10px);
+  }
+
+  .forte-instant-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    height: 46px;
+  }
+
+  .forte-instant-bars span {
+    width: 9px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ff0090, #8b0055);
+    box-shadow: 0 0 18px rgba(255,0,144,.35);
+    animation: forteInstantBar 1s ease-in-out infinite;
+  }
+
+  .forte-instant-bars span:nth-child(1) { height: 16px; animation-delay: 0s; }
+  .forte-instant-bars span:nth-child(2) { height: 26px; animation-delay: .1s; }
+  .forte-instant-bars span:nth-child(3) { height: 36px; animation-delay: .2s; }
+  .forte-instant-bars span:nth-child(4) { height: 46px; animation-delay: .3s; }
+
+  @keyframes forteInstantBar {
+    0%, 100% { transform: scaleY(.55); opacity: .55; }
+    45% { transform: scaleY(1.1); opacity: 1; }
+  }
+
+  .forte-instant-word {
+    color: #fff;
+    font-size: 34px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  }
+
+  .forte-instant-word span {
+    color: #ff0090;
+  }
+</style>
+
+<script>
+  document.documentElement.classList.add('forte-booting');
+</script>
 </head>
 <body>
+  <div id="forte-instant-splash">
+  <div class="forte-instant-inner">
+    <div class="forte-instant-bars">
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div class="forte-instant-word">forte<span>.</span></div>
+  </div>
+</div>
 
 <!-- ONBOARDING SCREEN -->
 <div id="onboarding-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:400;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 80px">
@@ -17093,6 +17174,43 @@ setTimeout(() => {
 
   setTimeout(feedCleanup, 700);
   setTimeout(feedCleanup, 1500);
+})();
+</script>
+  <script>
+/* =========================================================
+   FORTE REMOVE INSTANT SPLASH
+   Removes the early splash only after app/auth is ready.
+   ========================================================= */
+
+(function(){
+  function removeInstantSplash(){
+    const splash = document.getElementById('forte-instant-splash');
+
+    document.documentElement.classList.remove('forte-booting');
+
+    if(splash){
+      splash.style.opacity = '0';
+      splash.style.transition = 'opacity .25s ease';
+      setTimeout(() => splash.remove(), 280);
+    }
+  }
+
+  const oldInitInstantSplash = window.init;
+
+  if(typeof oldInitInstantSplash === 'function'){
+    window.init = async function(){
+      const result = await oldInitInstantSplash.apply(this, arguments);
+      setTimeout(removeInstantSplash, 250);
+      return result;
+    };
+  }
+
+  window.addEventListener('load', function(){
+    setTimeout(removeInstantSplash, 1800);
+  });
+
+  // Safety so it never gets stuck
+  setTimeout(removeInstantSplash, 3500);
 })();
 </script>
    Paste directly before </body>
