@@ -14406,6 +14406,577 @@ if('serviceWorker' in navigator){
   }, 1200);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE PROFILE STATS SAVE + STORY REPLY/LIKE/REACTION PATCH
+   - Profile Edit stats & goals now updates Progress page
+   - Story reply goes to DMs
+   - Story like sends notification
+   - Story emoji reactions send notification and DM
+   - Swipe up opens story reaction tray
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  function esc(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  async function freshProfile(){
+    const u = await getUser();
+    if(!u) return null;
+
+    const { data, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', u.id)
+      .single();
+
+    if(error){
+      console.error('FRESH PROFILE ERROR:', error);
+      return null;
+    }
+
+    window.profile = data;
+    if(typeof profile !== 'undefined') profile = data;
+    return data;
+  }
+
+  function num(id){
+    const v = parseFloat(document.getElementById(id)?.value);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function intv(id){
+    const v = parseInt(document.getElementById(id)?.value, 10);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function str(id){
+    return document.getElementById(id)?.value || null;
+  }
+
+  function calcTargets(data){
+    const weight = Number(data.weight_kg || 75);
+    const height = Number(data.height_cm || 175);
+    const age = Number(data.age || 25);
+    const sex = String(data.sex || 'male').toLowerCase();
+    const activity = Number(data.activity_level || 1.55);
+    const goalType = String(data.goal_type || 'maintain').toLowerCase();
+
+    let bmr = sex.includes('female')
+      ? 10 * weight + 6.25 * height - 5 * age - 161
+      : 10 * weight + 6.25 * height - 5 * age + 5;
+
+    let calories = bmr * activity;
+
+    if(goalType.includes('lose') || goalType.includes('cut')) calories -= 400;
+    if(goalType.includes('gain') || goalType.includes('bulk')) calories += 300;
+
+    calories = Math.max(1200, Math.round(calories));
+
+    const protein = Math.round(weight * 2);
+    const fats = Math.round((calories * 0.25) / 9);
+    const carbs = Math.max(0, Math.round((calories - protein * 4 - fats * 9) / 4));
+
+    return {
+      calorie_goal: calories,
+      protein_goal: protein,
+      carb_goal: carbs,
+      carbs_goal: carbs,
+      fat_goal: fats,
+      fats_goal: fats
+    };
+  }
+
+  /* -------------------------------------------------------
+     FINAL OVERRIDE: PROFILE EDIT STATS SAVES TO PROGRESS
+  ------------------------------------------------------- */
+  window.saveBodyStats = async function(){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    const before = await freshProfile();
+
+    const weight = num('bs-weight');
+    const height = num('bs-height');
+    const goalWeight = num('bs-goal-weight');
+
+    if(!weight) return toast('Enter your current weight');
+    if(!height) return toast('Enter your height');
+
+    const previousStart = before?.start_weight_kg ? Number(before.start_weight_kg) : null;
+    const previousGoal = before?.goal_weight_kg ? Number(before.goal_weight_kg) : null;
+
+    const isNewGoal =
+      !previousStart ||
+      (goalWeight && previousGoal && Number(goalWeight) !== Number(previousGoal));
+
+    const base = {
+      weight_kg: weight,
+      height_cm: height,
+      age: intv('bs-age'),
+      sex: str('bs-sex'),
+      activity_level: num('bs-act'),
+      goal_type: str('bs-goal'),
+      goal_weight_kg: goalWeight,
+      goal_weeks: intv('bs-goal-weeks'),
+      stats_updated_at: new Date().toISOString()
+    };
+
+    const payload = {
+      ...base,
+      ...calcTargets(base)
+    };
+
+    if(isNewGoal){
+      payload.start_weight_kg = weight;
+      payload.goal_started_at = new Date().toISOString();
+    }
+
+    const { data, error } = await sb
+      .from('profiles')
+      .update(payload)
+      .eq('id', u.id)
+      .select()
+      .single();
+
+    if(error){
+      console.error('SAVE BODY STATS FINAL ERROR:', error);
+      return toast('Could not save stats: ' + error.message);
+    }
+
+    window.profile = data;
+    if(typeof profile !== 'undefined') profile = data;
+
+    await sb.from('progress_updates').insert({
+      user_id: u.id,
+      weight_kg: data.weight_kg,
+      height_cm: data.height_cm,
+      note: isNewGoal ? 'Starting stats saved from profile' : 'Stats updated from profile'
+    });
+
+    if(typeof goals !== 'undefined'){
+      goals = {
+        cal: data.calorie_goal || 2200,
+        pro: data.protein_goal || 150,
+        carb: data.carb_goal || data.carbs_goal || 250,
+        fat: data.fat_goal || data.fats_goal || 65
+      };
+    }
+
+    const modal = document.getElementById('body-modal');
+    if(modal) modal.classList.remove('open');
+
+    try{ if(typeof renderBodySection === 'function') renderBodySection(); }catch(e){}
+    try{ if(typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+    try{ if(typeof loadProgressPage === 'function') await loadProgressPage(); }catch(e){}
+
+    toast(isNewGoal ? 'Starting stats saved ✅' : 'Stats updated ✅');
+  };
+
+  /* -------------------------------------------------------
+     STORY HELPERS
+  ------------------------------------------------------- */
+  function getActiveStory(){
+    try{
+      if(window.currentStory && window.currentStory.id) return window.currentStory;
+
+      if(typeof storyGroups !== 'undefined' && typeof currentStoryGroup !== 'undefined' && typeof currentStoryIdx !== 'undefined'){
+        return storyGroups[currentStoryGroup]?.stories?.[currentStoryIdx] || null;
+      }
+
+      if(typeof storyGroups !== 'undefined' && typeof currentStoryGroupIndex !== 'undefined' && typeof currentStoryIndex !== 'undefined'){
+        return storyGroups[currentStoryGroupIndex]?.stories?.[currentStoryIndex] || null;
+      }
+    }catch(e){}
+
+    return null;
+  }
+
+  function getStoryOwnerProfile(story){
+    try{
+      if(typeof storyGroups !== 'undefined' && typeof currentStoryGroup !== 'undefined'){
+        return storyGroups[currentStoryGroup]?.profile || null;
+      }
+    }catch(e){}
+
+    return null;
+  }
+
+  async function notifyUser(userId, type, title, body, data){
+    if(!userId) return;
+
+    try{
+      await sb.from('notifications').insert({
+        user_id: userId,
+        actor_id: window.user?.id || null,
+        type,
+        title,
+        body,
+        data: data || {},
+        read: false
+      });
+    }catch(e){
+      console.warn('Notification insert failed:', e);
+    }
+  }
+
+  async function getOrCreateDM(otherUserId){
+    const u = await getUser();
+    if(!u || !otherUserId) return null;
+
+    let convId = null;
+
+    const { data: mine } = await sb
+      .from('conversation_members')
+      .select('conversation_id')
+      .eq('user_id', u.id);
+
+    const myIds = (mine || []).map(x => x.conversation_id);
+
+    if(myIds.length){
+      const { data: shared } = await sb
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', otherUserId)
+        .in('conversation_id', myIds)
+        .limit(1);
+
+      if(shared && shared.length) convId = shared[0].conversation_id;
+    }
+
+    if(!convId){
+      const { data: conv, error: convErr } = await sb
+        .from('conversations')
+        .insert({})
+        .select()
+        .single();
+
+      if(convErr) throw convErr;
+
+      convId = conv.id;
+
+      const { error: memErr } = await sb.from('conversation_members').insert([
+        { conversation_id: convId, user_id: u.id, last_read_at: new Date().toISOString() },
+        { conversation_id: convId, user_id: otherUserId, last_read_at: null }
+      ]);
+
+      if(memErr) throw memErr;
+    }
+
+    return convId;
+  }
+
+  async function sendStoryDM(ownerId, storyId, text, type, emoji){
+    const u = await getUser();
+    const convId = await getOrCreateDM(ownerId);
+
+    const { error } = await sb.from('messages').insert({
+      conversation_id: convId,
+      sender_id: u.id,
+      content: text,
+      message_type: type || 'story_reply',
+      metadata: {
+        story_id: storyId,
+        emoji: emoji || null
+      }
+    });
+
+    if(error) throw error;
+
+    return convId;
+  }
+
+  window.forteLikeStory = async function(){
+    const u = await getUser();
+    const story = getActiveStory();
+    if(!u || !story) return toast('Story not ready');
+
+    if(story.user_id === u.id) return toast('This is your story');
+
+    const { error } = await sb.from('story_interactions').upsert({
+      story_id: story.id,
+      user_id: u.id,
+      interaction_type: 'like',
+      emoji: '❤️'
+    }, {
+      onConflict: 'story_id,user_id,interaction_type'
+    });
+
+    if(error){
+      console.error('STORY LIKE ERROR:', error);
+      return toast('Could not like story: ' + error.message);
+    }
+
+    await notifyUser(
+      story.user_id,
+      'story_like',
+      `${profile?.full_name || profile?.username || 'Someone'} liked your story`,
+      '❤️',
+      { story_id: story.id }
+    );
+
+    const btn = document.getElementById('forte-story-like-btn');
+    if(btn) btn.textContent = '❤️';
+
+    toast('Liked story ❤️');
+  };
+
+  window.forteReactToStory = async function(emoji){
+    const u = await getUser();
+    const story = getActiveStory();
+    if(!u || !story) return toast('Story not ready');
+
+    if(story.user_id === u.id) return toast('This is your story');
+
+    try{
+      await sb.from('story_interactions').insert({
+        story_id: story.id,
+        user_id: u.id,
+        interaction_type: 'reaction',
+        emoji
+      });
+
+      await sendStoryDM(
+        story.user_id,
+        story.id,
+        `${emoji} reacted to your story`,
+        'story_reaction',
+        emoji
+      );
+
+      await notifyUser(
+        story.user_id,
+        'story_reaction',
+        `${profile?.full_name || profile?.username || 'Someone'} reacted to your story`,
+        emoji,
+        { story_id: story.id, emoji }
+      );
+
+      closeStoryReactionTray();
+      toast('Reaction sent ' + emoji);
+    }catch(e){
+      console.error('STORY REACTION ERROR:', e);
+      toast('Could not react: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  window.forteReplyToStory = async function(){
+    const u = await getUser();
+    const story = getActiveStory();
+    if(!u || !story) return toast('Story not ready');
+
+    if(story.user_id === u.id) return toast('This is your story');
+
+    const input = document.getElementById('forte-story-reply-input');
+    const text = input?.value?.trim();
+
+    if(!text) return;
+
+    try{
+      await sb.from('story_interactions').insert({
+        story_id: story.id,
+        user_id: u.id,
+        interaction_type: 'reply',
+        reply_text: text
+      });
+
+      await sendStoryDM(
+        story.user_id,
+        story.id,
+        text,
+        'story_reply',
+        null
+      );
+
+      await notifyUser(
+        story.user_id,
+        'story_reply',
+        `${profile?.full_name || profile?.username || 'Someone'} replied to your story`,
+        text,
+        { story_id: story.id }
+      );
+
+      input.value = '';
+      toast('Reply sent ✅');
+    }catch(e){
+      console.error('STORY REPLY ERROR:', e);
+      toast('Could not reply: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  function closeStoryReactionTray(){
+    const tray = document.getElementById('forte-story-reaction-tray');
+    if(tray) tray.remove();
+  }
+
+  window.closeStoryReactionTray = closeStoryReactionTray;
+
+  window.openStoryReactionTray = function(){
+    closeStoryReactionTray();
+
+    const story = getActiveStory();
+    if(!story || story.user_id === window.user?.id) return;
+
+    const tray = document.createElement('div');
+    tray.id = 'forte-story-reaction-tray';
+    tray.style.cssText = `
+      position:fixed;
+      left:0;
+      right:0;
+      bottom:0;
+      z-index:99999;
+      background:rgba(15,15,15,.96);
+      border-radius:24px 24px 0 0;
+      padding:18px 16px calc(20px + env(safe-area-inset-bottom));
+      box-shadow:0 -10px 30px rgba(0,0,0,.4);
+    `;
+
+    tray.innerHTML = `
+      <div style="width:42px;height:4px;background:rgba(255,255,255,.2);border-radius:999px;margin:0 auto 18px"></div>
+      <div style="font-size:17px;font-weight:800;color:#fff;margin-bottom:14px">React to story</div>
+
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:14px">
+        ${['❤️','😂','😮','😢','🔥','👏'].map(e => `
+          <button onclick="forteReactToStory('${e}')" style="width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.08);font-size:24px;cursor:pointer">${e}</button>
+        `).join('')}
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <input id="forte-story-reply-input-tray" placeholder="Reply to story..." style="flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+        <button onclick="
+          document.getElementById('forte-story-reply-input').value = document.getElementById('forte-story-reply-input-tray').value;
+          forteReplyToStory();
+          closeStoryReactionTray();
+        " style="width:48px;height:48px;border-radius:50%;border:none;background:#ff0090;color:#fff;font-weight:900;font-size:18px;cursor:pointer">➤</button>
+      </div>
+
+      <button onclick="closeStoryReactionTray()" style="margin-top:12px;width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;color:#fff;font-size:14px;font-weight:800">Cancel</button>
+    `;
+
+    document.body.appendChild(tray);
+    setTimeout(() => document.getElementById('forte-story-reply-input-tray')?.focus(), 120);
+  };
+
+  function addStoryControls(){
+    const viewer = document.getElementById('story-viewer');
+    if(!viewer || viewer.style.display === 'none') return;
+
+    const story = getActiveStory();
+    if(!story) return;
+
+    const old = document.getElementById('forte-story-controls');
+    if(old) old.remove();
+
+    if(story.user_id === window.user?.id) return;
+
+    const controls = document.createElement('div');
+    controls.id = 'forte-story-controls';
+    controls.style.cssText = `
+      position:fixed;
+      left:12px;
+      right:12px;
+      bottom:20px;
+      z-index:9999;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    `;
+
+    controls.innerHTML = `
+      <input id="forte-story-reply-input" placeholder="Reply to story..." style="flex:1;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+      <button onclick="forteReplyToStory()" style="width:44px;height:44px;border-radius:50%;border:none;background:#ff0090;color:#fff;font-size:18px;font-weight:900;cursor:pointer">➤</button>
+      <button id="forte-story-like-btn" onclick="forteLikeStory()" style="width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.45);color:#fff;font-size:22px;cursor:pointer">♡</button>
+    `;
+
+    document.body.appendChild(controls);
+  }
+
+  const oldShowStoryForInteractions = typeof showStory === 'function' ? showStory : null;
+
+  if(oldShowStoryForInteractions){
+    window.showStory = function(groupIdx, storyIdx){
+      const result = oldShowStoryForInteractions.apply(this, arguments);
+
+      try{
+        if(typeof storyGroups !== 'undefined'){
+          window.currentStory = storyGroups[groupIdx]?.stories?.[storyIdx] || null;
+        }
+      }catch(e){}
+
+      setTimeout(addStoryControls, 80);
+      return result;
+    };
+  }
+
+  const oldOpenStoryViewerForInteractions = typeof openStoryViewer === 'function' ? openStoryViewer : null;
+
+  if(oldOpenStoryViewerForInteractions){
+    window.openStoryViewer = function(groupIdx){
+      const result = oldOpenStoryViewerForInteractions.apply(this, arguments);
+      setTimeout(addStoryControls, 120);
+      return result;
+    };
+  }
+
+  /* swipe up on story opens reaction tray */
+  let storyTouchStartY = null;
+
+  document.addEventListener('touchstart', function(e){
+    const viewer = document.getElementById('story-viewer');
+    if(!viewer || viewer.style.display === 'none') return;
+    storyTouchStartY = e.touches?.[0]?.clientY || null;
+  }, { passive:true });
+
+  document.addEventListener('touchend', function(e){
+    const viewer = document.getElementById('story-viewer');
+    if(!viewer || viewer.style.display === 'none') return;
+    if(storyTouchStartY === null) return;
+
+    const endY = e.changedTouches?.[0]?.clientY || storyTouchStartY;
+    const delta = storyTouchStartY - endY;
+
+    storyTouchStartY = null;
+
+    if(delta > 70){
+      openStoryReactionTray();
+    }
+  }, { passive:true });
+
+  /* remove controls when story viewer closes */
+  document.addEventListener('click', function(){
+    const viewer = document.getElementById('story-viewer');
+    if(!viewer || viewer.style.display === 'none'){
+      document.getElementById('forte-story-controls')?.remove();
+      closeStoryReactionTray();
+    }
+  }, true);
+
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
