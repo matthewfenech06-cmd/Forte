@@ -12302,6 +12302,452 @@ if('serviceWorker' in navigator){
   });
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE RECIPE POSTS + SHARE PATCH
+   - Recipe saves show in Friends Activity
+   - Feed renders recipe posts properly
+   - Share post to story
+   - Send post to friends through DM
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  function esc(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  function profileName(p){
+    return p?.full_name || p?.username || 'User';
+  }
+
+  function avatarHtml(p, size){
+    const name = profileName(p);
+    return p?.avatar_url
+      ? `<img src="${p.avatar_url}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+      : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:${Math.round(size/2.5)}px;font-weight:800;flex-shrink:0">${esc(name[0] || '?').toUpperCase()}</div>`;
+  }
+
+  function getRecipeSnap(p){
+    return p.recipe_snapshot || {};
+  }
+
+  async function createRecipeFeedPost(recipe, recipeId){
+    if(recipe.is_private) return;
+
+    const caption =
+      `🍽️ Shared a recipe: ${recipe.title}\n` +
+      `${recipe.calories || 0} kcal · ${recipe.protein || 0}g protein · ${recipe.carbs || 0}g carbs · ${recipe.fats || 0}g fats`;
+
+    const post = {
+      user_id: recipe.user_id,
+      caption,
+      media_url: recipe.image_url || null,
+      media_type: recipe.image_url ? 'image' : null,
+      likes_count: 0,
+      comments_count: 0,
+      created_at: new Date().toISOString(),
+      post_type: 'recipe',
+      recipe_id: recipeId,
+      recipe_snapshot: {
+        id: recipeId,
+        title: recipe.title,
+        description: recipe.description,
+        calories: recipe.calories,
+        protein: recipe.protein,
+        carbs: recipe.carbs,
+        fats: recipe.fats,
+        servings: recipe.servings,
+        prep_time: recipe.prep_time,
+        image_url: recipe.image_url
+      }
+    };
+
+    const { error } = await sb.from('posts').insert(post);
+    if(error) throw error;
+  }
+
+  const oldSaveRecipeForRecipePosts = typeof saveRecipe === 'function' ? saveRecipe : null;
+
+  window.createRecipeFeedPost = createRecipeFeedPost;
+
+  // If your current saveRecipe already saves recipes/logging, this wrapper only backfills the post creation if needed.
+  window.backfillLatestRecipePost = async function(){
+    const u = await getUser();
+    if(!u) return;
+
+    const { data: r, error } = await sb
+      .from('recipes')
+      .select('*')
+      .eq('user_id', u.id)
+      .eq('is_private', false)
+      .order('created_at', { ascending:false })
+      .limit(1)
+      .maybeSingle();
+
+    if(error || !r) return;
+
+    const { data: existing } = await sb
+      .from('posts')
+      .select('id')
+      .eq('recipe_id', r.id)
+      .maybeSingle();
+
+    if(existing) return;
+
+    await createRecipeFeedPost(r, r.id);
+    try{ if(typeof loadFeedPosts === 'function') await loadFeedPosts(); }catch(e){}
+  };
+
+  // Wrap saveRecipe so public/friends recipes also appear as feed posts.
+  if(oldSaveRecipeForRecipePosts){
+    window.saveRecipe = async function(){
+      const before = new Date().toISOString();
+      await oldSaveRecipeForRecipePosts();
+
+      // Give the original save a moment to complete, then create missing feed post from latest recipe.
+      setTimeout(async () => {
+        try{
+          const u = await getUser();
+          if(!u) return;
+
+          const { data: r } = await sb
+            .from('recipes')
+            .select('*')
+            .eq('user_id', u.id)
+            .eq('is_private', false)
+            .gte('created_at', before)
+            .order('created_at', { ascending:false })
+            .limit(1)
+            .maybeSingle();
+
+          if(!r) return;
+
+          const { data: existing } = await sb
+            .from('posts')
+            .select('id')
+            .eq('recipe_id', r.id)
+            .maybeSingle();
+
+          if(!existing){
+            await createRecipeFeedPost(r, r.id);
+          }
+
+          if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+          if(typeof loadProfilePosts === 'function') await loadProfilePosts();
+        }catch(e){
+          console.error('Recipe feed post creation failed:', e);
+          toast('Recipe saved, but feed post failed: ' + (e.message || 'unknown error'));
+        }
+      }, 700);
+    };
+  }
+
+  window.loadFeedPosts = async function(){
+    const el = document.getElementById('feed-posts');
+    if(!el) return;
+
+    const u = await getUser();
+    if(!u){
+      el.innerHTML = '';
+      return;
+    }
+
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading feed...</div>';
+
+    const { data, error } = await sb
+      .from('posts')
+      .select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)')
+      .order('created_at', { ascending:false })
+      .limit(60);
+
+    if(error){
+      console.error('LOAD FEED POSTS ERROR:', error);
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Could not load feed</div>';
+      return;
+    }
+
+    const posts = data || [];
+
+    if(!posts.length){
+      el.innerHTML = '<div style="padding:30px 20px;text-align:center;color:var(--text3);font-size:14px">No posts yet</div>';
+      return;
+    }
+
+    el.innerHTML = posts.map(renderForteFeedPost).join('');
+  };
+
+  function renderForteFeedPost(p){
+    const prof = p.profiles || {};
+    const isRecipe = p.post_type === 'recipe' || !!p.recipe_id || !!p.recipe_snapshot;
+    const snap = getRecipeSnap(p);
+    const title = isRecipe ? (snap.title || 'Recipe') : (p.workouts?.title || 'Post');
+    const time = typeof getTimeAgo === 'function' ? getTimeAgo(p.created_at) : '';
+
+    const media = p.media_url
+      ? p.media_type === 'video'
+        ? `<video src="${p.media_url}" controls style="width:100%;max-height:520px;object-fit:cover;background:#000"></video>`
+        : `<img src="${p.media_url}" style="width:100%;max-height:520px;object-fit:cover;display:block">`
+      : '';
+
+    const recipeBox = isRecipe ? `
+      <div style="margin:0 14px 12px;background:linear-gradient(135deg,rgba(255,0,144,.12),rgba(255,0,144,.03));border:1px solid rgba(255,0,144,.22);border-radius:12px;padding:12px">
+        <div style="font-size:12px;color:#ff0090;font-weight:900;letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px">🍽️ Recipe</div>
+        <div style="font-size:16px;font-weight:900;margin-bottom:6px">${esc(title)}</div>
+        ${snap.description ? `<div style="font-size:12px;color:var(--text2);margin-bottom:8px">${esc(snap.description)}</div>` : ''}
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+          <div><div style="font-size:15px;font-weight:900;color:#ff0090">${snap.calories || 0}</div><div style="font-size:10px;color:var(--text3)">kcal</div></div>
+          <div><div style="font-size:15px;font-weight:900;color:#4f9fff">${snap.protein || 0}g</div><div style="font-size:10px;color:var(--text3)">protein</div></div>
+          <div><div style="font-size:15px;font-weight:900;color:#f0a500">${snap.carbs || 0}g</div><div style="font-size:10px;color:var(--text3)">carbs</div></div>
+          <div><div style="font-size:15px;font-weight:900;color:#ff4f9f">${snap.fats || 0}g</div><div style="font-size:10px;color:var(--text3)">fats</div></div>
+        </div>
+        <button onclick="event.stopPropagation();logRecipePostToFood('${p.id}')" style="margin-top:10px;width:100%;background:var(--accent);border:none;border-radius:8px;padding:9px;font-size:13px;font-weight:900;color:#fff;cursor:pointer">Log recipe</button>
+      </div>
+    ` : '';
+
+    return `
+      <div class="workout-post" id="post-${p.id}">
+        <div class="post-header" onclick="openUserProfile('${prof.id || p.user_id}')">
+          ${avatarHtml(prof, 36)}
+          <div style="flex:1;min-width:0">
+            <div class="post-user">${esc(profileName(prof))}</div>
+            <div class="post-time">${time}</div>
+          </div>
+          ${p.user_id === window.user?.id ? `<button onclick="event.stopPropagation();deletePost('${p.id}')" style="background:rgba(255,79,79,.12);border:1px solid rgba(255,79,79,.35);color:#ff4f4f;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:800">Delete</button>` : ''}
+        </div>
+
+        ${isRecipe ? '' : `<div class="post-workout-title">${esc(title)}</div>`}
+        ${p.caption ? `<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);white-space:pre-wrap">${esc(p.caption)}</div>` : ''}
+        ${media}
+        ${recipeBox}
+
+        <div class="post-actions">
+          <div class="post-action" onclick="toggleLike('${p.id}',this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l7.78-7.78a5.5 5.5 0 0 0 1.06-8.84z"/></svg>
+            <span id="like-count-${p.id}">${p.likes_count || 0}</span>
+          </div>
+          <div class="post-action" onclick="openPost('${p.id}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>${p.comments_count || 0} comment${(p.comments_count || 0) === 1 ? '' : 's'}</span>
+          </div>
+          <div class="post-action" onclick="openPostShareSheet('${p.id}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <span>Share</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  window.logRecipePostToFood = async function(postId){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    const { data:p, error } = await sb
+      .from('posts')
+      .select('recipe_snapshot')
+      .eq('id', postId)
+      .single();
+
+    if(error || !p?.recipe_snapshot){
+      return toast('Could not log recipe');
+    }
+
+    const r = p.recipe_snapshot;
+    const today = new Date().toISOString().split('T')[0];
+
+    const { error: logErr } = await sb.from('nutrition_logs').insert({
+      user_id: u.id,
+      food_name: r.title || 'Recipe',
+      meal_type: 'Snack',
+      calories: parseInt(r.calories) || 0,
+      protein: parseFloat(r.protein) || 0,
+      carbs: parseFloat(r.carbs) || 0,
+      fats: parseFloat(r.fats) || 0,
+      log_date: today
+    });
+
+    if(logErr) return toast('Could not log: ' + logErr.message);
+
+    toast('Recipe logged ✅');
+    try{ if(typeof loadNutrition === 'function') await loadNutrition(); }catch(e){}
+    try{ if(typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+  };
+
+  window.openPostShareSheet = async function(postId){
+    const modalId = 'post-share-modal';
+    let modal = document.getElementById(modalId);
+
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = modalId;
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal">
+          <div class="modal-handle"></div>
+          <div class="modal-title">Share post</div>
+          <button onclick="sharePostToStory(window._sharePostId)" class="btn-primary" style="margin-bottom:10px">Share to story</button>
+          <button onclick="loadPostSendFriends(window._sharePostId)" class="btn-secondary" style="margin-bottom:10px">Send to friend</button>
+          <div id="post-send-friends-box" style="display:none;margin-top:10px"></div>
+          <button onclick="closeModal('post-share-modal')" class="btn-secondary">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    window._sharePostId = postId;
+    const box = document.getElementById('post-send-friends-box');
+    if(box){
+      box.style.display = 'none';
+      box.innerHTML = '';
+    }
+
+    modal.classList.add('open');
+  };
+
+  window.sharePostToStory = async function(postId){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    const { data:p, error } = await sb
+      .from('posts')
+      .select('*,profiles!posts_user_id_fkey(username,full_name)')
+      .eq('id', postId)
+      .single();
+
+    if(error || !p) return toast('Could not find post');
+
+    const name = p.profiles?.full_name || p.profiles?.username || 'Someone';
+    const isRecipe = p.post_type === 'recipe' || !!p.recipe_snapshot;
+    const title = isRecipe ? (p.recipe_snapshot?.title || 'recipe') : 'post';
+
+    const caption = `Shared ${name}'s ${isRecipe ? 'recipe' : 'post'}: ${title}`;
+
+    const { error: storyErr } = await sb.from('stories').insert({
+      user_id: u.id,
+      media_url: p.media_url || p.recipe_snapshot?.image_url || null,
+      media_type: p.media_url ? (p.media_type || 'image') : 'text',
+      caption
+    });
+
+    if(storyErr) return toast('Could not share to story: ' + storyErr.message);
+
+    closeModal('post-share-modal');
+    toast('Shared to story ✅');
+    try{ if(typeof loadStories === 'function') await loadStories(); }catch(e){}
+  };
+
+  window.loadPostSendFriends = async function(postId){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    const box = document.getElementById('post-send-friends-box');
+    if(!box) return;
+
+    box.style.display = 'block';
+    box.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:10px 0">Loading friends...</div>';
+
+    const { data: friends, error } = await sb
+      .from('friends')
+      .select('friend_id,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
+      .eq('user_id', u.id)
+      .eq('status', 'accepted');
+
+    if(error){
+      console.error('LOAD SEND FRIENDS ERROR:', error);
+      box.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:10px 0">Could not load friends</div>';
+      return;
+    }
+
+    if(!friends || !friends.length){
+      box.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:10px 0">No friends to send to yet</div>';
+      return;
+    }
+
+    box.innerHTML = friends.map(f => {
+      const p = f.profiles || {};
+      return `
+        <button onclick="sendPostToFriend('${postId}','${p.id}')" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;color:var(--text);cursor:pointer;text-align:left">
+          ${avatarHtml(p, 34)}
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:800">${esc(p.full_name || p.username || 'Friend')}</div>
+            <div style="font-size:11px;color:var(--text3)">@${esc(p.username || '')}</div>
+          </div>
+          <div style="font-size:12px;color:var(--accent);font-weight:900">Send</div>
+        </button>
+      `;
+    }).join('');
+  };
+
+  window.sendPostToFriend = async function(postId, friendId){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    if(typeof startDM !== 'function'){
+      return toast('DMs are not ready');
+    }
+
+    try{
+      await startDM(friendId);
+      const body = `Shared a post: ${location.origin}${location.pathname}?post=${postId}`;
+
+      if(window.currentConvId){
+        const { error } = await sb.from('messages').insert({
+          conversation_id: window.currentConvId,
+          sender_id: u.id,
+          body,
+          message_type: 'post_share',
+          metadata: { post_id: postId }
+        });
+
+        if(error) throw error;
+
+        if(typeof loadMessages === 'function') await loadMessages(window.currentConvId);
+      }
+
+      closeModal('post-share-modal');
+      toast('Post sent ✅');
+    }catch(e){
+      console.error('SEND POST ERROR:', e);
+      toast('Could not send post: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  const oldInitRecipeFeedPatch = typeof init === 'function' ? init : null;
+  if(oldInitRecipeFeedPatch){
+    window.init = async function(){
+      await oldInitRecipeFeedPatch();
+      try{ await loadFeedPosts(); }catch(e){}
+    };
+  }
+
+  setTimeout(() => {
+    try{ loadFeedPosts(); }catch(e){}
+  }, 1000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
