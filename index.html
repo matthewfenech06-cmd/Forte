@@ -6773,38 +6773,40 @@ openLeague = async function(leagueId){
   const { data:league } = await sb.from('leagues').select('*').eq('id',leagueId).single();
   if(!league) return fpToast('League not found');
 
+  // Fetch members with their profile data in one query
   const { data:members } = await sb
     .from('league_members')
-    .select('*,profiles(*)')
+    .select('*,profiles(id,username,full_name,avatar_url,points,weekly_workouts)')
     .eq('league_id',leagueId)
     .eq('status','accepted');
 
   const rows = [];
 
   for(const m of (members || [])){
-    const start = m.joined_at || league.created_at || '2000-01-01';
-
-    const { data:pts } = await sb
-      .from('points_log')
-      .select('points')
-      .eq('user_id',m.user_id)
-      .gte('earned_at',start);
-
-    const workouts = await fpCount('workouts', [
-      {col:'user_id',val:m.user_id},
-      {op:'gte',col:'created_at',val:start}
-    ]);
-
-    const recipes = await fpCount('recipes', [
-      {col:'user_id',val:m.user_id},
-      {op:'gte',col:'created_at',val:start}
-    ]);
+    const p = m.profiles || {};
+    // Use profile points directly — no RLS issues
+    // Count workouts since joining
+    let workouts = 0;
+    let recipes = 0;
+    try{
+      const start = m.joined_at || league.created_at || '2020-01-01';
+      const {count:wCount} = await sb.from('workouts')
+        .select('*',{count:'exact',head:true})
+        .eq('user_id',m.user_id)
+        .gte('created_at',start);
+      workouts = wCount||0;
+      const {count:rCount} = await sb.from('recipes')
+        .select('*',{count:'exact',head:true})
+        .eq('user_id',m.user_id)
+        .gte('created_at',start);
+      recipes = rCount||0;
+    }catch(e){}
 
     rows.push({
-      ...(m.profiles || {}),
-      league_points:(pts || []).reduce((a,x) => a + (x.points || 0),0),
-      league_workouts:workouts,
-      league_recipes:recipes
+      ...p,
+      league_points: p.points||0,
+      league_workouts: workouts,
+      league_recipes: recipes,
     });
   }
 
@@ -11170,8 +11172,12 @@ if('serviceWorker' in navigator){
     }
   }
 
-  // Keeping original acceptLeagueInvite — direct DB update works fine
-  window.joinLeagueInvite = window.acceptLeagueInvite;
+  window.fixedAcceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.acceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.joinLeagueInvite = fixedAcceptLeagueInvite;
+
+  window.fixedDeclineLeagueInvite = fixedDeclineLeagueInvite;
+  window.declineLeagueInvite = fixedDeclineLeagueInvite;
 
   function attachInviteButtons() {
     const buttons = Array.from(document.querySelectorAll("button, div, span"));
