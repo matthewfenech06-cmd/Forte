@@ -17947,6 +17947,345 @@ setTimeout(() => {
   setTimeout(runFixes, 2000);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE FINAL FINAL FEED FIX
+   - Stops top-right icon overlap
+   - Removes league preview block between pills and Friends Activity
+   ========================================================= */
+
+(function(){
+  function addCSS(){
+    if(document.getElementById('forte-final-final-feed-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-final-final-feed-css';
+    style.textContent = `
+      /* Force top icons into clean non-overlapping layout */
+      #feed-screen .topbar-actions {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 12px !important;
+        width: auto !important;
+        min-width: 170px !important;
+        overflow: visible !important;
+        position: relative !important;
+      }
+
+      #feed-screen .topbar-actions > * {
+        position: static !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+        flex: 0 0 50px !important;
+      }
+
+      #feed-screen .topbar-actions button,
+      #feed-screen .topbar-actions .icon-btn,
+      #feed-screen .topbar-actions a {
+        width: 50px !important;
+        height: 50px !important;
+        min-width: 50px !important;
+        max-width: 50px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.075) !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        opacity: 1 !important;
+        color: #fff !important;
+      }
+
+      #feed-screen .topbar-actions svg {
+        width: 30px !important;
+        height: 30px !important;
+        stroke-width: 2.15 !important;
+      }
+
+      .forte-remove-league-preview-final {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function forceMessageIcon(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const topbar = feed.querySelector('.topbar-actions');
+    if(!topbar) return;
+
+    const buttons = Array.from(topbar.querySelectorAll('button, a, .icon-btn'));
+
+    const msgBtn = buttons.find(btn => {
+      const id = (btn.id || '').toLowerCase();
+      const cls = (btn.className || '').toString().toLowerCase();
+      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
+      const html = (btn.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message')
+      );
+    });
+
+    if(msgBtn){
+      msgBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M8 11.35H16"
+            stroke="currentColor"
+            stroke-linecap="round"
+          />
+        </svg>
+      `;
+    }
+  }
+
+  function findPillRow(feed){
+    return Array.from(feed.querySelectorAll('*')).find(el => {
+      const txt = (el.innerText || '').replace(/\s+/g,' ').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+
+      return (
+        r.top > 300 &&
+        r.top < 700 &&
+        txt.includes('leagues') &&
+        txt.includes('recipes') &&
+        txt.includes('recipe vote') &&
+        txt.length < 140
+      );
+    });
+  }
+
+  function findFriendsHeading(feed){
+    return Array.from(feed.querySelectorAll('*')).find(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+
+      return txt === 'friends activity' && r.top > 350;
+    });
+  }
+
+  function hideBetween(root, startEl, endEl){
+    if(!root || !startEl || !endEl) return false;
+
+    const children = Array.from(root.children || []);
+    if(!children.length) return false;
+
+    let startChild = null;
+    let endChild = null;
+
+    for(const child of children){
+      if(child.contains(startEl)) startChild = child;
+      if(child.contains(endEl)) endChild = child;
+    }
+
+    if(!startChild || !endChild) return false;
+
+    if(startChild === endChild){
+      return hideBetween(startChild, startEl, endEl);
+    }
+
+    let hiding = false;
+
+    for(const child of children){
+      if(child === startChild){
+        hiding = true;
+        continue;
+      }
+
+      if(child === endChild){
+        hiding = false;
+        break;
+      }
+
+      if(hiding){
+        child.classList.add('forte-remove-league-preview-final');
+      }
+    }
+
+    return true;
+  }
+
+  function removeLeaguePreviewBlock(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const pillRow = findPillRow(feed);
+    const friendsHeading = findFriendsHeading(feed);
+
+    if(!pillRow || !friendsHeading) return;
+
+    // Main structural removal: hide everything between the 3 pills and Friends Activity.
+    hideBetween(feed, pillRow, friendsHeading);
+
+    // Backup removal by screen position, only between pills and Friends Activity.
+    const pillBottom = pillRow.getBoundingClientRect().bottom;
+    const friendsTop = friendsHeading.getBoundingClientRect().top;
+
+    Array.from(feed.querySelectorAll('*')).forEach(el => {
+      if(el.contains(pillRow) || el.contains(friendsHeading)) return;
+      if(pillRow.contains(el) || friendsHeading.contains(el)) return;
+
+      const r = el.getBoundingClientRect();
+      if(r.height <= 0) return;
+
+      const between = r.top > pillBottom + 4 && r.bottom < friendsTop - 4;
+      if(!between) return;
+
+      const txt = (el.innerText || el.textContent || '').trim();
+
+      if(
+        txt.includes('View all') ||
+        txt.includes('Private') ||
+        txt.includes('IRON SHARPENS IRON') ||
+        txt.includes('Iron sharpens Iron') ||
+        txt.toLowerCase() === 'your leagues'
+      ){
+        el.classList.add('forte-remove-league-preview-final');
+
+        let p = el.parentElement;
+        for(let i = 0; i < 4 && p && p !== feed; i++){
+          const pr = p.getBoundingClientRect();
+          const ptxt = p.innerText || '';
+
+          if(
+            pr.top > pillBottom &&
+            pr.bottom < friendsTop &&
+            (
+              ptxt.includes('View all') ||
+              ptxt.includes('Private') ||
+              ptxt.includes('IRON SHARPENS IRON') ||
+              ptxt.includes('Iron sharpens Iron')
+            )
+          ){
+            p.classList.add('forte-remove-league-preview-final');
+          }
+
+          p = p.parentElement;
+        }
+      }
+    });
+  }
+
+  function wirePills(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('leagues');
+        };
+      }
+
+      if(txt.includes('recipes') && !txt.includes('vote') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipes === 'function') openRecipes();
+              else if(typeof loadRecipes === 'function') loadRecipes('mine');
+            }catch(err){}
+          }, 150);
+        };
+      }
+
+      if(txt.includes('recipe vote') && txt.length < 40){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipeVote === 'function') openRecipeVote();
+              else if(typeof showRecipeVote === 'function') showRecipeVote();
+              else if(typeof loadRecipeVote === 'function') loadRecipeVote();
+            }catch(err){}
+          }, 150);
+        };
+      }
+    });
+  }
+
+  function run(){
+    addCSS();
+    forceMessageIcon();
+    removeLeaguePreviewBlock();
+    wirePills();
+  }
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function' && !window.__forteFinalFinalFeedWrapped){
+    window.__forteFinalFinalFeedWrapped = true;
+
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(run, 100);
+        setTimeout(run, 450);
+        setTimeout(run, 1000);
+      }
+
+      return result;
+    };
+  }
+
+  const oldLoadFeedPosts = window.loadFeedPosts;
+  if(typeof oldLoadFeedPosts === 'function' && !window.__forteFinalFinalLoadWrapped){
+    window.__forteFinalFinalLoadWrapped = true;
+
+    window.loadFeedPosts = async function(){
+      const result = await oldLoadFeedPosts.apply(this, arguments);
+      setTimeout(run, 150);
+      setTimeout(run, 600);
+      return result;
+    };
+  }
+
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
+  setTimeout(run, 2000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
