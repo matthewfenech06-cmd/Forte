@@ -15110,6 +15110,514 @@ if('serviceWorker' in navigator){
   setTimeout(cleanupStoryControls, 1000);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE STORY EDITOR PATCH
+   Instagram-style editor:
+   - photo preview before posting
+   - text overlay
+   - emoji stickers
+   - music sticker
+   - drawing
+   - draggable overlays
+   - uploads final edited image as story
+   ========================================================= */
+
+(function(){
+  let storyEditorFile = null;
+  let storyEditorBaseImg = null;
+  let storyDrawMode = false;
+  let storyDrawing = false;
+  let storyLastPoint = null;
+
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  function ensureStoryEditorModal(){
+    if(document.getElementById('forte-story-editor-modal')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'forte-story-editor-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal" style="height:92vh;max-height:92vh;padding:0;overflow:hidden;background:#000;position:relative">
+        <div id="story-editor-stage" style="position:relative;width:100%;height:100%;background:#000;overflow:hidden;touch-action:none">
+          <canvas id="story-editor-canvas" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain"></canvas>
+          <div id="story-editor-overlays" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></div>
+
+          <div style="position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;z-index:30">
+            <button onclick="closeStoryEditor()" style="width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:24px;font-weight:800">×</button>
+
+            <div style="display:flex;gap:8px">
+              <button onclick="storyEditorAddText()" style="height:42px;padding:0 14px;border-radius:999px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:900">Aa</button>
+              <button onclick="storyEditorStickerTray()" style="height:42px;padding:0 14px;border-radius:999px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:17px;font-weight:900">😀</button>
+              <button onclick="storyEditorAddMusic()" style="height:42px;padding:0 14px;border-radius:999px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:14px;font-weight:900">🎵</button>
+              <button id="story-draw-btn" onclick="toggleStoryDraw()" style="height:42px;padding:0 14px;border-radius:999px;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:16px;font-weight:900">✏️</button>
+            </div>
+          </div>
+
+          <div id="story-sticker-tray" style="display:none;position:absolute;left:12px;right:12px;bottom:88px;background:rgba(20,20,20,.92);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;z-index:40">
+            <div style="font-size:13px;color:#aaa;font-weight:800;margin-bottom:10px;text-transform:uppercase;letter-spacing:.6px">Stickers</div>
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
+              ${['🔥','💪','🏆','❤️','😂','😮','🥶','👏','✅','⚡','🍽️','📈'].map(e => `
+                <button onclick="storyEditorAddSticker('${e}')" style="height:44px;border-radius:12px;border:none;background:rgba(255,255,255,.08);font-size:24px">${e}</button>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="position:absolute;left:12px;right:12px;bottom:18px;display:flex;gap:10px;z-index:35">
+            <input id="story-editor-caption" placeholder="Add a caption..." style="flex:1;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:13px 15px;color:#fff;font-size:14px;outline:none">
+            <button onclick="publishEditedStory()" style="width:98px;border:none;border-radius:999px;background:#ff0090;color:#fff;font-size:14px;font-weight:900">Post</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const canvas = document.getElementById('story-editor-canvas');
+
+    canvas.addEventListener('pointerdown', e => {
+      if(!storyDrawMode) return;
+      storyDrawing = true;
+      storyLastPoint = getCanvasPoint(e, canvas);
+    });
+
+    canvas.addEventListener('pointermove', e => {
+      if(!storyDrawMode || !storyDrawing) return;
+
+      const ctx = canvas.getContext('2d');
+      const p = getCanvasPoint(e, canvas);
+
+      ctx.strokeStyle = '#ff0090';
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(storyLastPoint.x, storyLastPoint.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
+      storyLastPoint = p;
+    });
+
+    canvas.addEventListener('pointerup', () => {
+      storyDrawing = false;
+      storyLastPoint = null;
+    });
+
+    canvas.addEventListener('pointercancel', () => {
+      storyDrawing = false;
+      storyLastPoint = null;
+    });
+  }
+
+  function getCanvasPoint(e, canvas){
+    const rect = canvas.getBoundingClientRect();
+
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * canvas.height
+    };
+  }
+
+  function drawBaseImage(){
+    const canvas = document.getElementById('story-editor-canvas');
+    const ctx = canvas.getContext('2d');
+
+    const maxW = 1080;
+    const maxH = 1920;
+
+    let w = storyEditorBaseImg.naturalWidth;
+    let h = storyEditorBaseImg.naturalHeight;
+
+    const ratio = Math.min(maxW / w, maxH / h, 1);
+    w = Math.round(w * ratio);
+    h = Math.round(h * ratio);
+
+    canvas.width = w;
+    canvas.height = h;
+
+    ctx.clearRect(0,0,w,h);
+    ctx.drawImage(storyEditorBaseImg, 0, 0, w, h);
+  }
+
+  window.openStoryEditor = function(file){
+    if(!file) return;
+
+    if(!file.type.startsWith('image/')){
+      toast('Story editor currently works with photos. Videos can still be uploaded normally.');
+      if(typeof uploadStoryFile === 'function') return uploadStoryFile(file);
+      return;
+    }
+
+    ensureStoryEditorModal();
+
+    storyEditorFile = file;
+    storyDrawMode = false;
+
+    const overlay = document.getElementById('story-editor-overlays');
+    overlay.innerHTML = '';
+
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = function(){
+      storyEditorBaseImg = img;
+      drawBaseImage();
+
+      const modal = document.getElementById('forte-story-editor-modal');
+      modal.classList.add('open');
+
+      URL.revokeObjectURL(url);
+    };
+
+    img.src = url;
+  };
+
+  window.closeStoryEditor = function(){
+    const modal = document.getElementById('forte-story-editor-modal');
+    if(modal) modal.classList.remove('open');
+
+    storyEditorFile = null;
+    storyEditorBaseImg = null;
+    storyDrawMode = false;
+    storyDrawing = false;
+  };
+
+  function makeOverlayDraggable(el){
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let baseX = 0;
+    let baseY = 0;
+
+    el.style.pointerEvents = 'auto';
+    el.style.touchAction = 'none';
+
+    el.addEventListener('pointerdown', e => {
+      dragging = true;
+      el.setPointerCapture(e.pointerId);
+
+      startX = e.clientX;
+      startY = e.clientY;
+      baseX = parseFloat(el.dataset.x || '50');
+      baseY = parseFloat(el.dataset.y || '50');
+
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    el.addEventListener('pointermove', e => {
+      if(!dragging) return;
+
+      const stage = document.getElementById('story-editor-stage');
+      const rect = stage.getBoundingClientRect();
+
+      const dx = ((e.clientX - startX) / rect.width) * 100;
+      const dy = ((e.clientY - startY) / rect.height) * 100;
+
+      const x = Math.max(3, Math.min(97, baseX + dx));
+      const y = Math.max(6, Math.min(94, baseY + dy));
+
+      el.dataset.x = x;
+      el.dataset.y = y;
+      el.style.left = x + '%';
+      el.style.top = y + '%';
+    });
+
+    el.addEventListener('pointerup', () => {
+      dragging = false;
+    });
+
+    el.addEventListener('dblclick', () => {
+      if(confirm('Remove this?')) el.remove();
+    });
+  }
+
+  function addOverlay(html, className){
+    const box = document.createElement('div');
+    box.className = className || 'story-editor-overlay';
+    box.dataset.x = '50';
+    box.dataset.y = '50';
+    box.style.cssText = `
+      position:absolute;
+      left:50%;
+      top:50%;
+      transform:translate(-50%,-50%);
+      z-index:20;
+      pointer-events:auto;
+      cursor:grab;
+      user-select:none;
+      touch-action:none;
+    `;
+    box.innerHTML = html;
+
+    document.getElementById('story-editor-overlays').appendChild(box);
+    makeOverlayDraggable(box);
+    return box;
+  }
+
+  window.storyEditorAddText = function(){
+    const text = prompt('Write text for your story:');
+    if(!text) return;
+
+    addOverlay(`
+      <div style="color:#fff;font-size:32px;font-weight:900;text-shadow:0 3px 10px rgba(0,0,0,.7);text-align:center;max-width:280px;line-height:1.1">
+        ${escapeHtml(text)}
+      </div>
+    `, 'story-editor-text');
+  };
+
+  window.storyEditorAddSticker = function(emoji){
+    document.getElementById('story-sticker-tray').style.display = 'none';
+
+    addOverlay(`
+      <div style="font-size:52px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))">${emoji}</div>
+    `, 'story-editor-sticker');
+  };
+
+  window.storyEditorStickerTray = function(){
+    const tray = document.getElementById('story-sticker-tray');
+    tray.style.display = tray.style.display === 'none' ? 'block' : 'none';
+  };
+
+  window.storyEditorAddMusic = function(){
+    const song = prompt('Add music sticker text:', 'Workout mix');
+    if(!song) return;
+
+    addOverlay(`
+      <div style="background:rgba(255,255,255,.94);color:#111;border-radius:999px;padding:9px 14px;font-size:14px;font-weight:900;box-shadow:0 6px 18px rgba(0,0,0,.35);display:flex;align-items:center;gap:7px;white-space:nowrap">
+        <span>🎵</span>
+        <span>${escapeHtml(song)}</span>
+      </div>
+    `, 'story-editor-music');
+  };
+
+  window.toggleStoryDraw = function(){
+    storyDrawMode = !storyDrawMode;
+
+    const btn = document.getElementById('story-draw-btn');
+    if(btn){
+      btn.style.background = storyDrawMode ? '#ff0090' : 'rgba(0,0,0,.55)';
+    }
+
+    toast(storyDrawMode ? 'Draw mode on' : 'Draw mode off');
+  };
+
+  function escapeHtml(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function flattenStoryCanvas(){
+    const base = document.getElementById('story-editor-canvas');
+    const out = document.createElement('canvas');
+    const ctx = out.getContext('2d');
+
+    out.width = base.width;
+    out.height = base.height;
+
+    ctx.drawImage(base, 0, 0);
+
+    const stage = document.getElementById('story-editor-stage');
+    const stageRect = stage.getBoundingClientRect();
+
+    const overlays = Array.from(document.querySelectorAll('#story-editor-overlays > div'));
+
+    overlays.forEach(el => {
+      const rect = el.getBoundingClientRect();
+
+      const x = ((rect.left + rect.width / 2 - stageRect.left) / stageRect.width) * out.width;
+      const y = ((rect.top + rect.height / 2 - stageRect.top) / stageRect.height) * out.height;
+
+      const textEl = el.querySelector('div');
+      const text = textEl ? textEl.textContent.trim() : '';
+
+      if(el.classList.contains('story-editor-text')){
+        ctx.save();
+        ctx.font = '900 54px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = 'rgba(0,0,0,.65)';
+        ctx.fillStyle = '#fff';
+
+        const lines = wrapCanvasText(ctx, text, out.width * 0.76);
+
+        lines.forEach((line, i) => {
+          const yy = y + (i - (lines.length - 1) / 2) * 60;
+          ctx.strokeText(line, x, yy);
+          ctx.fillText(line, x, yy);
+        });
+
+        ctx.restore();
+      } else if(el.classList.contains('story-editor-music')){
+        ctx.save();
+        ctx.font = '900 34px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const label = text || '🎵 Music';
+        const metrics = ctx.measureText(label);
+        const padX = 28;
+        const boxW = metrics.width + padX * 2;
+        const boxH = 62;
+
+        roundRect(ctx, x - boxW/2, y - boxH/2, boxW, boxH, 31);
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
+        ctx.fill();
+
+        ctx.fillStyle = '#111';
+        ctx.fillText(label, x, y + 2);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.font = '72px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      }
+    });
+
+    return new Promise(resolve => {
+      out.toBlob(blob => resolve(blob), 'image/jpeg', 0.92);
+    });
+  }
+
+  function wrapCanvasText(ctx, text, maxWidth){
+    const words = String(text || '').split(' ');
+    const lines = [];
+    let line = '';
+
+    words.forEach(word => {
+      const test = line ? line + ' ' + word : word;
+      if(ctx.measureText(test).width > maxWidth && line){
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    });
+
+    if(line) lines.push(line);
+
+    return lines;
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  window.publishEditedStory = async function(){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    try{
+      toast('Posting story...');
+
+      const blob = await flattenStoryCanvas();
+
+      if(!blob) throw new Error('Could not create story image');
+
+      const path = `stories/${u.id}/${Date.now()}-edited.jpg`;
+
+      const up = await sb.storage.from('forte-media').upload(path, blob, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true
+      });
+
+      if(up.error) throw up.error;
+
+      const publicUrl = sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+      const caption = document.getElementById('story-editor-caption')?.value || '';
+
+      const { error } = await sb.from('stories').insert({
+        user_id: u.id,
+        media_url: publicUrl,
+        media_type: 'image',
+        caption,
+        created_at: new Date().toISOString()
+      });
+
+      if(error) throw error;
+
+      closeStoryEditor();
+
+      try{ if(typeof loadStories === 'function') await loadStories(); }catch(e){}
+
+      toast('Story posted ✅');
+
+    }catch(e){
+      console.error('POST EDITED STORY ERROR:', e);
+      toast('Could not post story: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  /* Intercept story file inputs so they open editor before upload */
+  function hookStoryInputs(){
+    document.querySelectorAll('input[type="file"]').forEach(inp => {
+      const id = (inp.id || '').toLowerCase();
+      const onchange = (inp.getAttribute('onchange') || '').toLowerCase();
+
+      const isStoryInput =
+        id.includes('story') ||
+        onchange.includes('story') ||
+        onchange.includes('addstory') ||
+        onchange.includes('uploadstory');
+
+      if(!isStoryInput || inp.dataset.forteStoryEditorHooked === '1') return;
+
+      inp.dataset.forteStoryEditorHooked = '1';
+      inp.removeAttribute('capture');
+      inp.setAttribute('accept', 'image/*,video/*');
+
+      inp.addEventListener('change', function(e){
+        const file = e.target.files && e.target.files[0];
+        if(!file) return;
+
+        e.stopImmediatePropagation();
+
+        setTimeout(() => {
+          openStoryEditor(file);
+          inp.value = '';
+        }, 20);
+      }, true);
+    });
+  }
+
+  setInterval(hookStoryInputs, 1000);
+  setTimeout(hookStoryInputs, 500);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
