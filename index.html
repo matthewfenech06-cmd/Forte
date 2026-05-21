@@ -16486,6 +16486,217 @@ setTimeout(() => {
   if(typeof loadFeedLeagues === 'function') loadFeedLeagues();
 }, 1500);
 </script>
+  <script>
+/* =========================================================
+   FORTE TOP ICONS CLEANUP PATCH
+   - Makes message + notification icons bigger/cleaner
+   - Removes hidden small-circle look
+   - Makes unread badges clearer
+   ========================================================= */
+
+(function(){
+  function improveTopIcons(){
+    const possibleIcons = Array.from(document.querySelectorAll('button, .icon-btn, [onclick], a')).filter(el => {
+      const txt = (el.textContent || '').toLowerCase();
+      const html = (el.innerHTML || '').toLowerCase();
+      const onclick = (el.getAttribute('onclick') || '').toLowerCase();
+      const id = (el.id || '').toLowerCase();
+      const cls = (el.className || '').toString().toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('notif') ||
+        cls.includes('message') ||
+        cls.includes('notif') ||
+        onclick.includes('message') ||
+        onclick.includes('notification') ||
+        html.includes('bell') ||
+        html.includes('message') ||
+        html.includes('chat') ||
+        html.includes('notification') ||
+        txt === '🔔' ||
+        txt === '💬'
+      );
+    });
+
+    possibleIcons.forEach(btn => {
+      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
+      const id = (btn.id || '').toLowerCase();
+      const cls = (btn.className || '').toString().toLowerCase();
+      const html = (btn.innerHTML || '').toLowerCase();
+
+      const isTopIcon =
+        btn.closest('.topbar') ||
+        btn.closest('.topbar-actions') ||
+        btn.getBoundingClientRect().top < 160;
+
+      if(!isTopIcon) return;
+
+      const isMessage =
+        id.includes('message') ||
+        cls.includes('message') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('message') ||
+        html.includes('chat');
+
+      const isNotif =
+        id.includes('notif') ||
+        cls.includes('notif') ||
+        onclick.includes('notification') ||
+        html.includes('bell') ||
+        html.includes('notification');
+
+      if(!isMessage && !isNotif) return;
+
+      btn.classList.add('forte-clean-top-icon');
+
+      btn.style.width = '48px';
+      btn.style.height = '48px';
+      btn.style.minWidth = '48px';
+      btn.style.borderRadius = '50%';
+      btn.style.background = 'transparent';
+      btn.style.border = 'none';
+      btn.style.boxShadow = 'none';
+      btn.style.display = 'inline-flex';
+      btn.style.alignItems = 'center';
+      btn.style.justifyContent = 'center';
+      btn.style.position = 'relative';
+      btn.style.color = 'var(--text)';
+      btn.style.padding = '0';
+      btn.style.margin = '0 2px';
+      btn.style.opacity = '1';
+
+      const svg = btn.querySelector('svg');
+      if(svg){
+        svg.style.width = '31px';
+        svg.style.height = '31px';
+        svg.style.strokeWidth = '2.3';
+        svg.style.opacity = '1';
+      }
+
+      // If it is plain emoji/text icon, enlarge it too
+      if(!svg){
+        btn.style.fontSize = '29px';
+        btn.style.lineHeight = '1';
+      }
+    });
+
+    improveBadges();
+  }
+
+  function improveBadges(){
+    const badges = Array.from(document.querySelectorAll('*')).filter(el => {
+      const txt = (el.textContent || '').trim();
+      const cls = (el.className || '').toString().toLowerCase();
+      const id = (el.id || '').toLowerCase();
+
+      return (
+        cls.includes('badge') ||
+        id.includes('badge') ||
+        id.includes('unread') ||
+        cls.includes('unread')
+      ) && txt && txt.length <= 3;
+    });
+
+    badges.forEach(badge => {
+      const parent = badge.parentElement;
+      if(!parent) return;
+
+      const top = parent.getBoundingClientRect().top;
+      if(top > 170) return;
+
+      badge.style.position = 'absolute';
+      badge.style.top = '5px';
+      badge.style.right = '4px';
+      badge.style.minWidth = '18px';
+      badge.style.height = '18px';
+      badge.style.padding = '0 5px';
+      badge.style.borderRadius = '999px';
+      badge.style.background = '#ff2d55';
+      badge.style.color = '#fff';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = '900';
+      badge.style.display = 'flex';
+      badge.style.alignItems = 'center';
+      badge.style.justifyContent = 'center';
+      badge.style.border = '2px solid #050505';
+      badge.style.lineHeight = '1';
+      badge.style.zIndex = '5';
+
+      parent.style.position = 'relative';
+    });
+
+    // Also improve tiny dot notifications
+    document.querySelectorAll('.notification-dot, .notif-dot, .unread-dot').forEach(dot => {
+      const top = dot.parentElement?.getBoundingClientRect().top || 999;
+      if(top > 170) return;
+
+      dot.style.width = '10px';
+      dot.style.height = '10px';
+      dot.style.background = '#ff2d55';
+      dot.style.border = '2px solid #050505';
+      dot.style.borderRadius = '50%';
+      dot.style.position = 'absolute';
+      dot.style.top = '8px';
+      dot.style.right = '8px';
+      dot.style.zIndex = '5';
+    });
+  }
+
+  function addIconCSS(){
+    if(document.getElementById('forte-top-icon-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-top-icon-css';
+    style.textContent = `
+      .forte-clean-top-icon svg {
+        width: 31px !important;
+        height: 31px !important;
+      }
+
+      .forte-clean-top-icon:active {
+        transform: scale(.92);
+      }
+
+      .topbar-actions {
+        gap: 8px !important;
+        align-items: center !important;
+      }
+
+      .forte-clean-top-icon:hover {
+        background: rgba(255,255,255,.06) !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const oldShowScreenTopIcons = window.showScreen;
+
+  if(typeof oldShowScreenTopIcons === 'function'){
+    window.showScreen = function(){
+      const result = oldShowScreenTopIcons.apply(this, arguments);
+      setTimeout(improveTopIcons, 80);
+      setTimeout(improveTopIcons, 350);
+      return result;
+    };
+  }
+
+  addIconCSS();
+
+  setTimeout(improveTopIcons, 500);
+  setTimeout(improveTopIcons, 1200);
+
+  const obs = new MutationObserver(() => {
+    setTimeout(improveTopIcons, 80);
+  });
+
+  obs.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
