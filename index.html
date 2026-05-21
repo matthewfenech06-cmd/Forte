@@ -1692,8 +1692,7 @@ select.inp{appearance:none}
 const SURL='https://hbdiridvkgxarsuimrtu.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk';
 const sb=supabase.createClient(SURL,SKEY);
-window.sb = sb;
-let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
+window.sb = sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
 const CATS=[{n:'Chest',i:'💪',k:'Chest'},{n:'Back',i:'🏋️',k:'Back'},{n:'Shoulders',i:'🔝',k:'Shoulders'},{n:'Biceps',i:'💪',k:'Biceps'},{n:'Triceps',i:'🦾',k:'Triceps'},{n:'Legs',i:'🦵',k:'Legs'},{n:'Core',i:'🎯',k:'Core'},{n:'Cardio',i:'🏃',k:'Cardio'}];
 
 async function init(){
@@ -10893,493 +10892,754 @@ if('serviceWorker' in navigator){
   setTimeout(forceStatsSaveButton, 3000);
 })();
 </script>
-
-<script>
+ <script>
 /* =========================================================
-   FORTE FINALIZED LEAGUE INVITE + SESSION FIX
-   This uses the app's real data model:
-   public.league_members.status = pending / accepted / declined
+   FORTE FIX — SESSION RESET + LEAGUE INVITE JOIN FIX
+   Fixes:
+   - old account showing after sign out/sign in
+   - delete button showing for wrong user
+   - private leagues leaking until refresh
+   - league invite green tick sending undefined UUID
    ========================================================= */
 
-(function(){
-  function client(){
-    return (typeof sb !== 'undefined' && sb) || window.sb || null;
-  }
-
-  function toast(msg){
-    if(typeof showToast === 'function') return showToast(msg);
-    if(typeof safeToast === 'function') return safeToast(msg);
-    if(typeof forteToast === 'function') return forteToast(msg);
-    if(typeof fpToast === 'function') return fpToast(msg);
-    alert(msg);
-  }
-
-  function esc(v){
-    return String(v ?? '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;',
-      '<':'&lt;',
-      '>':'&gt;',
-      '"':'&quot;',
-      "'":'&#39;'
-    }[c]));
-  }
-
-  async function currentAuthUser(){
-    const c = client();
-    if(window.user && window.user.id) return window.user;
-    if(!c || !c.auth) return null;
-    const { data } = await c.auth.getUser();
-    if(data && data.user){
-      window.user = data.user;
-      return data.user;
-    }
-    return null;
-  }
-
-  async function currentProfile(){
-    const c = client();
-    const u = await currentAuthUser();
-    if(!c || !u) return null;
-    if(window.profile && window.profile.id === u.id) return window.profile;
-    const { data } = await c.from('profiles').select('*').eq('id', u.id).maybeSingle();
-    if(data) window.profile = data;
-    return data || null;
-  }
-
-  async function refreshLeagueUI(){
-    const funcs = ['loadFeedLeagues','loadLeagues','loadNotifications','loadFeedPosts','renderLB'];
-    for(const f of funcs){
-      if(typeof window[f] === 'function'){
-        try{ await window[f](); }catch(e){}
-      }
+(function () {
+  function getSB() {
+    try {
+      if (typeof sb !== "undefined" && sb) return sb;
+      if (window.sb) return window.sb;
+      if (window.supabaseClient) return window.supabaseClient;
+      if (window._supabase) return window._supabase;
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 
-  async function createMessageToUser(otherUserId, content){
-    const c = client();
-    const u = await currentAuthUser();
-    if(!c || !u || !otherUserId || !content) return;
+  function clearForteUserCache() {
+    try {
+      window.currentUser = null;
+      window.currentProfile = null;
+      window.profile = null;
+      window.me = null;
+      window.activeProfile = null;
+      window.currentUserId = null;
 
-    try{
-      if(typeof startDMWithMessage === 'function'){
-        await startDMWithMessage(otherUserId, content);
+      sessionStorage.removeItem("currentUser");
+      sessionStorage.removeItem("currentProfile");
+      sessionStorage.removeItem("profile");
+      sessionStorage.removeItem("me");
+      sessionStorage.removeItem("activeProfile");
+      sessionStorage.removeItem("currentUserId");
+
+      localStorage.removeItem("currentUser");
+      localStorage.removeItem("currentProfile");
+      localStorage.removeItem("profile");
+      localStorage.removeItem("me");
+      localStorage.removeItem("activeProfile");
+      localStorage.removeItem("currentUserId");
+
+      document.querySelectorAll("[data-owner-id]").forEach(el => {
+        el.removeAttribute("data-owner-id");
+      });
+    } catch (e) {
+      console.warn("Cache clear skipped", e);
+    }
+  }
+
+  async function forceReloadCurrentAccount() {
+    const client = getSB();
+    if (!client) return;
+
+    try {
+      const userRes = await client.auth.getUser();
+      const user = userRes?.data?.user;
+
+      if (!user) {
+        clearForteUserCache();
         return;
       }
 
-      let convId = null;
+      const { data: freshProfile } = await client
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      const { data: mine } = await c
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', u.id);
+      window.currentUser = user;
+      window.currentUserId = user.id;
+      window.currentProfile = freshProfile || null;
+      window.profile = freshProfile || null;
+      window.me = freshProfile || null;
 
-      if(mine && mine.length){
-        const ids = mine.map(x => x.conversation_id);
-        const { data: shared } = await c
-          .from('conversation_members')
-          .select('conversation_id')
-          .eq('user_id', otherUserId)
-          .in('conversation_id', ids);
+      try {
+        localStorage.setItem("currentUserId", user.id);
+      } catch (e) {}
 
-        if(shared && shared.length) convId = shared[0].conversation_id;
+      if (typeof loadProfile === "function") {
+        try { await loadProfile(); } catch (e) {}
       }
 
-      if(!convId){
-        const { data: conv, error: convErr } = await c
-          .from('conversations')
-          .insert({})
-          .select()
-          .single();
-
-        if(convErr || !conv) throw convErr || new Error('No conversation created');
-
-        convId = conv.id;
-
-        await c.from('conversation_members').insert([
-          { conversation_id: convId, user_id: u.id },
-          { conversation_id: convId, user_id: otherUserId }
-        ]);
+      if (typeof loadFeed === "function") {
+        try { await loadFeed(); } catch (e) {}
       }
 
-      await c.from('messages').insert({
-        conversation_id: convId,
-        sender_id: u.id,
-        content
-      });
-    }catch(e){
-      console.warn('League invite DM skipped:', e);
+      if (typeof loadStories === "function") {
+        try { await loadStories(); } catch (e) {}
+      }
+
+      if (typeof loadLeagues === "function") {
+        try { await loadLeagues(); } catch (e) {}
+      }
+
+      if (typeof renderProfile === "function") {
+        try { renderProfile(); } catch (e) {}
+      }
+
+      if (typeof renderFeed === "function") {
+        try { renderFeed(); } catch (e) {}
+      }
+
+    } catch (err) {
+      console.error("forceReloadCurrentAccount error:", err);
     }
   }
 
-  async function createNotif(userId, type, title, body, data){
-    const c = client();
-    const u = await currentAuthUser();
-    if(!c || !userId) return;
-
-    try{
-      if(typeof fpNotify === 'function'){
-        await fpNotify(userId, type, title, body, data || {});
-        return;
-      }
-
-      await c.from('notifications').insert({
-        user_id: userId,
-        actor_id: u ? u.id : null,
-        type,
-        title,
-        body,
-        data: data || {},
-        read: false
-      });
-    }catch(e){
-      console.warn('League invite notification skipped:', e);
-    }
-  }
-
-  window.inviteToLeague = async function(leagueId, friendId){
-    const c = client();
-    const u = await currentAuthUser();
-
-    if(!c) return toast('Supabase not ready. Reload and try again.');
-    if(!u) return toast('Please sign in first');
-    if(!leagueId || leagueId === 'undefined') return toast('Missing league');
-    if(!friendId || friendId === 'undefined') return toast('Missing friend');
-    if(friendId === u.id) return toast('You cannot invite yourself');
-
-    const { data: league, error: leagueErr } = await c
-      .from('leagues')
-      .select('*')
-      .eq('id', leagueId)
-      .maybeSingle();
-
-    if(leagueErr || !league){
-      console.error('League lookup failed:', leagueErr);
-      return toast('Could not find league');
-    }
-
-    const { data: existing, error: existingErr } = await c
-      .from('league_members')
-      .select('id,status')
-      .eq('league_id', leagueId)
-      .eq('user_id', friendId)
-      .maybeSingle();
-
-    if(existingErr && existingErr.code !== 'PGRST116'){
-      console.error('Member lookup failed:', existingErr);
-      return toast('Could not send invite: ' + existingErr.message);
-    }
-
-    let member = existing || null;
-
-    if(member && member.status === 'accepted'){
-      return toast('They are already in this league');
-    }
-
-    if(member){
-      const { data, error } = await c
-        .from('league_members')
-        .update({
-          status: 'pending',
-          invited_by: u.id,
-          joined_at: new Date().toISOString()
-        })
-        .eq('id', member.id)
-        .select('id,league_id,user_id,status,invited_by')
-        .single();
-
-      if(error){
-        console.error('Invite update failed:', error);
-        return toast('Could not send invite: ' + error.message);
-      }
-
-      member = data;
-    }else{
-      const { data, error } = await c
-        .from('league_members')
-        .insert({
-          league_id: leagueId,
-          user_id: friendId,
-          status: 'pending',
-          invited_by: u.id
-        })
-        .select('id,league_id,user_id,status,invited_by')
-        .single();
-
-      if(error){
-        console.error('Invite insert failed:', error);
-        return toast('Could not send invite: ' + error.message);
-      }
-
-      member = data;
-    }
-
-    const p = await currentProfile();
-    const senderName = (p && (p.full_name || p.username)) || 'Someone';
-
-    await createNotif(
-      friendId,
-      'league_invite',
-      'League invite 🏆',
-      `${senderName} invited you to join ${league.name || 'a league'}`,
-      {
-        league_member_id: member.id,
-        league_id: leagueId,
-        league_name: league.name || 'League'
-      }
-    );
-
-    await createMessageToUser(
-      friendId,
-      `🏆 League invite\n\n${senderName} invited you to join "${league.name || 'a league'}". Open Forte and accept it from the leagues section on your feed.`
-    );
-
-    toast('Invite sent');
-    await refreshLeagueUI();
-  };
-
-  async function findPendingInvite(idOrLeagueId){
-    const c = client();
-    const u = await currentAuthUser();
-    if(!c || !u || !idOrLeagueId || idOrLeagueId === 'undefined') return null;
-
-    let res = await c
-      .from('league_members')
-      .select('id,league_id,user_id,status,invited_by,leagues(id,name)')
-      .eq('id', idOrLeagueId)
-      .eq('user_id', u.id)
-      .eq('status', 'pending')
-      .maybeSingle();
-
-    if(res.data) return res.data;
-
-    res = await c
-      .from('league_members')
-      .select('id,league_id,user_id,status,invited_by,leagues(id,name)')
-      .eq('league_id', idOrLeagueId)
-      .eq('user_id', u.id)
-      .eq('status', 'pending')
-      .maybeSingle();
-
-    if(res.data) return res.data;
-
-    return null;
-  }
-
-  window.acceptLeagueInvite = async function(idOrLeagueId, notificationId){
-    const c = client();
-    const u = await currentAuthUser();
-
-    if(!c) return toast('Supabase not ready. Reload and try again.');
-    if(!u) return toast('Please sign in first');
-
-    const invite = await findPendingInvite(idOrLeagueId);
-    if(!invite) return toast('No pending invite found for this account');
-
-    const { error } = await c
-      .from('league_members')
-      .update({
-        status: 'accepted',
-        joined_at: new Date().toISOString()
-      })
-      .eq('id', invite.id)
-      .eq('user_id', u.id);
-
-    if(error){
-      console.error('Accept invite failed:', error);
-      return toast('Could not join: ' + error.message);
-    }
-
-    if(notificationId){
-      try{ await c.from('notifications').update({ read:true }).eq('id', notificationId); }catch(e){}
-    }
-
-    if(invite.invited_by){
-      try{
-        await createMessageToUser(invite.invited_by, `✅ I accepted your invite to join "${invite.leagues?.name || 'your league'}".`);
-      }catch(e){}
-    }
-
-    toast('Joined league 🏆');
-    await refreshLeagueUI();
-  };
-
-  window.declineLeagueInvite = async function(idOrLeagueId, notificationId){
-    const c = client();
-    const u = await currentAuthUser();
-
-    if(!c) return toast('Supabase not ready. Reload and try again.');
-    if(!u) return toast('Please sign in first');
-
-    const invite = await findPendingInvite(idOrLeagueId);
-    if(!invite) return toast('No pending invite found for this account');
-
-    const { error } = await c
-      .from('league_members')
-      .update({ status: 'declined' })
-      .eq('id', invite.id)
-      .eq('user_id', u.id);
-
-    if(error){
-      console.error('Decline invite failed:', error);
-      return toast('Could not decline: ' + error.message);
-    }
-
-    if(notificationId){
-      try{ await c.from('notifications').update({ read:true }).eq('id', notificationId); }catch(e){}
-    }
-
-    toast('Invite declined');
-    await refreshLeagueUI();
-  };
-
-  window.loadFeedLeagues = async function(){
-    const c = client();
-    const u = await currentAuthUser();
-    const el = document.getElementById('feed-leagues');
-
-    if(!el) return;
-    if(!c || !u){
-      el.innerHTML = '';
+  function setupAuthChangeFix() {
+    const client = getSB();
+    if (!client || !client.auth || !client.auth.onAuthStateChange) {
+      setTimeout(setupAuthChangeFix, 700);
       return;
     }
 
-    try{
-      const { data:pendingRows, error:pendingErr } = await c
-        .from('league_members')
-        .select('id,league_id,user_id,status,invited_by,joined_at')
-        .eq('user_id', u.id)
-        .eq('status', 'pending')
-        .order('joined_at', { ascending:false });
+    if (window.__forteAuthChangeFixInstalled) return;
+    window.__forteAuthChangeFixInstalled = true;
 
-      if(pendingErr) throw pendingErr;
+    client.auth.onAuthStateChange(async function (event, session) {
+      console.log("FORTE AUTH CHANGE:", event);
 
-      const { data:acceptedRows, error:acceptedErr } = await c
-        .from('league_members')
-        .select('id,league_id,user_id,status')
-        .eq('user_id', u.id)
-        .eq('status', 'accepted')
-        .limit(8);
+      if (event === "SIGNED_OUT") {
+        clearForteUserCache();
 
-      if(acceptedErr) throw acceptedErr;
+        setTimeout(function () {
+          location.reload();
+        }, 300);
 
-      const pending = pendingRows || [];
-      const accepted = acceptedRows || [];
-      const leagueIds = Array.from(new Set([...pending, ...accepted].map(r => r.league_id).filter(Boolean)));
-      const inviterIds = Array.from(new Set(pending.map(r => r.invited_by).filter(Boolean)));
-
-      let leaguesById = {};
-      let profilesById = {};
-
-      if(leagueIds.length){
-        const { data:leagues } = await c
-          .from('leagues')
-          .select('id,name,description,reward,is_private')
-          .in('id', leagueIds);
-
-        (leagues || []).forEach(l => leaguesById[l.id] = l);
+        return;
       }
 
-      if(inviterIds.length){
-        const { data:profiles } = await c
-          .from('profiles')
-          .select('id,username,full_name,avatar_url')
-          .in('id', inviterIds);
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        clearForteUserCache();
 
-        (profiles || []).forEach(p => profilesById[p.id] = p);
+        setTimeout(async function () {
+          await forceReloadCurrentAccount();
+        }, 300);
+
+        setTimeout(async function () {
+          await forceReloadCurrentAccount();
+        }, 1200);
+      }
+    });
+  }
+
+  setupAuthChangeFix();
+
+  setTimeout(forceReloadCurrentAccount, 1000);
+
+  function getInviteIdFromButton(btn) {
+    if (!btn) return null;
+
+    const card = btn.closest("[data-invite-id], [data-league-invite-id], .league-invite, .invite-card, .league-card, div");
+
+    const direct =
+      btn.dataset.inviteId ||
+      btn.dataset.leagueInviteId ||
+      btn.getAttribute("data-invite-id") ||
+      btn.getAttribute("data-league-invite-id");
+
+    if (direct && direct !== "undefined") return direct;
+
+    if (card) {
+      const fromCard =
+        card.dataset?.inviteId ||
+        card.dataset?.leagueInviteId ||
+        card.getAttribute?.("data-invite-id") ||
+        card.getAttribute?.("data-league-invite-id");
+
+      if (fromCard && fromCard !== "undefined") return fromCard;
+    }
+
+    const onclickText = String(btn.getAttribute("onclick") || "");
+
+    const uuidMatch = onclickText.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuidMatch) return uuidMatch[0];
+
+    return null;
+  }
+
+  async function fixedAcceptLeagueInvite(inviteId) {
+    const client = getSB();
+
+    if (!client) {
+      alert("Supabase is not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteId || inviteId === "undefined") {
+      alert("Could not join: invite ID missing. Reload the app and try again.");
+      console.error("Missing invite ID:", inviteId);
+      return;
+    }
+
+    try {
+      const { data, error } = await client.rpc("accept_league_invite", {
+        invite_uuid: inviteId
+      });
+
+      if (error) {
+        console.error("ACCEPT LEAGUE INVITE ERROR:", error);
+        alert("Could not join: " + error.message);
+        return;
       }
 
-      let html = '';
-
-      if(pending.length){
-        html += pending.map(row => {
-          const l = leaguesById[row.league_id] || {};
-          const inviter = profilesById[row.invited_by] || {};
-          const inviterName = inviter.full_name || inviter.username || 'Someone';
-
-          return `
-            <div style="background:linear-gradient(135deg,rgba(255,0,144,.16),rgba(255,0,144,.04));border:1.5px solid rgba(255,0,144,.35);border-radius:var(--radius-sm);padding:12px;min-width:230px;flex-shrink:0">
-              <div style="font-size:11px;color:var(--accent);font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">League invite</div>
-              <div style="font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🏆 ${esc(l.name || 'League')}</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Invited by ${esc(inviterName)}</div>
-              ${l.reward ? `<div style="font-size:12px;color:var(--text3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Reward: ${esc(l.reward)}</div>` : ''}
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <button onclick="event.stopPropagation();acceptLeagueInvite('${row.id}')" style="flex:1;background:#00c853;border:none;border-radius:8px;padding:8px;font-size:14px;font-weight:900;color:#fff;cursor:pointer">✓</button>
-                <button onclick="event.stopPropagation();declineLeagueInvite('${row.id}')" style="flex:1;background:#ff3b30;border:none;border-radius:8px;padding:8px;font-size:14px;font-weight:900;color:#fff;cursor:pointer">×</button>
-              </div>
-            </div>
-          `;
-        }).join('');
+      if (data && data.ok === false) {
+        alert(data.message || "Could not join league.");
+        return;
       }
 
-      if(accepted.length){
-        html += accepted.map(row => {
-          const l = leaguesById[row.league_id];
-          if(!l) return '';
-          return `
-            <div onclick="openLeague('${l.id}')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;flex-shrink:0">
-              <div style="font-size:13px;font-weight:700">${esc(l.name)}</div>
-              <div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private ? '🔒 Private' : 'Public'}</div>
-            </div>
-          `;
-        }).join('');
+      if (typeof showToast === "function") {
+        showToast("Joined league");
+      } else {
+        alert("Joined league");
       }
 
-      if(!html){
-        html = `
-          <div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">
-            + Create or join a league
-          </div>
-        `;
+      if (typeof loadLeagues === "function") {
+        try { await loadLeagues(); } catch (e) {}
       }
 
-      el.innerHTML = html;
-    }catch(e){
-      console.error('Load feed leagues failed:', e);
-      el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Could not load leagues</div>';
+      if (typeof loadFeed === "function") {
+        try { await loadFeed(); } catch (e) {}
+      }
+
+      if (typeof renderFeed === "function") {
+        try { renderFeed(); } catch (e) {}
+      }
+
+      setTimeout(function () {
+        location.reload();
+      }, 600);
+
+    } catch (err) {
+      console.error("JOIN LEAGUE CRASH:", err);
+      alert("Could not join: " + (err.message || "unknown error"));
+    }
+  }
+
+  async function fixedDeclineLeagueInvite(inviteId) {
+    const client = getSB();
+
+    if (!client) {
+      alert("Supabase is not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteId || inviteId === "undefined") {
+      alert("Could not decline: invite ID missing. Reload the app and try again.");
+      return;
+    }
+
+    try {
+      const { error } = await client.rpc("decline_league_invite", {
+        invite_uuid: inviteId
+      });
+
+      if (error) {
+        alert("Could not decline: " + error.message);
+        return;
+      }
+
+      if (typeof showToast === "function") {
+        showToast("Invite declined");
+      }
+
+      setTimeout(function () {
+        location.reload();
+      }, 500);
+
+    } catch (err) {
+      alert("Could not decline: " + (err.message || "unknown error"));
+    }
+  }
+
+  window.fixedAcceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.acceptLeagueInvite = fixedAcceptLeagueInvite;
+  window.joinLeagueInvite = fixedAcceptLeagueInvite;
+
+  window.fixedDeclineLeagueInvite = fixedDeclineLeagueInvite;
+  window.declineLeagueInvite = fixedDeclineLeagueInvite;
+
+  function attachInviteButtons() {
+    const buttons = Array.from(document.querySelectorAll("button, div, span"));
+
+    buttons.forEach(btn => {
+      const txt = (btn.textContent || "").trim();
+
+      const isAccept =
+        txt === "✓" ||
+        txt === "✔" ||
+        txt.toLowerCase() === "accept" ||
+        txt.toLowerCase() === "join";
+
+      const isDecline =
+        txt === "×" ||
+        txt === "✕" ||
+        txt === "x" ||
+        txt.toLowerCase() === "decline" ||
+        txt.toLowerCase() === "reject";
+
+      if (!isAccept && !isDecline) return;
+
+      const nearby = (btn.closest(".league-invite, .invite-card, .league-card, div")?.innerText || "").toLowerCase();
+
+      if (!nearby.includes("league invite") && !nearby.includes("invited by")) return;
+
+      if (btn.__forteInviteFixed) return;
+      btn.__forteInviteFixed = true;
+
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const inviteId = getInviteIdFromButton(btn);
+
+        if (isAccept) {
+          fixedAcceptLeagueInvite(inviteId);
+        } else {
+          fixedDeclineLeagueInvite(inviteId);
+        }
+
+        return false;
+      }, true);
+    });
+  }
+
+  setInterval(attachInviteButtons, 600);
+  setTimeout(attachInviteButtons, 500);
+  setTimeout(attachInviteButtons, 1500);
+  setTimeout(attachInviteButtons, 3000);
+
+  function hideWrongDeleteButtons() {
+    const currentId =
+      window.currentUser?.id ||
+      window.currentUserId ||
+      window.currentProfile?.id ||
+      null;
+
+    if (!currentId) return;
+
+    document.querySelectorAll("button").forEach(btn => {
+      const txt = (btn.textContent || "").trim().toLowerCase();
+      if (txt !== "delete") return;
+
+      const post = btn.closest("[data-user-id], [data-owner-id], [data-author-id], .post-card, .feed-card, article, div");
+
+      if (!post) return;
+
+      const owner =
+        post.getAttribute("data-user-id") ||
+        post.getAttribute("data-owner-id") ||
+        post.getAttribute("data-author-id") ||
+        post.dataset?.userId ||
+        post.dataset?.ownerId ||
+        post.dataset?.authorId;
+
+      if (owner && owner !== currentId) {
+        btn.style.display = "none";
+      }
+    });
+  }
+
+  setInterval(hideWrongDeleteButtons, 700);
+})();
+</script> 
+  <script>
+/* =========================================================
+   FORTE LEAGUE INVITE FRONTEND PATCH
+   Fixes:
+   - invite buttons creating real Supabase invites
+   - green tick accepts invite
+   - red cross declines invite
+   - refreshes feed after accept/decline
+   ========================================================= */
+
+(function () {
+  function getClient() {
+    return window.sb || window.supabaseClient || window.supabase || null;
+  }
+
+  async function getCurrentUserId() {
+    const sb = getClient();
+    if (!sb || !sb.auth) return null;
+
+    const res = await sb.auth.getUser();
+    return res && res.data && res.data.user ? res.data.user.id : null;
+  }
+
+  window.forteInviteUserToLeague = async function (leagueId, invitedUserId) {
+    const sb = getClient();
+
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
+    }
+
+    if (!leagueId || leagueId === "undefined") {
+      alert("Missing league ID.");
+      return;
+    }
+
+    if (!invitedUserId || invitedUserId === "undefined") {
+      alert("Missing invited user ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("invite_user_to_league", {
+      league_uuid: leagueId,
+      invited_uuid: invitedUserId
+    });
+
+    if (error) {
+      alert("Could not send invite: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not send invite.");
+      return;
+    }
+
+    alert("Invite sent");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
     }
   };
 
-  // Make session switches clean so the previous account does not appear after login.
-  try{
-    const c = client();
-    if(c && c.auth && !window.__forteFinalAuthWatcher){
-      window.__forteFinalAuthWatcher = true;
+  window.forteAcceptLeagueInvite = async function (inviteIdOrLeagueId) {
+    const sb = getClient();
 
-      c.auth.onAuthStateChange(async function(event, session){
-        console.log('FORTE AUTH CHANGE:', event);
-
-        if(event === 'SIGNED_OUT'){
-          window.user = null;
-          window.profile = null;
-          try{ sessionStorage.clear(); }catch(e){}
-          try{
-            document.querySelectorAll('[data-owner-id],[data-user-id],[data-author-id]').forEach(el => {
-              el.removeAttribute('data-owner-id');
-              el.removeAttribute('data-user-id');
-              el.removeAttribute('data-author-id');
-            });
-          }catch(e){}
-          return;
-        }
-
-        if(session && session.user){
-          window.user = session.user;
-          try{
-            const { data:freshProfile } = await c.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-            window.profile = freshProfile || null;
-          }catch(e){}
-          setTimeout(refreshLeagueUI, 400);
-        }
-      });
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
     }
-  }catch(e){
-    console.warn('Auth watcher skipped:', e);
-  }
+
+    if (!inviteIdOrLeagueId || inviteIdOrLeagueId === "undefined") {
+      alert("Missing invite ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("accept_league_invite", {
+      invite_uuid: inviteIdOrLeagueId
+    });
+
+    if (error) {
+      alert("Could not join: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not join.");
+      return;
+    }
+
+    alert("Joined league");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
+    }
+
+    if (typeof renderFeed === "function") {
+      try { renderFeed(); } catch (e) {}
+    }
+  };
+
+  window.forteDeclineLeagueInvite = async function (inviteIdOrLeagueId) {
+    const sb = getClient();
+
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteIdOrLeagueId || inviteIdOrLeagueId === "undefined") {
+      alert("Missing invite ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("decline_league_invite", {
+      invite_uuid: inviteIdOrLeagueId
+    });
+
+    if (error) {
+      alert("Could not decline: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not decline.");
+      return;
+    }
+
+    alert("Invite declined");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
+    }
+
+    if (typeof renderFeed === "function") {
+      try { renderFeed(); } catch (e) {}
+    }
+  };
 })();
 </script>
-
+  <script>
 <script>
-/* FORTE FINAL PRIVACY + PUBLIC PROFILE PATCH */
+/* =========================================================
+   FORTE REAL LEAGUE INVITE FLOW PATCH
+   Fixes:
+   - Invite button creates real league_invites rows
+   - Green tick accepts only real pending invites
+   - Red cross declines real pending invites
+   ========================================================= */
+
+(function () {
+  function sbClient() {
+    if (window.sb && typeof window.sb.rpc === "function") return window.sb;
+    console.error("FORTE: window.sb missing. Add window.sb = sb under createClient.");
+    return null;
+  }
+
+  function cleanText(txt) {
+    return String(txt || "")
+      .replace("🏆", "")
+      .replace("LEAGUE INVITE", "")
+      .replace("Reward:", "")
+      .replace(/Invited by.*/i, "")
+      .trim();
+  }
+
+  function findCardWithText(el, text) {
+    let node = el;
+    for (let i = 0; i < 12 && node; i++) {
+      if ((node.innerText || "").includes(text)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function getInviteLeagueName(card) {
+    if (!card) return "";
+
+    const lines = (card.innerText || "")
+      .split("\n")
+      .map(cleanText)
+      .filter(Boolean);
+
+    return lines.find(x =>
+      x.toUpperCase() !== "LEAGUE INVITE" &&
+      !x.toLowerCase().includes("invited by") &&
+      !x.toLowerCase().includes("reward") &&
+      x !== "✓" &&
+      x !== "×" &&
+      x !== "x"
+    ) || "";
+  }
+
+  function getVisibleLeagueName() {
+    const possible = Array.from(document.querySelectorAll("input, textarea"))
+      .map(x => x.value)
+      .filter(Boolean);
+
+    for (const v of possible) {
+      if (v.length > 2 && v.length < 80) return v.trim();
+    }
+
+    const text = document.body.innerText || "";
+    const lines = text.split("\n").map(x => x.trim()).filter(Boolean);
+
+    const createIndex = lines.findIndex(x => x.toLowerCase().includes("create league"));
+    if (createIndex >= 0) {
+      for (let i = createIndex; i < Math.min(createIndex + 12, lines.length); i++) {
+        if (
+          lines[i] &&
+          !lines[i].toLowerCase().includes("create league") &&
+          !lines[i].toLowerCase().includes("description") &&
+          !lines[i].toLowerCase().includes("reward") &&
+          !lines[i].toLowerCase().includes("private") &&
+          !lines[i].toLowerCase().includes("cancel")
+        ) {
+          return lines[i];
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function getUsernameNearInviteButton(btn) {
+    const card = btn.closest("div");
+    const text = card ? card.innerText : "";
+
+    const atMatch = text.match(/@([a-zA-Z0-9._-]+)/);
+    if (atMatch && atMatch[1]) return atMatch[1];
+
+    const lines = text.split("\n").map(x => x.trim()).filter(Boolean);
+    return lines.find(x =>
+      x &&
+      !x.toLowerCase().includes("invite") &&
+      !x.toLowerCase().includes("sent") &&
+      !x.includes(">")
+    ) || "";
+  }
+
+  async function refreshForte() {
+    for (const f of ["loadLeagues", "loadFeed", "renderFeed", "loadNotifications", "loadMyLeagues", "init"]) {
+      if (typeof window[f] === "function") {
+        try { await window[f](); } catch (e) {}
+      }
+    }
+  }
+
+  async function sendRealLeagueInvite(btn) {
+    const sb = sbClient();
+    if (!sb) return alert("Supabase client not found. Reload and try again.");
+
+    const username = getUsernameNearInviteButton(btn);
+    const leagueName = getVisibleLeagueName();
+
+    console.log("FORTE invite attempt:", { leagueName, username });
+
+    if (!leagueName) return alert("Could not find league name.");
+    if (!username) return alert("Could not find friend username.");
+
+    const { data, error } = await sb.rpc("invite_user_to_league_by_username", {
+      league_name_text: leagueName,
+      invited_username_text: username
+    });
+
+    if (error) {
+      console.error("FORTE invite error:", error);
+      return alert("Could not send invite: " + error.message);
+    }
+
+    if (!data || data.ok === false) {
+      console.error("FORTE invite failed:", data);
+      return alert((data && data.message) || "Could not send invite.");
+    }
+
+    btn.textContent = "Invited";
+    btn.disabled = true;
+    alert(data.message || "Invite sent");
+
+    await refreshForte();
+  }
+
+  async function acceptInvite(card) {
+    const sb = sbClient();
+    if (!sb) return alert("Supabase client not found. Reload and try again.");
+
+    const leagueName = getInviteLeagueName(card);
+    if (!leagueName) return alert("Could not find league name on invite card.");
+
+    const { data, error } = await sb.rpc("accept_league_invite_by_name", {
+      league_name_text: leagueName
+    });
+
+    if (error) return alert("Could not join: " + error.message);
+
+    if (!data || data.ok === false) {
+      return alert((data && data.message) || "No pending invite exists for this account");
+    }
+
+    if (card) card.remove();
+    alert("Joined league");
+    await refreshForte();
+  }
+
+  async function declineInvite(card) {
+    const sb = sbClient();
+    if (!sb) return alert("Supabase client not found. Reload and try again.");
+
+    const leagueName = getInviteLeagueName(card);
+    if (!leagueName) return alert("Could not find league name on invite card.");
+
+    const { data, error } = await sb.rpc("decline_league_invite_by_name", {
+      league_name_text: leagueName
+    });
+
+    if (error) return alert("Could not decline: " + error.message);
+
+    if (!data || data.ok === false) {
+      return alert((data && data.message) || "No pending invite exists for this account");
+    }
+
+    if (card) card.remove();
+    alert("Invite declined");
+    await refreshForte();
+  }
+
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest("button") || e.target;
+    const txt = (btn.innerText || btn.textContent || "").trim();
+
+    const inviteCard = findCardWithText(btn, "LEAGUE INVITE");
+
+    if (inviteCard) {
+      const isAccept = txt.includes("✓");
+      const isDecline = txt.includes("×") || txt.toLowerCase() === "x";
+
+      if (isAccept) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        acceptInvite(inviteCard);
+        return false;
+      }
+
+      if (isDecline) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        declineInvite(inviteCard);
+        return false;
+      }
+    }
+
+    if (txt.toLowerCase() === "invite") {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      sendRealLeagueInvite(btn);
+      return false;
+    }
+  }, true);
+})();
+</script>
+</script>
+   Paste directly before </body>
+   ========================================================= */
+
 function forteEscHtml(v){
   return String(v ?? '').replace(/[&<>"']/g, c => ({
     '&':'&amp;',
@@ -11936,9 +12196,9 @@ setTimeout(() => {
   if(typeof loadFeedLeagues === 'function') loadFeedLeagues();
 }, 1500);
 </script>
+   Paste directly before </body>
+   ========================================================= */
 
-<script>
-/* FORTE FINAL DM SEND IMMEDIATE DISPLAY PATCH */
 function forteAppendMessageToChat(message){
   const el = document.getElementById('chat-messages');
   if(!el || !message) return;
@@ -12088,9 +12348,12 @@ window.sendMessage = async function(){
   }
 };
 </script>
+   Paste directly before </body>
+   ========================================================= */
 
-<script>
-/* FORTE FINAL NOTIFICATION PATCH */
+let forteNotifPollTimer = null;
+let forteLastNotifSeenAt = localStorage.getItem('forte_last_notif_seen_at') || new Date().toISOString();
+
 async function forteRequestNotificationPermission(){
   try{
     if(!('Notification' in window)) return false;
@@ -12570,9 +12833,13 @@ setTimeout(() => {
   }
 }, 1500);
 </script>
+</body>
+  <script>
+/* =========================================================
+   FINAL SIGNUP + ONBOARDING FIX
+   Paste this directly before </body>
+   ========================================================= */
 
-<script>
-/* FORTE FINAL SIGNUP + ONBOARDING PATCH */
 function forteAuthMsg(msg, ok = false){
   const el = document.getElementById('auth-error');
   if(!el){
@@ -12776,6 +13043,4 @@ window.obFinish = async function(){
   }
 };
 </script>
-
-</body>
 </html>
