@@ -13363,6 +13363,692 @@ if('serviceWorker' in navigator){
   }, 1200);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE PROGRESS PAGE + STORY REPLY + DM INSTANT SEND PATCH
+   - Adds Progress tab to bottom nav
+   - Saves start weight + weekly stats properly
+   - Adds progress photos private/public
+   - Adds story reply to DMs
+   - Fixes chat messages not appearing until reload
+   - Improves camera/story upload quality
+   ========================================================= */
+
+(function(){
+  function t(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    if(typeof forteToast === 'function') return forteToast(msg);
+    alert(msg);
+  }
+
+  function esc(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[c]));
+  }
+
+  async function currentUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  async function refreshProfile(){
+    const u = await currentUser();
+    if(!u) return null;
+
+    const { data, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('id', u.id)
+      .single();
+
+    if(error){
+      console.error('REFRESH PROFILE ERROR:', error);
+      return null;
+    }
+
+    window.profile = data;
+    if(typeof profile !== 'undefined') profile = data;
+
+    try{ if(typeof syncProfile === 'function') syncProfile(); }catch(e){}
+    return data;
+  }
+
+  function num(id){
+    const v = parseFloat(document.getElementById(id)?.value);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function intVal(id){
+    const v = parseInt(document.getElementById(id)?.value, 10);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function str(id){
+    return document.getElementById(id)?.value || null;
+  }
+
+  function calcGoalPercent(p){
+    if(!p || !p.start_weight_kg || !p.weight_kg || !p.goal_weight_kg) return 0;
+
+    const start = Number(p.start_weight_kg);
+    const current = Number(p.weight_kg);
+    const goal = Number(p.goal_weight_kg);
+    const total = Math.abs(goal - start);
+
+    if(!total) return 100;
+
+    const done = Math.abs(current - start);
+    return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+  }
+
+  function calcTargets(data){
+    const weight = Number(data.weight_kg || 75);
+    const height = Number(data.height_cm || 175);
+    const age = Number(data.age || 25);
+    const sex = String(data.sex || 'male').toLowerCase();
+    const activity = Number(data.activity_level || 1.55);
+    const goalType = String(data.goal_type || 'maintain').toLowerCase();
+
+    let bmr = sex.includes('female')
+      ? 10 * weight + 6.25 * height - 5 * age - 161
+      : 10 * weight + 6.25 * height - 5 * age + 5;
+
+    let calories = bmr * activity;
+
+    if(goalType.includes('lose') || goalType.includes('cut')) calories -= 400;
+    if(goalType.includes('gain') || goalType.includes('bulk')) calories += 300;
+
+    calories = Math.max(1200, Math.round(calories));
+
+    const protein = Math.round(weight * 2);
+    const fats = Math.round((calories * 0.25) / 9);
+    const carbs = Math.max(0, Math.round((calories - protein * 4 - fats * 9) / 4));
+
+    return {
+      calorie_goal: calories,
+      protein_goal: protein,
+      carb_goal: carbs,
+      carbs_goal: carbs,
+      fat_goal: fats,
+      fats_goal: fats
+    };
+  }
+
+  /* -----------------------------
+     SAVE STATS PROPERLY
+  ----------------------------- */
+  window.saveBodyStats = async function(){
+    const u = await currentUser();
+    if(!u) return t('Sign in first');
+
+    const currentWeight = num('bs-weight');
+    const goalWeight = num('bs-goal-weight');
+
+    const oldStart = profile?.start_weight_kg ? Number(profile.start_weight_kg) : null;
+    const oldGoal = profile?.goal_weight_kg ? Number(profile.goal_weight_kg) : null;
+
+    const base = {
+      weight_kg: currentWeight,
+      height_cm: num('bs-height'),
+      age: intVal('bs-age'),
+      sex: str('bs-sex'),
+      activity_level: num('bs-act'),
+      goal_type: str('bs-goal'),
+      goal_weight_kg: goalWeight,
+      goal_weeks: intVal('bs-goal-weeks'),
+      stats_updated_at: new Date().toISOString()
+    };
+
+    const payload = {
+      ...base,
+      ...calcTargets(base)
+    };
+
+    // Set starting weight once, or reset it only when goal weight changes.
+    if(currentWeight && (!oldStart || (goalWeight && oldGoal && Number(goalWeight) !== Number(oldGoal)))){
+      payload.start_weight_kg = currentWeight;
+      payload.goal_started_at = new Date().toISOString();
+    }
+
+    const { data, error } = await sb
+      .from('profiles')
+      .update(payload)
+      .eq('id', u.id)
+      .select()
+      .single();
+
+    if(error){
+      console.error('SAVE STATS ERROR:', error);
+      return t('Could not save stats: ' + error.message);
+    }
+
+    if(currentWeight){
+      await sb.from('weight_logs').insert({
+        user_id: u.id,
+        weight_kg: currentWeight,
+        logged_at: new Date().toISOString()
+      });
+    }
+
+    window.profile = data;
+    if(typeof profile !== 'undefined') profile = data;
+
+    if(typeof goals !== 'undefined'){
+      goals = {
+        cal: data.calorie_goal || 2200,
+        pro: data.protein_goal || 150,
+        carb: data.carb_goal || data.carbs_goal || 250,
+        fat: data.fat_goal || data.fats_goal || 65
+      };
+    }
+
+    try{ if(typeof renderBodySection === 'function') renderBodySection(); }catch(e){}
+    try{ if(typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+
+    const modal = document.getElementById('body-modal');
+    if(modal) modal.classList.remove('open');
+
+    t('Stats saved 💪');
+    setTimeout(loadProgressPage, 300);
+  };
+
+  /* -----------------------------
+     ADD PROGRESS SCREEN + NAV TAB
+  ----------------------------- */
+  function ensureProgressScreen(){
+    if(document.getElementById('progress-screen')) return;
+
+    const app = document.getElementById('app');
+    const screen = document.createElement('div');
+    screen.id = 'progress-screen';
+    screen.className = 'screen';
+    screen.innerHTML = `
+      <div class="topbar">
+        <div class="topbar-title">Progress</div>
+        <div class="topbar-actions">
+          <button class="icon-btn" onclick="openBodyStats()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="progress-main" style="padding:0 20px 20px"></div>
+
+      <div class="section-label">Progress photos</div>
+
+      <div style="padding:0 20px 12px">
+        <label style="display:block;background:var(--bg2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;cursor:pointer">
+          <div style="font-size:24px;margin-bottom:6px">📸</div>
+          <div style="font-size:14px;font-weight:800">Add progress photo</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:3px">Choose private or public after upload</div>
+          <input type="file" accept="image/*" id="progress-photo-input" style="display:none" onchange="uploadProgressPhoto(this)">
+        </label>
+      </div>
+
+      <div id="progress-photos-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:0 20px 90px"></div>
+    `;
+    app.appendChild(screen);
+  }
+
+  function ensureProgressNav(){
+    const nav = document.getElementById('bottom-nav');
+    if(!nav || document.getElementById('nav-progress')) return;
+
+    const nutrition = document.getElementById('nav-nutrition');
+    const item = document.createElement('div');
+    item.className = 'nav-item';
+    item.id = 'nav-progress';
+    item.onclick = () => showScreen('progress');
+    item.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+      </svg>
+      <span>Progress</span>
+    `;
+
+    if(nutrition) nutrition.insertAdjacentElement('afterend', item);
+    else nav.appendChild(item);
+  }
+
+  const oldShowScreen = typeof showScreen === 'function' ? showScreen : null;
+
+  if(oldShowScreen){
+    window.showScreen = function(name){
+      ensureProgressScreen();
+      ensureProgressNav();
+
+      if(name === 'progress'){
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+        document.getElementById('progress-screen')?.classList.add('active');
+        document.getElementById('nav-progress')?.classList.add('active');
+        loadProgressPage();
+        return;
+      }
+
+      return oldShowScreen.apply(this, arguments);
+    };
+  }
+
+  window.loadProgressPage = async function(){
+    ensureProgressScreen();
+
+    const u = await currentUser();
+    if(!u) return;
+
+    const p = await refreshProfile();
+    if(!p) return;
+
+    const pct = calcGoalPercent(p);
+    const start = p.start_weight_kg || p.weight_kg || '—';
+    const current = p.weight_kg || '—';
+    const goal = p.goal_weight_kg || '—';
+    const remaining = (p.goal_weight_kg && p.weight_kg)
+      ? Math.abs(Number(p.goal_weight_kg) - Number(p.weight_kg)).toFixed(1)
+      : '—';
+
+    const lastStats = p.stats_updated_at ? new Date(p.stats_updated_at) : null;
+    const daysSince = lastStats ? Math.floor((Date.now() - lastStats.getTime()) / 86400000) : null;
+
+    const main = document.getElementById('progress-main');
+    if(main){
+      main.innerHTML = `
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div>
+              <div style="font-size:20px;font-weight:900">Goal progress</div>
+              <div style="font-size:13px;color:var(--text3);margin-top:3px">${remaining}kg remaining</div>
+            </div>
+            <div style="font-size:28px;font-weight:900;color:var(--accent)">${pct}%</div>
+          </div>
+
+          <div style="height:14px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-bottom:10px">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--accent),#ff6ac8);border-radius:999px;transition:width .4s"></div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3)">
+            <span>${start}kg start</span>
+            <span>${current}kg now</span>
+            <span>${goal}kg goal</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+            <div style="font-size:18px;font-weight:900">${current}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:3px">Current kg</div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+            <div style="font-size:18px;font-weight:900">${goal}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:3px">Goal kg</div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+            <div style="font-size:18px;font-weight:900">${daysSince === null ? '—' : daysSince}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:3px">Days since update</div>
+          </div>
+        </div>
+
+        ${daysSince === null || daysSince >= 7 ? `
+          <button onclick="openBodyStats()" style="width:100%;background:var(--accent);border:none;border-radius:var(--radius-sm);padding:14px;font-size:14px;font-weight:900;color:#fff;cursor:pointer;margin-bottom:16px">
+            Weekly check-in: update stats
+          </button>
+        ` : ''}
+      `;
+    }
+
+    const { data: photos, error } = await sb
+      .from('progress_photos')
+      .select('*')
+      .eq('user_id', u.id)
+      .order('created_at', { ascending:false });
+
+    const grid = document.getElementById('progress-photos-grid');
+
+    if(grid){
+      if(error){
+        grid.innerHTML = '<div style="grid-column:span 2;color:var(--text3);font-size:13px">Could not load progress photos</div>';
+      }else if(!photos || !photos.length){
+        grid.innerHTML = '<div style="grid-column:span 2;color:var(--text3);font-size:13px;text-align:center;padding:20px">No progress photos yet</div>';
+      }else{
+        grid.innerHTML = photos.map(ph => `
+          <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+            <img src="${ph.image_url}" style="width:100%;height:180px;object-fit:cover;display:block">
+            <div style="padding:9px">
+              <div style="font-size:11px;color:var(--text3)">${new Date(ph.created_at).toLocaleDateString()}</div>
+              <div style="font-size:12px;color:${ph.is_private ? 'var(--text3)' : 'var(--accent)'};font-weight:800;margin-top:3px">${ph.is_private ? '🔒 Private' : '🌍 Public'}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+  };
+
+  window.uploadProgressPhoto = async function(input){
+    const u = await currentUser();
+    if(!u) return t('Sign in first');
+
+    const file = input.files && input.files[0];
+    if(!file) return;
+
+    const makePublic = confirm('Make this progress photo public?\n\nOK = Public\nCancel = Private');
+
+    try{
+      t('Uploading progress photo...');
+
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `progress/${u.id}/${Date.now()}.${ext}`;
+
+      const up = await sb.storage.from('forte-media').upload(path, file, {
+        upsert: true,
+        contentType: file.type || 'image/jpeg',
+        cacheControl: '3600'
+      });
+
+      if(up.error) throw up.error;
+
+      const url = sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+
+      const { error } = await sb.from('progress_photos').insert({
+        user_id: u.id,
+        image_url: url,
+        is_private: !makePublic
+      });
+
+      if(error) throw error;
+
+      t('Progress photo saved ✅');
+      input.value = '';
+      await loadProgressPage();
+    }catch(e){
+      console.error('PROGRESS PHOTO ERROR:', e);
+      t('Could not upload photo: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  /* -----------------------------
+     WEEKLY PROMPT
+  ----------------------------- */
+  async function maybeWeeklyPrompt(){
+    const p = profile || await refreshProfile();
+    const u = await currentUser();
+    if(!p || !u) return;
+
+    if(!p.weight_kg) return;
+
+    const last = p.stats_updated_at ? new Date(p.stats_updated_at).getTime() : 0;
+    const due = !last || Date.now() - last >= 7 * 86400000;
+    if(!due) return;
+
+    const key = 'forte_weekly_progress_prompt_' + u.id;
+    const lastPrompt = Number(localStorage.getItem(key) || 0);
+    if(Date.now() - lastPrompt < 86400000) return;
+
+    localStorage.setItem(key, String(Date.now()));
+
+    setTimeout(() => {
+      if(confirm('Weekly progress check-in 💪\nUpdate your weight and stats now?')){
+        if(typeof openBodyStats === 'function') openBodyStats();
+      }
+    }, 1200);
+  }
+
+  const oldSyncProfile = typeof syncProfile === 'function' ? syncProfile : null;
+  if(oldSyncProfile){
+    window.syncProfile = function(){
+      oldSyncProfile.apply(this, arguments);
+      try{ maybeWeeklyPrompt(); }catch(e){}
+    };
+  }
+
+  /* -----------------------------
+     STORY QUALITY FIX
+  ----------------------------- */
+  function improveStoryFileInputs(){
+    document.querySelectorAll('input[type="file"]').forEach(inp => {
+      const id = inp.id || '';
+      const onchange = inp.getAttribute('onchange') || '';
+      const looksStory = id.toLowerCase().includes('story') || onchange.toLowerCase().includes('story');
+
+      if(looksStory){
+        inp.setAttribute('accept', 'image/*,video/*');
+        inp.removeAttribute('capture');
+      }
+    });
+  }
+
+  setInterval(improveStoryFileInputs, 1500);
+  setTimeout(improveStoryFileInputs, 500);
+
+  /* -----------------------------
+     STORY REPLIES TO DM
+  ----------------------------- */
+  window.replyToStory = async function(storyId, ownerId, replyText){
+    const u = await currentUser();
+    if(!u) return t('Sign in first');
+
+    const text = String(replyText || '').trim();
+    if(!text) return;
+
+    if(ownerId === u.id) return t('You cannot reply to your own story');
+
+    try{
+      let convId = null;
+
+      const { data: mine } = await sb
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', u.id);
+
+      const ids = (mine || []).map(x => x.conversation_id);
+
+      if(ids.length){
+        const { data: shared } = await sb
+          .from('conversation_members')
+          .select('conversation_id')
+          .eq('user_id', ownerId)
+          .in('conversation_id', ids)
+          .limit(1);
+
+        if(shared && shared.length) convId = shared[0].conversation_id;
+      }
+
+      if(!convId){
+        const { data: conv, error: convErr } = await sb
+          .from('conversations')
+          .insert({})
+          .select()
+          .single();
+
+        if(convErr) throw convErr;
+
+        convId = conv.id;
+
+        const { error: memErr } = await sb.from('conversation_members').insert([
+          { conversation_id: convId, user_id: u.id, last_read_at: new Date().toISOString() },
+          { conversation_id: convId, user_id: ownerId, last_read_at: null }
+        ]);
+
+        if(memErr) throw memErr;
+      }
+
+      const { error } = await sb.from('messages').insert({
+        conversation_id: convId,
+        sender_id: u.id,
+        content: text,
+        message_type: 'story_reply',
+        metadata: { story_id: storyId }
+      });
+
+      if(error) throw error;
+
+      try{
+        if(typeof forteCreateNotification === 'function'){
+          await forteCreateNotification(ownerId, 'story_reply', (profile?.full_name || profile?.username || 'Someone') + ' replied to your story', text, { conversation_id: convId, story_id: storyId });
+        }
+      }catch(e){}
+
+      t('Reply sent ✅');
+    }catch(e){
+      console.error('STORY REPLY ERROR:', e);
+      t('Could not reply: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  function addStoryReplyBox(){
+    const modal = document.getElementById('story-viewer-modal') || document.getElementById('story-modal');
+    if(!modal || document.getElementById('story-reply-box')) return;
+
+    const storyImg = modal.querySelector('img,video');
+    const activeStory =
+      window.currentStory ||
+      window.activeStory ||
+      (window.storyGroups && window.currentStoryGroupIndex !== undefined && window.currentStoryIndex !== undefined
+        ? window.storyGroups[window.currentStoryGroupIndex]?.stories?.[window.currentStoryIndex]
+        : null);
+
+    if(!activeStory || activeStory.user_id === window.user?.id) return;
+
+    const box = document.createElement('div');
+    box.id = 'story-reply-box';
+    box.style.cssText = `
+      position:absolute;
+      left:14px;
+      right:14px;
+      bottom:22px;
+      display:flex;
+      gap:8px;
+      z-index:9999;
+    `;
+
+    box.innerHTML = `
+      <input id="story-reply-input" placeholder="Reply to story..." style="flex:1;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+      <button id="story-reply-send" style="width:46px;border:none;border-radius:50%;background:#ff0090;color:#fff;font-weight:900;font-size:18px">➤</button>
+    `;
+
+    const parent = storyImg?.parentElement || modal.querySelector('.modal') || modal;
+    parent.style.position = 'relative';
+    parent.appendChild(box);
+
+    document.getElementById('story-reply-send').onclick = () => {
+      const txt = document.getElementById('story-reply-input').value;
+      replyToStory(activeStory.id, activeStory.user_id, txt);
+      document.getElementById('story-reply-input').value = '';
+    };
+  }
+
+  setInterval(() => {
+    try{ addStoryReplyBox(); }catch(e){}
+  }, 1000);
+
+  /* -----------------------------
+     INSTANT CHAT SEND FIX
+  ----------------------------- */
+  window.sendMessage = async function(){
+    const u = await currentUser();
+    if(!u) return t('Please sign in first');
+
+    const inp = document.getElementById('chat-input');
+    const content = inp?.value?.trim();
+
+    if(!content) return;
+    if(!window.currentConvId && typeof currentConvId !== 'undefined') window.currentConvId = currentConvId;
+
+    const convId = window.currentConvId || (typeof currentConvId !== 'undefined' ? currentConvId : null);
+    if(!convId) return t('No conversation selected');
+
+    inp.value = '';
+
+    const tempId = 'temp-' + Date.now();
+    const el = document.getElementById('chat-messages');
+
+    if(el){
+      const name = profile?.full_name || profile?.username || 'Me';
+      const tempHtml = `
+        <div id="${tempId}" style="display:flex;justify-content:flex-end;margin:8px 12px">
+          <div style="background:#ff0090;color:#fff;border-radius:18px 18px 4px 18px;padding:10px 12px;max-width:75%;font-size:14px">
+            ${esc(content)}
+            <div style="font-size:10px;opacity:.65;text-align:right;margin-top:3px">Sending...</div>
+          </div>
+        </div>
+      `;
+      el.insertAdjacentHTML('beforeend', tempHtml);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    try{
+      const { data, error } = await sb
+        .from('messages')
+        .insert({
+          conversation_id: convId,
+          sender_id: u.id,
+          content,
+          message_type: 'text'
+        })
+        .select('*,profiles!messages_sender_id_fkey(id,username,full_name,avatar_url)')
+        .single();
+
+      if(error) throw error;
+
+      const temp = document.getElementById(tempId);
+      if(temp && typeof chatMessageHtml === 'function'){
+        temp.outerHTML = chatMessageHtml(data);
+      }else if(temp){
+        temp.querySelector('div div')?.remove();
+      }
+
+      if(typeof loadMessageReactions === 'function') loadMessageReactions(convId);
+      if(typeof forteUpdateDmUnreadBadge === 'function') forteUpdateDmUnreadBadge();
+
+      try{
+        const { data: members } = await sb
+          .from('conversation_members')
+          .select('user_id')
+          .eq('conversation_id', convId)
+          .neq('user_id', u.id);
+
+        const receiverId = members?.[0]?.user_id;
+
+        if(receiverId && typeof forteCreateNotification === 'function'){
+          await forteCreateNotification(
+            receiverId,
+            'message',
+            (profile?.full_name || profile?.username || 'Someone') + ' sent you a message',
+            content.length > 80 ? content.slice(0,80) + '...' : content,
+            { conversation_id: convId }
+          );
+        }
+      }catch(e){}
+
+    }catch(e){
+      console.error('SEND MESSAGE ERROR:', e);
+      const temp = document.getElementById(tempId);
+      if(temp) temp.remove();
+      inp.value = content;
+      t('Could not send message: ' + (e.message || 'unknown error'));
+    }
+  };
+
+  /* Boot */
+  setTimeout(() => {
+    ensureProgressScreen();
+    ensureProgressNav();
+    try{ maybeWeeklyPrompt(); }catch(e){}
+  }, 900);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
