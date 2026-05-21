@@ -12912,6 +12912,126 @@ if('serviceWorker' in navigator){
   }, 1200);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE RECIPE FEED SAVE BUTTON FIX
+   Changes Friends Activity recipe button from "Log recipe"
+   to "Save recipe", saving it into the user's own recipes.
+   ========================================================= */
+
+(function(){
+  function fToast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  async function fUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  window.saveRecipePostToMyRecipes = async function(postId){
+    const u = await fUser();
+    if(!u) return fToast('Sign in first');
+
+    const { data: p, error } = await sb
+      .from('posts')
+      .select('id,user_id,recipe_id,recipe_snapshot,media_url')
+      .eq('id', postId)
+      .single();
+
+    if(error || !p){
+      console.error('SAVE RECIPE POST LOOKUP ERROR:', error);
+      return fToast('Could not find recipe');
+    }
+
+    if(p.user_id === u.id){
+      return fToast('This recipe is already yours');
+    }
+
+    const snap = p.recipe_snapshot || {};
+
+    if(!snap.title){
+      return fToast('Could not save recipe');
+    }
+
+    const { data: existing } = await sb
+      .from('recipes')
+      .select('id')
+      .eq('user_id', u.id)
+      .eq('title', snap.title)
+      .maybeSingle();
+
+    if(existing){
+      return fToast('Recipe already saved');
+    }
+
+    const recipe = {
+      user_id: u.id,
+      title: snap.title || 'Saved recipe',
+      description: snap.description || null,
+      ingredients: snap.ingredients || null,
+      instructions: snap.instructions || null,
+      calories: parseInt(snap.calories) || 0,
+      protein: parseFloat(snap.protein) || 0,
+      carbs: parseFloat(snap.carbs) || 0,
+      fats: parseFloat(snap.fats) || 0,
+      servings: parseInt(snap.servings) || 1,
+      prep_time: parseInt(snap.prep_time) || null,
+      image_url: snap.image_url || p.media_url || null,
+      is_private: true,
+      vote_count: 0
+    };
+
+    const { error: insertErr } = await sb.from('recipes').insert(recipe);
+
+    if(insertErr){
+      console.error('SAVE RECIPE POST INSERT ERROR:', insertErr);
+      return fToast('Could not save recipe: ' + insertErr.message);
+    }
+
+    fToast('Recipe saved to My recipes ✅');
+
+    try{ if(typeof loadRecipes === 'function') await loadRecipes('mine'); }catch(e){}
+    try{ if(typeof loadProfileRecipes === 'function') await loadProfileRecipes(); }catch(e){}
+  };
+
+  function replaceLogRecipeButtons(){
+    document.querySelectorAll('button').forEach(btn => {
+      const txt = (btn.textContent || '').trim().toLowerCase();
+
+      if(txt === 'log recipe'){
+        const old = btn.getAttribute('onclick') || '';
+        const postMatch = old.match(/logRecipePostToFood\(['"]([^'"]+)['"]\)/);
+
+        if(postMatch && postMatch[1]){
+          const postId = postMatch[1];
+          btn.textContent = 'Save recipe';
+          btn.setAttribute('onclick', `event.stopPropagation();saveRecipePostToMyRecipes('${postId}')`);
+        }
+      }
+    });
+  }
+
+  const oldLoadFeedPostsSaveRecipeFix = window.loadFeedPosts;
+
+  if(typeof oldLoadFeedPostsSaveRecipeFix === 'function'){
+    window.loadFeedPosts = async function(){
+      await oldLoadFeedPostsSaveRecipeFix();
+      setTimeout(replaceLogRecipeButtons, 80);
+    };
+  }
+
+  setTimeout(replaceLogRecipeButtons, 500);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
