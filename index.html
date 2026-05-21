@@ -14977,6 +14977,139 @@ if('serviceWorker' in navigator){
 
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE PROFILE CLEANUP + STORY CONTROLS CLEANUP
+   - Removes Body stats / Edit stats & goals from Profile page
+   - Keeps progress only in Progress tab
+   - Removes story reply/like controls when story closes
+   ========================================================= */
+
+(function(){
+  function removeProfileStatsSection(){
+    const profileScreen =
+      document.getElementById('profile-screen') ||
+      document.querySelector('.screen.active');
+
+    if(!profileScreen) return;
+
+    // Remove Body stats card from profile page only
+    const headings = Array.from(profileScreen.querySelectorAll('*')).filter(el =>
+      (el.textContent || '').trim().toLowerCase() === 'body stats'
+    );
+
+    headings.forEach(h => {
+      let card = h;
+      for(let i = 0; i < 6 && card; i++){
+        const txt = card.innerText || '';
+        if(
+          txt.includes('Body stats') &&
+          txt.includes('Weight') &&
+          txt.includes('Height') &&
+          txt.includes('GOAL')
+        ){
+          card.remove();
+          return;
+        }
+        card = card.parentElement;
+      }
+    });
+
+    // Remove Edit stats & goals button from profile page only
+    Array.from(profileScreen.querySelectorAll('button')).forEach(btn => {
+      const txt = (btn.textContent || '').trim().toLowerCase();
+      if(txt === 'edit stats & goals'){
+        btn.remove();
+      }
+    });
+  }
+
+  function cleanupStoryControls(){
+    const viewer =
+      document.getElementById('story-viewer') ||
+      document.getElementById('story-viewer-modal') ||
+      document.getElementById('story-modal');
+
+    const viewerOpen =
+      viewer &&
+      (
+        viewer.classList.contains('open') ||
+        viewer.style.display === 'block' ||
+        viewer.style.display === 'flex'
+      );
+
+    if(!viewerOpen){
+      document.getElementById('forte-story-controls')?.remove();
+      document.getElementById('forte-story-reaction-tray')?.remove();
+      document.getElementById('story-reply-box')?.remove();
+    }
+  }
+
+  // Patch showScreen so profile is cleaned every time it opens
+  const oldShowScreenProfileCleanup = window.showScreen;
+
+  if(typeof oldShowScreenProfileCleanup === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreenProfileCleanup.apply(this, arguments);
+
+      if(name === 'profile'){
+        setTimeout(removeProfileStatsSection, 80);
+        setTimeout(removeProfileStatsSection, 350);
+      }
+
+      if(name !== 'story'){
+        setTimeout(cleanupStoryControls, 50);
+      }
+
+      return result;
+    };
+  }
+
+  // Patch common story close functions if they exist
+  ['closeStoryViewer', 'closeStory', 'closeStoryModal'].forEach(fnName => {
+    const oldFn = window[fnName];
+
+    if(typeof oldFn === 'function'){
+      window[fnName] = function(){
+        const result = oldFn.apply(this, arguments);
+        setTimeout(cleanupStoryControls, 30);
+        return result;
+      };
+    }
+  });
+
+  // Also clean when tapping close buttons / outside
+  document.addEventListener('click', function(e){
+    const txt = (e.target.textContent || '').trim().toLowerCase();
+
+    if(
+      txt === 'close' ||
+      e.target.classList.contains('story-close') ||
+      e.target.classList.contains('modal-close') ||
+      e.target.closest('.story-close') ||
+      e.target.closest('.modal-close')
+    ){
+      setTimeout(cleanupStoryControls, 50);
+      setTimeout(cleanupStoryControls, 250);
+    }
+
+    setTimeout(() => {
+      const activeProfile =
+        document.getElementById('profile-screen')?.classList.contains('active') ||
+        document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'profile';
+
+      if(activeProfile) removeProfileStatsSection();
+    }, 120);
+  }, true);
+
+  // Safety cleanup loop for stuck story controls
+  setInterval(cleanupStoryControls, 800);
+
+  // Initial cleanup
+  setTimeout(removeProfileStatsSection, 1000);
+  setTimeout(cleanupStoryControls, 1000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
