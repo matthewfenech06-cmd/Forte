@@ -15618,6 +15618,68 @@ if('serviceWorker' in navigator){
   setTimeout(hookStoryInputs, 500);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE NOTIFICATION PROMPT PATCH
+   - If notifications are off, ask when app opens
+   - Once accepted, stop asking
+   ========================================================= */
+
+(function(){
+  async function askForNotificationsIfNeeded(){
+    try{
+      if(!('Notification' in window)) return;
+
+      if(Notification.permission === 'granted'){
+        localStorage.setItem('forte_notifications_enabled','1');
+        return;
+      }
+
+      if(localStorage.getItem('forte_notifications_enabled') === '1') return;
+
+      if(Notification.permission === 'denied') return;
+
+      setTimeout(async () => {
+        const wants = confirm('Turn on notifications for messages, story replies, likes, and league invites?');
+
+        if(!wants) return;
+
+        let permission = await Notification.requestPermission();
+
+        if(permission === 'granted'){
+          localStorage.setItem('forte_notifications_enabled','1');
+
+          try{
+            if(window.OneSignalDeferred){
+              window.OneSignalDeferred.push(async function(OneSignal){
+                await OneSignal.Notifications.requestPermission();
+              });
+            }
+          }catch(e){}
+
+          if(typeof showToast === 'function'){
+            showToast('Notifications turned on ✅');
+          }
+        }
+      }, 1500);
+
+    }catch(e){
+      console.warn('Notification prompt failed:', e);
+    }
+  }
+
+  window.addEventListener('load', askForNotificationsIfNeeded);
+
+  const oldInitNotificationPrompt = window.init;
+  if(typeof oldInitNotificationPrompt === 'function'){
+    window.init = async function(){
+      const result = await oldInitNotificationPrompt.apply(this, arguments);
+      askForNotificationsIfNeeded();
+      return result;
+    };
+  }
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
