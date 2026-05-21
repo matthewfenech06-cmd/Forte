@@ -17326,7 +17326,259 @@ setTimeout(() => {
 })();
 </script>
   <script>
+<script>
+/* =========================================================
+   HARD FIX: icons, feed league preview, broken refresh
+   ========================================================= */
+(function () {
+  function addStyle() {
+    if (document.getElementById('forte-hard-final-style')) return;
 
+    const style = document.createElement('style');
+    style.id = 'forte-hard-final-style';
+    style.textContent = `
+      /* top right icons: force them apart */
+      #feed-screen .topbar-actions {
+        position: absolute !important;
+        right: 24px !important;
+        top: 88px !important;
+        width: 132px !important;
+        height: 56px !important;
+        display: block !important;
+        overflow: visible !important;
+      }
+
+      #feed-screen .forte-hard-msg,
+      #feed-screen .forte-hard-bell {
+        position: absolute !important;
+        top: 0 !important;
+        width: 54px !important;
+        height: 54px !important;
+        min-width: 54px !important;
+        max-width: 54px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.075) !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        transform: none !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        opacity: 1 !important;
+      }
+
+      #feed-screen .forte-hard-msg { right: 74px !important; }
+      #feed-screen .forte-hard-bell { right: 8px !important; }
+
+      #feed-screen .forte-hard-msg svg,
+      #feed-screen .forte-hard-bell svg {
+        width: 32px !important;
+        height: 32px !important;
+      }
+
+      .forte-force-remove {
+        display: none !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function feedActive() {
+    return document.getElementById('feed-screen')?.classList.contains('active');
+  }
+
+  function realTop() {
+    return (
+      window.scrollY <= 2 &&
+      document.documentElement.scrollTop <= 2 &&
+      document.body.scrollTop <= 2
+    );
+  }
+
+  function fixIcons() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const actions = feed.querySelector('.topbar-actions');
+    if (!actions) return;
+
+    const items = Array.from(actions.querySelectorAll('button, a, .icon-btn, div'));
+
+    const msg = items.find(el => {
+      const x = ((el.id || '') + ' ' + (el.className || '') + ' ' + (el.getAttribute('onclick') || '') + ' ' + el.innerHTML).toLowerCase();
+      return x.includes('message') || x.includes('chat') || x.includes('dm');
+    });
+
+    const bell = items.find(el => {
+      if (el === msg) return false;
+      const x = ((el.id || '') + ' ' + (el.className || '') + ' ' + (el.getAttribute('onclick') || '') + ' ' + el.innerHTML).toLowerCase();
+      return x.includes('notif') || x.includes('bell');
+    });
+
+    if (msg) {
+      msg.classList.add('forte-hard-msg');
+      msg.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 11.35H16" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/>
+        </svg>
+      `;
+    }
+
+    if (bell) bell.classList.add('forte-hard-bell');
+  }
+
+  function removeLeagueArea() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    const viewAll = all.find(el => {
+      const text = (el.textContent || '').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+      return text.includes('view all') && r.top > 350 && r.top < 800;
+    });
+
+    if (!viewAll) return;
+
+    let block = viewAll.parentElement;
+
+    while (
+      block &&
+      block.parentElement &&
+      block.parentElement !== feed &&
+      block.parentElement.innerText &&
+      block.parentElement.innerText.includes('View all') &&
+      block.parentElement.innerText.length < 700
+    ) {
+      block = block.parentElement;
+    }
+
+    if (block) block.classList.add('forte-force-remove');
+
+    // Remove the league cards immediately after View all too
+    let next = block ? block.nextElementSibling : null;
+    let count = 0;
+
+    while (next && count < 4) {
+      const txt = next.innerText || '';
+      if (txt.toLowerCase().includes('friends activity')) break;
+
+      if (
+        txt.includes('IRON SHARPENS') ||
+        txt.includes('Iron sharpens') ||
+        txt.includes('Private') ||
+        txt.includes('League')
+      ) {
+        next.classList.add('forte-force-remove');
+      }
+
+      next = next.nextElementSibling;
+      count++;
+    }
+
+    // Emergency backup: hide any visible league cards before Friends Activity
+    all.forEach(el => {
+      const txt = el.innerText || '';
+      const r = el.getBoundingClientRect();
+
+      if (
+        r.top > 350 &&
+        r.top < 900 &&
+        txt.length < 500 &&
+        (
+          txt.includes('IRON SHARPENS') ||
+          txt.includes('Iron sharpens') ||
+          txt.includes('Private')
+        )
+      ) {
+        el.classList.add('forte-force-remove');
+      }
+    });
+  }
+
+  function stopBadRefresh() {
+    if (window.__forteHardRefreshStop) return;
+    window.__forteHardRefreshStop = true;
+
+    let startY = 0;
+    let startedAtTop = false;
+    let allowRefresh = false;
+
+    document.addEventListener('touchstart', e => {
+      if (!feedActive()) return;
+      startY = e.touches[0].clientY;
+      startedAtTop = realTop();
+      allowRefresh = false;
+    }, true);
+
+    document.addEventListener('touchmove', e => {
+      if (!feedActive()) return;
+      const diff = e.touches[0].clientY - startY;
+      allowRefresh = startedAtTop && realTop() && diff > 140;
+    }, true);
+
+    document.addEventListener('touchend', () => {
+      if (!feedActive()) return;
+
+      if (!allowRefresh) {
+        window.__blockFeedReload = Date.now() + 1200;
+        document.getElementById('forte-pull-refresh')?.remove();
+        document.getElementById('forte-pull-refresh-final')?.remove();
+        document.getElementById('forte-pull-refresh-correct')?.remove();
+        document.getElementById('forte-real-pull-refresh')?.remove();
+      }
+
+      startedAtTop = false;
+      allowRefresh = false;
+    }, true);
+
+    if (typeof window.loadFeedPosts === 'function' && !window.__realLoadFeedPostsHard) {
+      window.__realLoadFeedPostsHard = window.loadFeedPosts;
+      window.loadFeedPosts = async function () {
+        if (feedActive() && Date.now() < (window.__blockFeedReload || 0)) return;
+        return await window.__realLoadFeedPostsHard.apply(this, arguments);
+      };
+    }
+
+    if (typeof window.loadStories === 'function' && !window.__realLoadStoriesHard) {
+      window.__realLoadStoriesHard = window.loadStories;
+      window.loadStories = async function () {
+        if (feedActive() && Date.now() < (window.__blockFeedReload || 0)) return;
+        return await window.__realLoadStoriesHard.apply(this, arguments);
+      };
+    }
+  }
+
+  function run() {
+    addStyle();
+    fixIcons();
+    removeLeagueArea();
+    stopBadRefresh();
+  }
+
+  const oldShowScreen = window.showScreen;
+  window.showScreen = function () {
+    const out = oldShowScreen.apply(this, arguments);
+    setTimeout(run, 100);
+    setTimeout(run, 500);
+    return out;
+  };
+
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
+  setTimeout(run, 2000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
