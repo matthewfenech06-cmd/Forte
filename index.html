@@ -16804,6 +16804,297 @@ setTimeout(() => {
   runFixes();
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE FEED CLEANUP + SPLASH LOADING ANIMATION
+   - Removes league cards from main feed
+   - Makes Leagues pill open leagues screen
+   - Hides login flash with animated Forte splash
+   ========================================================= */
+
+(function(){
+  function addSplashCSS(){
+    if(document.getElementById('forte-splash-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-splash-css';
+    style.textContent = `
+      #forte-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        background: #050505;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: opacity .35s ease, visibility .35s ease;
+      }
+
+      #forte-splash.hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .forte-splash-inner {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        transform: translateY(-10px);
+      }
+
+      .forte-splash-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 5px;
+        height: 46px;
+      }
+
+      .forte-splash-bars span {
+        width: 9px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #ff0090, #8b0055);
+        animation: forteBarGrow 1.05s ease-in-out infinite;
+        box-shadow: 0 0 18px rgba(255,0,144,.35);
+      }
+
+      .forte-splash-bars span:nth-child(1) {
+        height: 16px;
+        animation-delay: 0s;
+      }
+
+      .forte-splash-bars span:nth-child(2) {
+        height: 26px;
+        animation-delay: .1s;
+      }
+
+      .forte-splash-bars span:nth-child(3) {
+        height: 36px;
+        animation-delay: .2s;
+      }
+
+      .forte-splash-bars span:nth-child(4) {
+        height: 46px;
+        animation-delay: .3s;
+      }
+
+      @keyframes forteBarGrow {
+        0%, 100% {
+          transform: scaleY(.55);
+          opacity: .55;
+        }
+        45% {
+          transform: scaleY(1.1);
+          opacity: 1;
+        }
+      }
+
+      .forte-splash-word {
+        color: #fff;
+        font-size: 34px;
+        font-weight: 900;
+        letter-spacing: -1.5px;
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+        overflow: hidden;
+        white-space: nowrap;
+        width: 0;
+        animation: forteTyping 1.15s steps(6,end) forwards;
+      }
+
+      .forte-splash-word span {
+        color: #ff0090;
+      }
+
+      @keyframes forteTyping {
+        from { width: 0; }
+        to { width: 92px; }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function showSplash(){
+    addSplashCSS();
+
+    if(document.getElementById('forte-splash')) return;
+
+    const splash = document.createElement('div');
+    splash.id = 'forte-splash';
+    splash.innerHTML = `
+      <div class="forte-splash-inner">
+        <div class="forte-splash-bars">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="forte-splash-word">forte<span>.</span></div>
+      </div>
+    `;
+
+    document.body.appendChild(splash);
+  }
+
+  function hideSplash(){
+    const splash = document.getElementById('forte-splash');
+    if(!splash) return;
+
+    splash.classList.add('hide');
+
+    setTimeout(() => {
+      splash.remove();
+    }, 450);
+  }
+
+  function removeFeedLeagueCards(){
+    const feed =
+      document.getElementById('feed-screen') ||
+      document.querySelector('.screen.active');
+
+    if(!feed) return;
+
+    const labels = Array.from(feed.querySelectorAll('*')).filter(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      return txt === 'your leagues';
+    });
+
+    labels.forEach(label => {
+      let section = label;
+
+      for(let i = 0; i < 7 && section; i++){
+        const txt = section.innerText || '';
+
+        if(
+          txt.includes('YOUR LEAGUES') &&
+          txt.includes('View all')
+        ){
+          section.remove();
+          return;
+        }
+
+        section = section.parentElement;
+      }
+
+      label.remove();
+    });
+
+    // Fallback: remove league card containers if the label/card split is different
+    Array.from(feed.querySelectorAll('*')).forEach(el => {
+      const txt = el.innerText || '';
+
+      if(
+        txt.includes('YOUR LEAGUES') &&
+        txt.includes('View all') &&
+        txt.length < 600
+      ){
+        el.remove();
+      }
+    });
+  }
+
+  function makeLeaguePillOpenLeagues(){
+    const feed =
+      document.getElementById('feed-screen') ||
+      document.querySelector('.screen.active');
+
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 30){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+
+          if(typeof showScreen === 'function'){
+            showScreen('leagues');
+          }else if(typeof openLeagues === 'function'){
+            openLeagues();
+          }else{
+            const leaguesScreen = document.getElementById('leagues-screen');
+            if(leaguesScreen){
+              document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+              leaguesScreen.classList.add('active');
+            }
+          }
+        };
+
+        el.style.cursor = 'pointer';
+      }
+    });
+  }
+
+  function feedCleanup(){
+    removeFeedLeagueCards();
+    makeLeaguePillOpenLeagues();
+  }
+
+  // Show splash immediately if possible
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', showSplash);
+  }else{
+    showSplash();
+  }
+
+  // Hide splash only after auth/app has had time to decide logged-in state
+  window.addEventListener('load', function(){
+    setTimeout(hideSplash, 1400);
+  });
+
+  // Backup hide so it never gets stuck
+  setTimeout(hideSplash, 3200);
+
+  const oldInitSplash = window.init;
+  if(typeof oldInitSplash === 'function'){
+    window.init = async function(){
+      showSplash();
+
+      try{
+        const result = await oldInitSplash.apply(this, arguments);
+        setTimeout(hideSplash, 700);
+        return result;
+      }catch(e){
+        setTimeout(hideSplash, 900);
+        throw e;
+      }
+    };
+  }
+
+  const oldShowScreenFeedCleanup = window.showScreen;
+  if(typeof oldShowScreenFeedCleanup === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreenFeedCleanup.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(feedCleanup, 80);
+        setTimeout(feedCleanup, 350);
+      }
+
+      return result;
+    };
+  }
+
+  const obs = new MutationObserver(() => {
+    const activeFeed =
+      document.getElementById('feed-screen')?.classList.contains('active') ||
+      document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed';
+
+    if(activeFeed){
+      setTimeout(feedCleanup, 80);
+    }
+  });
+
+  obs.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  setTimeout(feedCleanup, 700);
+  setTimeout(feedCleanup, 1500);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
