@@ -18286,6 +18286,223 @@ setTimeout(() => {
   setTimeout(run, 2000);
 })();
 </script>
+  <script>
+/* FINAL: fix top icons + remove league preview from feed */
+(function () {
+  function css() {
+    if (document.getElementById('forte-exact-final-css')) return;
+
+    const s = document.createElement('style');
+    s.id = 'forte-exact-final-css';
+    s.textContent = `
+      /* stop old patches making the icons overlap */
+      #feed-screen .topbar-actions {
+        display: grid !important;
+        grid-auto-flow: column !important;
+        grid-auto-columns: 50px !important;
+        column-gap: 14px !important;
+        align-items: center !important;
+        justify-content: end !important;
+        width: auto !important;
+        min-width: 178px !important;
+        overflow: visible !important;
+      }
+
+      #feed-screen .topbar-actions > * {
+        position: static !important;
+        transform: none !important;
+        margin: 0 !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+        width: 50px !important;
+        height: 50px !important;
+        min-width: 50px !important;
+        max-width: 50px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.075) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+
+      #feed-screen .topbar-actions svg {
+        width: 30px !important;
+        height: 30px !important;
+      }
+
+      .forte-kill-league-feed-block {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  function fixIcons() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const actions = feed.querySelector('.topbar-actions');
+    if (!actions) return;
+
+    const buttons = Array.from(actions.children);
+
+    buttons.forEach(btn => {
+      btn.style.position = 'static';
+      btn.style.transform = 'none';
+      btn.style.margin = '0';
+      btn.style.width = '50px';
+      btn.style.height = '50px';
+      btn.style.minWidth = '50px';
+      btn.style.borderRadius = '50%';
+    });
+  }
+
+  function removeLeaguePreview() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const nodes = Array.from(feed.querySelectorAll('*'));
+
+    const recipeVote = nodes.find(el =>
+      (el.textContent || '').trim().toLowerCase().includes('recipe vote')
+    );
+
+    const friends = nodes.find(el =>
+      (el.textContent || '').trim().toLowerCase() === 'friends activity'
+    );
+
+    if (!recipeVote || !friends) return;
+
+    let pillRow = recipeVote;
+    while (
+      pillRow.parentElement &&
+      pillRow.parentElement !== feed &&
+      !(pillRow.innerText || '').toLowerCase().includes('leagues')
+    ) {
+      pillRow = pillRow.parentElement;
+    }
+
+    while (
+      pillRow.parentElement &&
+      pillRow.parentElement !== feed &&
+      (pillRow.parentElement.innerText || '').toLowerCase().includes('recipe vote') &&
+      (pillRow.parentElement.innerText || '').toLowerCase().includes('recipes') &&
+      (pillRow.parentElement.innerText || '').toLowerCase().includes('leagues')
+    ) {
+      pillRow = pillRow.parentElement;
+    }
+
+    const startY = pillRow.getBoundingClientRect().bottom;
+    const endY = friends.getBoundingClientRect().top;
+
+    nodes.forEach(el => {
+      if (el === pillRow || pillRow.contains(el)) return;
+      if (el === friends || friends.contains(el)) return;
+
+      const r = el.getBoundingClientRect();
+      const text = (el.innerText || el.textContent || '').trim();
+
+      if (r.top > startY && r.bottom < endY) {
+        if (
+          text.includes('View all') ||
+          text.includes('Private') ||
+          text.includes('IRON SHARPENS IRON') ||
+          text.includes('Iron sharpens Iron') ||
+          text.toLowerCase().includes('your leagues')
+        ) {
+          let target = el;
+
+          while (
+            target.parentElement &&
+            target.parentElement !== feed &&
+            target.parentElement.getBoundingClientRect().top > startY &&
+            target.parentElement.getBoundingClientRect().bottom < endY
+          ) {
+            target = target.parentElement;
+          }
+
+          target.classList.add('forte-kill-league-feed-block');
+        }
+      }
+    });
+  }
+
+  function wirePills() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if (txt.includes('leagues') && txt.length < 35) {
+        el.onclick = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          showScreen('leagues');
+        };
+      }
+
+      if (txt.includes('recipes') && !txt.includes('vote') && txt.length < 35) {
+        el.onclick = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          showScreen('nutrition');
+          setTimeout(() => {
+            if (typeof openRecipes === 'function') openRecipes();
+            else if (typeof loadRecipes === 'function') loadRecipes('mine');
+          }, 150);
+        };
+      }
+
+      if (txt.includes('recipe vote') && txt.length < 40) {
+        el.onclick = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          showScreen('nutrition');
+          setTimeout(() => {
+            if (typeof openRecipeVote === 'function') openRecipeVote();
+            else if (typeof showRecipeVote === 'function') showRecipeVote();
+            else if (typeof loadRecipeVote === 'function') loadRecipeVote();
+          }, 150);
+        };
+      }
+    });
+  }
+
+  function run() {
+    css();
+    fixIcons();
+    removeLeaguePreview();
+    wirePills();
+  }
+
+  const oldShowScreen = window.showScreen;
+  window.showScreen = function (name) {
+    const out = oldShowScreen.apply(this, arguments);
+    if (name === 'feed') {
+      setTimeout(run, 100);
+      setTimeout(run, 500);
+    }
+    return out;
+  };
+
+  const oldLoadFeedPosts = window.loadFeedPosts;
+  if (typeof oldLoadFeedPosts === 'function') {
+    window.loadFeedPosts = async function () {
+      const out = await oldLoadFeedPosts.apply(this, arguments);
+      setTimeout(run, 100);
+      setTimeout(run, 500);
+      return out;
+    };
+  }
+
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
+  setTimeout(run, 2000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
