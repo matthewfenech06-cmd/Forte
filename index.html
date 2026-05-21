@@ -16607,14 +16607,15 @@ setTimeout(() => {
   setTimeout(removeInstantSplash, 3500);
 })();
 </script>
-  <script>
+<script>
 /* =========================================================
-   FORTE PERFORMANCE + FEED IMAGE + PULL REFRESH + NAV FIX
-   - Removes expensive repeated scanning behaviour
-   - Fixes feed images so full image shows
-   - Adds Instagram-style pull to refresh
-   - Restores bottom nav size
-   - Keeps clean message/bell icon styling without heavy loops
+   FORTE FEED FINAL FIX
+   - Fixes huge profile/avatar image bug
+   - Restores larger top message/bell icons
+   - Keeps rounded chat bubble
+   - Removes "Your Leagues" cards from feed
+   - Makes Leagues / Recipes / Recipe Vote pills open their sections
+   - Adds lightweight pull-to-refresh without slowing app
    ========================================================= */
 
 (function(){
@@ -16625,34 +16626,31 @@ setTimeout(() => {
     console.log(msg);
   }
 
-  function addPerfCSS(){
-    if(document.getElementById('forte-performance-css')) return;
+  function addCSS(){
+    if(document.getElementById('forte-feed-final-css')) return;
 
     const style = document.createElement('style');
-    style.id = 'forte-performance-css';
+    style.id = 'forte-feed-final-css';
     style.textContent = `
-      /* Restore bottom nav size */
+      /* Bottom nav back to good size */
       #bottom-nav,
       .bottom-nav {
-        height: 82px !important;
-        min-height: 82px !important;
-        padding: 8px 14px calc(8px + env(safe-area-inset-bottom)) !important;
+        height: 86px !important;
+        min-height: 86px !important;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom)) !important;
       }
 
       #bottom-nav .nav-item,
       .bottom-nav .nav-item {
-        min-width: 58px !important;
-        height: 58px !important;
+        min-width: 62px !important;
+        height: 62px !important;
         gap: 4px !important;
-        font-size: 12px !important;
       }
 
       #bottom-nav .nav-item svg,
       .bottom-nav .nav-item svg {
-        width: 29px !important;
-        height: 29px !important;
-        min-width: 29px !important;
-        min-height: 29px !important;
+        width: 31px !important;
+        height: 31px !important;
       }
 
       #bottom-nav .nav-item span,
@@ -16661,10 +16659,13 @@ setTimeout(() => {
         font-weight: 800 !important;
       }
 
-      /* Feed images: show full image, no black/cropped huge gaps */
-      #feed-screen .workout-post img,
-      #feed-posts .workout-post img,
-      #feed-posts img {
+      /* DO NOT affect avatars. Only affect main post media. */
+      #feed-posts .workout-post > img,
+      #feed-posts .workout-post > video,
+      #feed-screen .workout-post > img,
+      #feed-screen .workout-post > video,
+      #feed-posts .post-media,
+      #feed-screen .post-media {
         width: 100% !important;
         height: auto !important;
         max-height: none !important;
@@ -16673,28 +16674,36 @@ setTimeout(() => {
         background: transparent !important;
       }
 
-      #feed-screen .workout-post,
-      #feed-posts .workout-post {
-        overflow: hidden !important;
-        contain: layout paint;
-      }
-
-      /* Prevent weird massive blank gaps inside feed posts */
-      #feed-posts .workout-post video {
-        width: 100% !important;
-        height: auto !important;
-        max-height: 650px !important;
-        object-fit: contain !important;
-        background: #000 !important;
-      }
-
-      /* Cleaner top icons without constant JS scanning */
-      .forte-top-clean-icon {
-        width: 48px !important;
-        height: 48px !important;
-        min-width: 48px !important;
+      /* Avatar/profile images must stay small */
+      #feed-screen .post-header img,
+      #feed-posts .post-header img,
+      #feed-screen .avatar img,
+      #feed-posts .avatar img,
+      #feed-screen img.avatar,
+      #feed-posts img.avatar {
+        width: 36px !important;
+        height: 36px !important;
+        max-width: 36px !important;
+        max-height: 36px !important;
         border-radius: 50% !important;
-        background: rgba(255,255,255,.06) !important;
+        object-fit: cover !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Story avatars stay normal */
+      #feed-screen .story img,
+      #feed-screen .story-avatar img,
+      #feed-screen [class*="story"] img {
+        object-fit: cover !important;
+      }
+
+      /* Top icons like you liked them */
+      .forte-top-icon-final {
+        width: 52px !important;
+        height: 52px !important;
+        min-width: 52px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.07) !important;
         border: none !important;
         box-shadow: none !important;
         color: #fff !important;
@@ -16702,43 +16711,47 @@ setTimeout(() => {
         align-items: center !important;
         justify-content: center !important;
         padding: 0 !important;
+        opacity: 1 !important;
       }
 
-      .forte-top-clean-icon svg {
-        width: 31px !important;
-        height: 31px !important;
-        stroke-width: 2.15 !important;
+      .forte-top-icon-final svg {
+        width: 32px !important;
+        height: 32px !important;
+        stroke-width: 2.2 !important;
       }
 
-      .forte-pull-refresh {
+      .topbar-actions {
+        gap: 9px !important;
+        align-items: center !important;
+      }
+
+      .forte-pull-refresh-final {
         position: fixed;
         left: 50%;
-        top: 78px;
-        transform: translateX(-50%) scale(.85);
+        top: 82px;
+        transform: translateX(-50%) scale(.9);
         z-index: 99999;
         width: 34px;
         height: 34px;
         border-radius: 50%;
         background: rgba(20,20,20,.92);
-        border: 1px solid rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.14);
         display: none;
         align-items: center;
         justify-content: center;
-        color: #999;
+        color: #ff0090;
         font-size: 20px;
-        transition: transform .18s ease, opacity .18s ease;
       }
 
-      .forte-pull-refresh.show {
+      .forte-pull-refresh-final.show {
         display: flex;
       }
 
-      .forte-pull-refresh.spin {
-        color: #ff0090;
-        animation: forteRefreshSpin .8s linear infinite;
+      .forte-pull-refresh-final.spin {
+        animation: forteRefreshSpinFinal .8s linear infinite;
       }
 
-      @keyframes forteRefreshSpin {
+      @keyframes forteRefreshSpinFinal {
         from { transform: translateX(-50%) rotate(0deg); }
         to { transform: translateX(-50%) rotate(360deg); }
       }
@@ -16747,11 +16760,14 @@ setTimeout(() => {
     document.head.appendChild(style);
   }
 
-  function fixTopIconsOnce(){
-    const topArea = document.querySelector('.topbar-actions') || document.querySelector('#feed-screen .topbar-actions');
-    if(!topArea) return;
+  function fixTopIcons(){
+    const feed = document.getElementById('feed-screen') || document.querySelector('.screen.active');
+    if(!feed) return;
 
-    const candidates = Array.from(topArea.querySelectorAll('button, a, div')).filter(el => {
+    const topButtons = Array.from(feed.querySelectorAll('button, a, div')).filter(el => {
+      const rect = el.getBoundingClientRect();
+      if(rect.top > 170 || rect.left < window.innerWidth - 260) return false;
+
       const id = (el.id || '').toLowerCase();
       const cls = (el.className || '').toString().toLowerCase();
       const onclick = (el.getAttribute('onclick') || '').toLowerCase();
@@ -16767,18 +16783,19 @@ setTimeout(() => {
         onclick.includes('dm') ||
         html.includes('chat') ||
         html.includes('message') ||
-        html.includes('bell') ||
         id.includes('notif') ||
         cls.includes('notif') ||
-        onclick.includes('notification')
+        onclick.includes('notification') ||
+        html.includes('bell') ||
+        html.includes('notification')
       );
     });
 
-    candidates.forEach(btn => {
-      btn.classList.add('forte-top-clean-icon');
+    topButtons.forEach(btn => {
+      btn.classList.add('forte-top-icon-final');
     });
 
-    const messageBtn = candidates.find(btn => {
+    const msgBtn = topButtons.find(btn => {
       const id = (btn.id || '').toLowerCase();
       const cls = (btn.className || '').toString().toLowerCase();
       const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
@@ -16797,9 +16814,9 @@ setTimeout(() => {
       );
     });
 
-    if(messageBtn && !messageBtn.dataset.forteBubbleIcon){
-      messageBtn.dataset.forteBubbleIcon = '1';
-      messageBtn.innerHTML = `
+    if(msgBtn){
+      msgBtn.classList.add('forte-top-icon-final');
+      msgBtn.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
@@ -16817,114 +16834,197 @@ setTimeout(() => {
     }
   }
 
-  function fixFeedImagesNow(){
-    document.querySelectorAll('#feed-posts img, #feed-screen .workout-post img').forEach(img => {
-      img.style.width = '100%';
-      img.style.height = 'auto';
-      img.style.maxHeight = 'none';
-      img.style.objectFit = 'contain';
-      img.style.background = 'transparent';
+  function fixFeedImages(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
 
-      img.onload = function(){
-        img.style.height = 'auto';
-        img.style.maxHeight = 'none';
-      };
+    // Reset any avatar that got damaged by the previous patch
+    feed.querySelectorAll('.post-header img, img.avatar, .avatar img').forEach(img => {
+      img.style.width = '36px';
+      img.style.height = '36px';
+      img.style.maxWidth = '36px';
+      img.style.maxHeight = '36px';
+      img.style.borderRadius = '50%';
+      img.style.objectFit = 'cover';
+      img.style.flexShrink = '0';
+    });
+
+    // Only fix main media images, not avatars
+    feed.querySelectorAll('.workout-post').forEach(post => {
+      Array.from(post.children).forEach(child => {
+        if(child.tagName === 'IMG' || child.tagName === 'VIDEO'){
+          child.style.width = '100%';
+          child.style.height = 'auto';
+          child.style.maxHeight = 'none';
+          child.style.objectFit = 'contain';
+          child.style.display = 'block';
+          child.style.background = 'transparent';
+        }
+      });
+    });
+  }
+
+  function removeYourLeaguesSection(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    all.forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt === 'your leagues'){
+        let parent = el;
+
+        for(let i = 0; i < 8 && parent; i++){
+          const ptxt = parent.innerText || '';
+
+          if(
+            ptxt.includes('YOUR LEAGUES') &&
+            ptxt.includes('View all')
+          ){
+            parent.remove();
+            return;
+          }
+
+          parent = parent.parentElement;
+        }
+
+        el.remove();
+      }
+    });
+
+    // Remove any remaining View all row tied to leagues
+    all.forEach(el => {
+      const txt = el.innerText || '';
+
+      if(
+        txt.includes('YOUR LEAGUES') &&
+        txt.includes('View all') &&
+        txt.length < 800
+      ){
+        el.remove();
+      }
+    });
+  }
+
+  function wireFeedPills(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('leagues');
+        };
+        el.style.cursor = 'pointer';
+      }
+
+      if(txt.includes('recipes') && !txt.includes('vote') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipes === 'function') openRecipes();
+              else if(typeof loadRecipes === 'function') loadRecipes('mine');
+            }catch(err){}
+          }, 150);
+        };
+        el.style.cursor = 'pointer';
+      }
+
+      if(txt.includes('recipe vote') && txt.length < 40){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipeVote === 'function') openRecipeVote();
+              else if(typeof showRecipeVote === 'function') showRecipeVote();
+              else if(typeof loadRecipeVote === 'function') loadRecipeVote();
+            }catch(err){}
+          }, 150);
+        };
+        el.style.cursor = 'pointer';
+      }
     });
   }
 
   async function refreshFeed(){
-    const spinner = document.getElementById('forte-pull-refresh');
+    const spinner = document.getElementById('forte-pull-refresh-final');
     if(spinner){
       spinner.classList.add('show', 'spin');
       spinner.textContent = '⟳';
     }
 
     try{
-      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
       if(typeof loadStories === 'function') await loadStories();
-      if(typeof loadFeedLeagues === 'function') await loadFeedLeagues();
+      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
 
-      setTimeout(fixFeedImagesNow, 100);
-      setTimeout(fixTopIconsOnce, 100);
+      setTimeout(runFeedFixes, 120);
     }catch(e){
-      console.error('REFRESH FEED ERROR:', e);
-      toast('Could not refresh feed');
+      console.error('Refresh failed:', e);
+      toast('Could not refresh');
     }finally{
       setTimeout(() => {
         if(spinner){
-          spinner.classList.remove('spin');
-          spinner.classList.remove('show');
+          spinner.classList.remove('show', 'spin');
         }
-      }, 450);
+      }, 500);
     }
   }
 
   function addPullRefresh(){
-    if(document.getElementById('forte-pull-refresh')) return;
+    if(document.getElementById('forte-pull-refresh-final')) return;
 
-    const spinner = document.createElement('div');
-    spinner.id = 'forte-pull-refresh';
-    spinner.className = 'forte-pull-refresh';
-    spinner.textContent = '⟳';
-    document.body.appendChild(spinner);
+    const spin = document.createElement('div');
+    spin.id = 'forte-pull-refresh-final';
+    spin.className = 'forte-pull-refresh-final';
+    spin.textContent = '⟳';
+    document.body.appendChild(spin);
 
     let startY = null;
-    let pulling = false;
 
-    document.addEventListener('touchstart', function(e){
-      const activeFeed =
+    document.addEventListener('touchstart', e => {
+      const feedActive =
         document.getElementById('feed-screen')?.classList.contains('active') ||
         document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed';
 
-      if(!activeFeed) return;
-      if(window.scrollY > 5) return;
+      if(!feedActive) return;
+      if(window.scrollY > 8) return;
 
       startY = e.touches[0].clientY;
-      pulling = true;
     }, { passive:true });
 
-    document.addEventListener('touchmove', function(e){
-      if(!pulling || startY === null) return;
-
-      const y = e.touches[0].clientY;
-      const diff = y - startY;
-
-      if(diff > 35){
-        spinner.classList.add('show');
-        spinner.style.transform = `translateX(-50%) scale(${Math.min(1.15, .85 + diff / 260)})`;
-      }
-    }, { passive:true });
-
-    document.addEventListener('touchend', function(e){
-      if(!pulling || startY === null) return;
+    document.addEventListener('touchend', e => {
+      if(startY === null) return;
 
       const endY = e.changedTouches[0].clientY;
       const diff = endY - startY;
-
-      pulling = false;
       startY = null;
-      spinner.style.transform = 'translateX(-50%) scale(.85)';
 
-      if(diff > 80){
+      if(diff > 85){
         refreshFeed();
-      }else{
-        spinner.classList.remove('show');
       }
     }, { passive:true });
   }
 
-  function lightweightBootFixes(){
-    addPerfCSS();
-    addPullRefresh();
-
-    requestAnimationFrame(() => {
-      fixTopIconsOnce();
-      fixFeedImagesNow();
-    });
-
-    setTimeout(fixTopIconsOnce, 400);
-    setTimeout(fixFeedImagesNow, 400);
+  function runFeedFixes(){
+    fixTopIcons();
+    fixFeedImages();
+    removeYourLeaguesSection();
+    wireFeedPills();
   }
+
+  addCSS();
+  addPullRefresh();
 
   const oldShowScreen = window.showScreen;
   if(typeof oldShowScreen === 'function'){
@@ -16932,10 +17032,8 @@ setTimeout(() => {
       const result = oldShowScreen.apply(this, arguments);
 
       if(name === 'feed'){
-        setTimeout(() => {
-          fixTopIconsOnce();
-          fixFeedImagesNow();
-        }, 120);
+        setTimeout(runFeedFixes, 80);
+        setTimeout(runFeedFixes, 350);
       }
 
       return result;
@@ -16946,18 +17044,14 @@ setTimeout(() => {
   if(typeof oldLoadFeedPosts === 'function'){
     window.loadFeedPosts = async function(){
       const result = await oldLoadFeedPosts.apply(this, arguments);
-      setTimeout(fixFeedImagesNow, 80);
+      setTimeout(runFeedFixes, 80);
+      setTimeout(runFeedFixes, 300);
       return result;
     };
   }
 
-  window.forteRefreshFeed = refreshFeed;
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', lightweightBootFixes);
-  }else{
-    lightweightBootFixes();
-  }
+  setTimeout(runFeedFixes, 400);
+  setTimeout(runFeedFixes, 1200);
 })();
 </script>
    Paste directly before </body>
