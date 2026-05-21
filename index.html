@@ -11261,6 +11261,158 @@ if('serviceWorker' in navigator){
   setInterval(hideWrongDeleteButtons, 700);
 })();
 </script> 
+  <script>
+/* =========================================================
+   FORTE LEAGUE INVITE FRONTEND PATCH
+   Fixes:
+   - invite buttons creating real Supabase invites
+   - green tick accepts invite
+   - red cross declines invite
+   - refreshes feed after accept/decline
+   ========================================================= */
+
+(function () {
+  function getClient() {
+    return window.sb || window.supabaseClient || window.supabase || null;
+  }
+
+  async function getCurrentUserId() {
+    const sb = getClient();
+    if (!sb || !sb.auth) return null;
+
+    const res = await sb.auth.getUser();
+    return res && res.data && res.data.user ? res.data.user.id : null;
+  }
+
+  window.forteInviteUserToLeague = async function (leagueId, invitedUserId) {
+    const sb = getClient();
+
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
+    }
+
+    if (!leagueId || leagueId === "undefined") {
+      alert("Missing league ID.");
+      return;
+    }
+
+    if (!invitedUserId || invitedUserId === "undefined") {
+      alert("Missing invited user ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("invite_user_to_league", {
+      league_uuid: leagueId,
+      invited_uuid: invitedUserId
+    });
+
+    if (error) {
+      alert("Could not send invite: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not send invite.");
+      return;
+    }
+
+    alert("Invite sent");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
+    }
+  };
+
+  window.forteAcceptLeagueInvite = async function (inviteIdOrLeagueId) {
+    const sb = getClient();
+
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteIdOrLeagueId || inviteIdOrLeagueId === "undefined") {
+      alert("Missing invite ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("accept_league_invite", {
+      invite_uuid: inviteIdOrLeagueId
+    });
+
+    if (error) {
+      alert("Could not join: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not join.");
+      return;
+    }
+
+    alert("Joined league");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
+    }
+
+    if (typeof renderFeed === "function") {
+      try { renderFeed(); } catch (e) {}
+    }
+  };
+
+  window.forteDeclineLeagueInvite = async function (inviteIdOrLeagueId) {
+    const sb = getClient();
+
+    if (!sb) {
+      alert("Supabase not ready. Reload and try again.");
+      return;
+    }
+
+    if (!inviteIdOrLeagueId || inviteIdOrLeagueId === "undefined") {
+      alert("Missing invite ID.");
+      return;
+    }
+
+    const { data, error } = await sb.rpc("decline_league_invite", {
+      invite_uuid: inviteIdOrLeagueId
+    });
+
+    if (error) {
+      alert("Could not decline: " + error.message);
+      return;
+    }
+
+    if (data && data.ok === false) {
+      alert(data.message || "Could not decline.");
+      return;
+    }
+
+    alert("Invite declined");
+
+    if (typeof loadLeagues === "function") {
+      try { await loadLeagues(); } catch (e) {}
+    }
+
+    if (typeof loadFeed === "function") {
+      try { await loadFeed(); } catch (e) {}
+    }
+
+    if (typeof renderFeed === "function") {
+      try { renderFeed(); } catch (e) {}
+    }
+  };
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
