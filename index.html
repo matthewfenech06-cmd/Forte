@@ -1692,7 +1692,7 @@ select.inp{appearance:none}
 const SURL='https://hbdiridvkgxarsuimrtu.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk';
 const sb=supabase.createClient(SURL,SKEY);
-let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
+window.sb = sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
 const CATS=[{n:'Chest',i:'💪',k:'Chest'},{n:'Back',i:'🏋️',k:'Back'},{n:'Shoulders',i:'🔝',k:'Shoulders'},{n:'Biceps',i:'💪',k:'Biceps'},{n:'Triceps',i:'🦾',k:'Triceps'},{n:'Legs',i:'🦵',k:'Legs'},{n:'Core',i:'🎯',k:'Core'},{n:'Cardio',i:'🏃',k:'Cardio'}];
 
 async function init(){
