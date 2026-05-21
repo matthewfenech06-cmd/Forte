@@ -206,27 +206,6 @@ select.inp{appearance:none}
 .ob-option{display:flex;align-items:center;gap:14px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;transition:all .15s}
 .ob-option.selected{border-color:#ff0090;background:rgba(255,0,144,.08)}
 .ob-option:active{transform:scale(.98)}
-
-/* Forte feed cleanup */
-.feed-header-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px}
-.feed-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-shrink:0}
-.feed-top-icon{width:50px;height:50px;min-width:50px;border-radius:50%;background:var(--bg3);border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--text);position:relative;padding:0;margin:0;box-shadow:none;cursor:pointer;transition:transform .15s ease,background .15s ease}
-.feed-top-icon:active{transform:scale(.92)}
-.feed-top-icon svg{width:30px;height:30px;display:block}
-.feed-icon-dot{position:absolute;top:8px;right:8px;width:9px;height:9px;border-radius:50%;border:2px solid var(--bg)}
-.feed-icon-dot.pink{background:#ff0090}
-.feed-icon-dot.red{background:var(--red)}
-.feed-quick-actions{padding:0 20px 12px}
-.feed-quick-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
-.feed-quick-tabs::-webkit-scrollbar{display:none}
-.feed-qtab{padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0}
-.feed-qtab.active{background:#ff0090;color:#fff}
-#feed-panel-leagues,#feed-panel-recipes,#feed-panel-rotw,#feed-leagues,#feed-recipes-list,#feed-rotw-content{display:none!important}
-#feed-pull-refresh{position:fixed;left:50%;top:86px;transform:translateX(-50%);z-index:9999;width:34px;height:34px;border-radius:50%;background:rgba(20,20,20,.92);border:1px solid rgba(255,255,255,.16);color:#ff0090;display:none;align-items:center;justify-content:center;font-size:20px;pointer-events:none}
-#feed-pull-refresh.show{display:flex}
-#feed-pull-refresh.spin{animation:feedPullSpin .8s linear infinite}
-@keyframes feedPullSpin{from{transform:translateX(-50%) rotate(0deg)}to{transform:translateX(-50%) rotate(360deg)}}
-
 </style>
   <!-- PWA -->
   <meta name="application-name" content="Forte">
@@ -513,7 +492,7 @@ select.inp{appearance:none}
   <!-- COMPACT HEADER -->
   <div style="position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
     <!-- Row 1: Logo + icons -->
-    <div class="feed-header-row">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px">
       <div style="display:flex;align-items:center;gap:8px">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 90" width="24" height="21">
           <rect x="8" y="52" width="14" height="22" fill="#ff0090" opacity=".2"/>
@@ -523,31 +502,17 @@ select.inp{appearance:none}
         </svg>
         <span style="font-family:'Inter',sans-serif;font-size:16px;font-weight:600;letter-spacing:-.3px;color:var(--text)">forte<span style="color:#ff0090">.</span></span>
       </div>
-      <div class="feed-top-actions">
-        <button class="feed-top-icon feed-message-icon" onclick="openDMs()" aria-label="Messages">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 11.35H16" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/>
-          </svg>
-          <span id="dm-dot" class="feed-icon-dot pink" style="display:none"></span>
+      <div style="display:flex;gap:4px;align-items:center">
+        <button class="icon-btn" onclick="openDMs()" style="width:34px;height:34px;position:relative">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <div id="dm-dot" style="display:none;position:absolute;top:5px;right:5px;width:7px;height:7px;background:#ff0090;border-radius:50%;border:2px solid var(--bg)"></div>
         </button>
-        <button class="feed-top-icon feed-bell-icon" id="notif-btn" onclick="openNotifications()" aria-label="Notifications">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span id="notif-dot" class="feed-icon-dot red" style="display:none"></span>
+        <button class="icon-btn" id="notif-btn" onclick="openNotifications()" style="width:34px;height:34px;position:relative">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <div id="notif-dot" style="display:none;position:absolute;top:5px;right:5px;width:7px;height:7px;background:var(--red);border-radius:50%;border:2px solid var(--bg)"></div>
         </button>
-        <button class="feed-top-icon feed-theme-icon" onclick="toggleTheme()" aria-label="Theme">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+        <button class="icon-btn" onclick="toggleTheme()" style="width:34px;height:34px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
         </button>
       </div>
     </div>
@@ -569,11 +534,31 @@ select.inp{appearance:none}
   <!-- hidden inputs needed for stats -->
   <div style="display:none"><span id="feed-username"></span><span id="stat-pts">0</span><span id="stat-streak">0</span><span id="stat-workouts">0</span></div>
   <!-- FEED QUICK ACTIONS -->
-  <div class="feed-quick-actions">
-    <div id="feed-quick-tabs" class="feed-quick-tabs">
-      <button class="feed-qtab active" onclick="openFeedQuickSection('leagues')">🏆 Leagues</button>
-      <button class="feed-qtab" onclick="openFeedQuickSection('recipes')">🍽️ Recipes</button>
-      <button class="feed-qtab" onclick="openFeedQuickSection('rotw')">🗳️ Recipe vote</button>
+  <div style="padding:0 20px 4px">
+    <div style="display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px" id="feed-quick-tabs">
+      <button class="feed-qtab active" onclick="setFeedTab(this,'leagues')" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;background:#ff0090;color:#fff;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">🏆 Leagues</button>
+      <button class="feed-qtab" onclick="setFeedTab(this,'recipes')" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">🍽️ Recipes</button>
+      <button class="feed-qtab" onclick="setFeedTab(this,'rotw')" style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0">🗳️ Recipe vote</button>
+    </div>
+    <!-- LEAGUES PANEL -->
+    <div id="feed-panel-leagues">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">Your leagues</div>
+        <button onclick="showScreen('leagues')" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">View all →</button>
+      </div>
+      <div id="feed-leagues" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px"></div>
+    </div>
+    <!-- RECIPES PANEL -->
+    <div id="feed-panel-recipes" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">Recent recipes</div>
+        <button onclick="showScreen('recipes')" style="background:none;border:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">See all →</button>
+      </div>
+      <div id="feed-recipes-list" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px"></div>
+    </div>
+    <!-- RECIPE OF THE WEEK PANEL -->
+    <div id="feed-panel-rotw" style="display:none">
+      <div id="feed-rotw-content"></div>
     </div>
   </div>
   <div class="section-label">Friends activity</div>
@@ -3224,16 +3209,14 @@ async function setLeagueTab(el,tab){
 }
 
 async function loadFeedLeagues(){
-  const feedLeaguesEl=document.getElementById('feed-leagues');
-  if(!feedLeaguesEl) return;
-  if(!user){feedLeaguesEl.innerHTML='';return;}
+  if(!user){document.getElementById('feed-leagues').innerHTML='';return;}
   const{data}=await sb.from('league_members').select('leagues(id,name,is_private)').eq('user_id',user.id).eq('status','accepted').limit(5);
   const leagues=(data||[]).map(d=>d.leagues).filter(Boolean);
   if(!leagues.length){
-    feedLeaguesEl.innerHTML=`<div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">+ Create or join a league</div>`;
+    document.getElementById('feed-leagues').innerHTML=`<div onclick="showScreen('leagues')" style="background:var(--bg3);border-radius:var(--radius-sm);border:1.5px dashed var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;font-size:13px;color:var(--text3)">+ Create or join a league</div>`;
     return;
   }
-  feedLeaguesEl.innerHTML=leagues.map(l=>`
+  document.getElementById('feed-leagues').innerHTML=leagues.map(l=>`
     <div onclick="openLeague('${l.id}')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 16px;white-space:nowrap;cursor:pointer;flex-shrink:0">
       <div style="font-size:13px;font-weight:700">${l.name}</div>
       <div style="font-size:12px;color:var(--text3);margin-top:2px">${l.is_private?'🔒 Private':'Public'}</div>
@@ -3639,49 +3622,22 @@ async function awardRecipePoints(){
 }
 
 
-// ─── FEED QUICK NAVIGATION ───────────────────────────────
-function openFeedQuickSection(tab){
-  document.querySelectorAll('.feed-qtab').forEach(b=>b.classList.remove('active'));
-  const btn = Array.from(document.querySelectorAll('.feed-qtab')).find(b => {
-    const t = (b.textContent || '').toLowerCase();
-    return (tab === 'leagues' && t.includes('leagues')) ||
-           (tab === 'recipes' && t.includes('recipes') && !t.includes('vote')) ||
-           (tab === 'rotw' && t.includes('recipe vote'));
-  });
-  if(btn) btn.classList.add('active');
-
-  if(tab === 'leagues'){
-    showScreen('leagues');
-    return;
-  }
-
-  if(tab === 'recipes'){
-    showScreen('recipes');
-    setTimeout(()=>{
-      const mineBtn = Array.from(document.querySelectorAll('#recipes-screen .lb-filter')).find(b => (b.textContent || '').toLowerCase().includes('my recipes'));
-      if(mineBtn && typeof setRecipeTab === 'function') setRecipeTab(mineBtn, 'mine');
-    }, 150);
-    return;
-  }
-
-  if(tab === 'rotw'){
-    showScreen('recipes');
-    setTimeout(()=>{
-      const voteBtn = Array.from(document.querySelectorAll('#recipes-screen .lb-filter')).find(b => (b.textContent || '').toLowerCase().includes('league vote'));
-      if(voteBtn && typeof setRecipeTab === 'function') setRecipeTab(voteBtn, 'rotw');
-    }, 150);
-    return;
-  }
-}
-
+// ─── FEED TABS ────────────────────────────────────────────
 function setFeedTab(el, tab){
-  openFeedQuickSection(tab);
+  document.querySelectorAll('.feed-qtab').forEach(b=>{
+    b.style.background='var(--bg3)';b.style.color='var(--text2)';
+  });
+  el.style.background='var(--accent)';el.style.color='#0a0a0a';
+  document.getElementById('feed-panel-leagues').style.display=tab==='leagues'?'block':'none';
+  document.getElementById('feed-panel-recipes').style.display=tab==='recipes'?'block':'none';
+  document.getElementById('feed-panel-rotw').style.display=tab==='rotw'?'block':'none';
+  if(tab==='recipes')loadFeedRecipes();
+  if(tab==='rotw')loadFeedROTW();
 }
 
 async function loadFeedRecipes(){
   const{data}=await sb.from('recipes').select('*,profiles!recipes_user_id_fkey(username,full_name,avatar_url)').eq('is_private',false).order('created_at',{ascending:false}).limit(10);
   const el=document.getElementById('feed-recipes-list');
-  if(!el) return;
   if(!data||!data.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:8px 0">No recipes yet</div>';return;}
   el.innerHTML=data.map(r=>`
     <div onclick="showScreen('recipes')" style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden;flex-shrink:0;width:160px;cursor:pointer">
@@ -3695,7 +3651,6 @@ async function loadFeedRecipes(){
 
 async function loadFeedROTW(){
   const el=document.getElementById('feed-rotw-content');
-  if(!el) return;
   if(!user){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:8px 0">Sign in to see league recipe votes</div>';return;}
   const now=new Date();
   const isSunday=now.getDay()===0;
@@ -11523,6 +11478,7 @@ if('serviceWorker' in navigator){
 })();
 </script>
   <script>
+<script>
 /* =========================================================
    FORTE REAL LEAGUE INVITE FLOW PATCH
    Fixes:
@@ -15806,7 +15762,271 @@ if('serviceWorker' in navigator){
 })();
 </script>
   <script>
+<script>
+/* =========================================================
+  <script>
+/* =========================================================
 
+     FOOD LOG DELETE BUTTONS
+  ------------------------------------------------------- */
+  function addFoodDeleteButtons(){
+    removeBadDeleteButtons();
+
+    const logs =
+      (typeof nutLogs !== 'undefined' && Array.isArray(nutLogs) ? nutLogs : null) ||
+      (Array.isArray(window.nutLogs) ? window.nutLogs : []);
+
+    if(!logs.length) return;
+
+    logs.forEach(log => {
+      if(!log || !log.id) return;
+
+      const name = String(log.food_name || log.name || '').trim();
+      if(!name) return;
+
+      const meal = String(log.meal_type || log.meal || '').toLowerCase();
+
+      const cards = Array.from(document.querySelectorAll('#nutrition-screen *')).filter(el => {
+        const txt = el.innerText || '';
+        return txt.includes(name) &&
+               txt.includes('kcal') &&
+               txt.length < 400 &&
+               !el.classList.contains('forte-food-row-clean') &&
+               !el.querySelector('.forte-clean-delete-food');
+      });
+
+      const card = cards.find(el => {
+        const parentText = el.parentElement?.innerText?.toLowerCase() || '';
+        return !meal || parentText.includes(meal) || true;
+      });
+
+      if(!card) return;
+
+      card.classList.add('forte-food-row-clean');
+
+      card.style.position = 'relative';
+      card.style.display = card.style.display || 'flex';
+      card.style.alignItems = card.style.alignItems || 'center';
+      card.style.gap = card.style.gap || '8px';
+
+      const btnWrap = document.createElement('div');
+      btnWrap.className = 'forte-clean-delete-food';
+      btnWrap.style.cssText = 'margin-left:auto;display:flex;align-items:center;';
+      btnWrap.innerHTML = deleteButton(`forteDeleteFoodLogClean('${log.id}')`);
+
+      card.appendChild(btnWrap);
+    });
+  }
+
+  const oldRenderNutritionCleanDelete = typeof renderNutrition === 'function' ? renderNutrition : null;
+
+  if(oldRenderNutritionCleanDelete){
+    window.renderNutrition = function(){
+      oldRenderNutritionCleanDelete.apply(this, arguments);
+      setTimeout(addFoodDeleteButtons, 120);
+      setTimeout(addFoodDeleteButtons, 400);
+    };
+  }
+
+  const oldLoadNutritionCleanDelete = typeof loadNutrition === 'function' ? loadNutrition : null;
+
+  if(oldLoadNutritionCleanDelete){
+    window.loadNutrition = async function(){
+      const result = await oldLoadNutritionCleanDelete.apply(this, arguments);
+      setTimeout(addFoodDeleteButtons, 150);
+      setTimeout(addFoodDeleteButtons, 500);
+      return result;
+    };
+  }
+
+  /* -------------------------------------------------------
+     PAST WORKOUT DELETE BUTTONS
+  ------------------------------------------------------- */
+  async function addPastWorkoutDeleteButtons(){
+    const u = await getUser();
+    if(!u) return;
+
+    const screen = document.getElementById('exercise-screen');
+    if(!screen) return;
+
+    const { data: workouts, error } = await sb
+      .from('workouts')
+      .select('id,title,created_at,user_id')
+      .eq('user_id', u.id)
+      .order('created_at', { ascending:false })
+      .limit(30);
+
+    if(error || !workouts) return;
+
+    workouts.forEach(w => {
+      const title = String(w.title || '').trim();
+      if(!title) return;
+
+      const cards = Array.from(screen.querySelectorAll('*')).filter(el => {
+        const txt = el.innerText || '';
+        return txt.includes(title) &&
+               txt.length < 500 &&
+               !el.querySelector('.forte-clean-delete-workout') &&
+               !el.classList.contains('forte-workout-row-clean');
+      });
+
+      const card = cards.find(el => {
+        const txt = el.innerText || '';
+        return txt.includes('+3 pts') || txt.includes('pts') || txt.includes('Past workouts') || txt.includes('→');
+      });
+
+      if(!card) return;
+
+      card.classList.add('forte-workout-row-clean');
+      card.style.position = 'relative';
+
+      const btn = document.createElement('button');
+      btn.className = 'forte-clean-delete-workout';
+      btn.textContent = 'Delete';
+      btn.onclick = function(e){
+        e.stopPropagation();
+        forteDeleteWorkoutClean(w.id);
+      };
+      btn.style.cssText = `
+        position:absolute;
+        right:12px;
+        bottom:10px;
+        background:rgba(255,79,79,.12);
+        border:1px solid rgba(255,79,79,.4);
+        color:#ff4f4f;
+        border-radius:8px;
+        padding:6px 9px;
+        font-size:11px;
+        font-weight:900;
+        cursor:pointer;
+      `;
+
+      card.appendChild(btn);
+    });
+  }
+
+  const oldRenderWorkoutsCleanDelete = typeof renderWorkouts === 'function' ? renderWorkouts : null;
+
+  if(oldRenderWorkoutsCleanDelete){
+    window.renderWorkouts = function(){
+      oldRenderWorkoutsCleanDelete.apply(this, arguments);
+      setTimeout(addPastWorkoutDeleteButtons, 150);
+      setTimeout(addPastWorkoutDeleteButtons, 500);
+    };
+  }
+
+  const oldLoadWorkoutsCleanDelete = typeof loadWorkouts === 'function' ? loadWorkouts : null;
+
+  if(oldLoadWorkoutsCleanDelete){
+    window.loadWorkouts = async function(){
+      const result = await oldLoadWorkoutsCleanDelete.apply(this, arguments);
+      setTimeout(addPastWorkoutDeleteButtons, 150);
+      setTimeout(addPastWorkoutDeleteButtons, 500);
+      return result;
+    };
+  }
+
+  /* -------------------------------------------------------
+     ACTIVE WORKOUT SET DELETE BUTTONS
+  ------------------------------------------------------- */
+  function addActiveSetRemoveButtons(){
+    const modal =
+      document.getElementById('workout-modal') ||
+      document.getElementById('log-workout-modal') ||
+      document.querySelector('.modal-overlay.open');
+
+    if(!modal) return;
+
+    const titleText = modal.innerText || '';
+    if(!titleText.includes('Log workout')) return;
+
+    const rows = Array.from(modal.querySelectorAll('input')).filter(inp => {
+      const type = (inp.type || '').toLowerCase();
+      return type === 'number' || inp.placeholder?.toLowerCase()?.includes('kg') || inp.placeholder?.toLowerCase()?.includes('reps');
+    });
+
+    for(let i = 0; i < rows.length; i += 2){
+      const kgInput = rows[i];
+      const repsInput = rows[i + 1];
+
+      if(!kgInput || !repsInput) continue;
+
+      const row =
+        kgInput.closest('.set-row') ||
+        kgInput.closest('[style*="grid"]') ||
+        kgInput.parentElement?.parentElement;
+
+      if(!row || row.dataset.forteSetDeleteAdded === '1') continue;
+
+      row.dataset.forteSetDeleteAdded = '1';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '×';
+      btn.title = 'Remove set';
+      btn.onclick = function(e){
+        e.preventDefault();
+        e.stopPropagation();
+
+        const exerciseCard = row.closest('[style*="border-radius"]') || row.parentElement;
+        const allRows = Array.from(exerciseCard.querySelectorAll('[data-forte-set-delete-added="1"]'));
+
+        if(allRows.length <= 1){
+          kgInput.value = '';
+          repsInput.value = '';
+          toast('Cleared set');
+          return;
+        }
+
+        row.remove();
+        toast('Set removed');
+      };
+
+      btn.style.cssText = `
+        width:34px;
+        height:34px;
+        border-radius:50%;
+        border:1px solid rgba(255,79,79,.45);
+        background:rgba(255,79,79,.12);
+        color:#ff4f4f;
+        font-size:20px;
+        font-weight:900;
+        cursor:pointer;
+        margin-left:6px;
+        align-self:center;
+      `;
+
+      row.appendChild(btn);
+    }
+  }
+
+  const activeWorkoutObserver = new MutationObserver(() => {
+    try{ addActiveSetRemoveButtons(); }catch(e){}
+  });
+
+  activeWorkoutObserver.observe(document.body, {
+    childList:true,
+    subtree:true
+  });
+
+  /* -------------------------------------------------------
+     Boot
+  ------------------------------------------------------- */
+  setInterval(() => {
+    try{ removeBadDeleteButtons(); }catch(e){}
+    try{ addFoodDeleteButtons(); }catch(e){}
+    try{ addPastWorkoutDeleteButtons(); }catch(e){}
+    try{ addActiveSetRemoveButtons(); }catch(e){}
+  }, 1600);
+
+  setTimeout(() => {
+    try{ removeBadDeleteButtons(); }catch(e){}
+    try{ addFoodDeleteButtons(); }catch(e){}
+    try{ addPastWorkoutDeleteButtons(); }catch(e){}
+    try{ addActiveSetRemoveButtons(); }catch(e){}
+  }, 800);
+})();
+</script>
 
 /* ---------- STORIES: ONLY SELF + ACCEPTED FRIENDS/FOLLOWING ---------- */
 
@@ -16387,9 +16607,978 @@ setTimeout(() => {
   setTimeout(removeInstantSplash, 3500);
 })();
 </script>
+<script>
+/* =========================================================
+   FORTE FEED FINAL FIX
+   - Fixes huge profile/avatar image bug
+   - Restores larger top message/bell icons
+   - Keeps rounded chat bubble
+   - Removes "Your Leagues" cards from feed
+   - Makes Leagues / Recipes / Recipe Vote pills open their sections
+   - Adds lightweight pull-to-refresh without slowing app
+   ========================================================= */
 
-  
-  
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    console.log(msg);
+  }
+
+  function addCSS(){
+    if(document.getElementById('forte-feed-final-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-feed-final-css';
+    style.textContent = `
+      /* Bottom nav back to good size */
+      #bottom-nav,
+      .bottom-nav {
+        height: 86px !important;
+        min-height: 86px !important;
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom)) !important;
+      }
+
+      #bottom-nav .nav-item,
+      .bottom-nav .nav-item {
+        min-width: 62px !important;
+        height: 62px !important;
+        gap: 4px !important;
+      }
+
+      #bottom-nav .nav-item svg,
+      .bottom-nav .nav-item svg {
+        width: 31px !important;
+        height: 31px !important;
+      }
+
+      #bottom-nav .nav-item span,
+      .bottom-nav .nav-item span {
+        font-size: 12px !important;
+        font-weight: 800 !important;
+      }
+
+      /* DO NOT affect avatars. Only affect main post media. */
+      #feed-posts .workout-post > img,
+      #feed-posts .workout-post > video,
+      #feed-screen .workout-post > img,
+      #feed-screen .workout-post > video,
+      #feed-posts .post-media,
+      #feed-screen .post-media {
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        object-fit: contain !important;
+        display: block !important;
+        background: transparent !important;
+      }
+
+      /* Avatar/profile images must stay small */
+      #feed-screen .post-header img,
+      #feed-posts .post-header img,
+      #feed-screen .avatar img,
+      #feed-posts .avatar img,
+      #feed-screen img.avatar,
+      #feed-posts img.avatar {
+        width: 36px !important;
+        height: 36px !important;
+        max-width: 36px !important;
+        max-height: 36px !important;
+        border-radius: 50% !important;
+        object-fit: cover !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Story avatars stay normal */
+      #feed-screen .story img,
+      #feed-screen .story-avatar img,
+      #feed-screen [class*="story"] img {
+        object-fit: cover !important;
+      }
+
+      /* Top icons like you liked them */
+      .forte-top-icon-final {
+        width: 52px !important;
+        height: 52px !important;
+        min-width: 52px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.07) !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #fff !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        opacity: 1 !important;
+      }
+
+      .forte-top-icon-final svg {
+        width: 32px !important;
+        height: 32px !important;
+        stroke-width: 2.2 !important;
+      }
+
+      .topbar-actions {
+        gap: 9px !important;
+        align-items: center !important;
+      }
+
+      .forte-pull-refresh-final {
+        position: fixed;
+        left: 50%;
+        top: 82px;
+        transform: translateX(-50%) scale(.9);
+        z-index: 99999;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgba(20,20,20,.92);
+        border: 1px solid rgba(255,255,255,.14);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        color: #ff0090;
+        font-size: 20px;
+      }
+
+      .forte-pull-refresh-final.show {
+        display: flex;
+      }
+
+      .forte-pull-refresh-final.spin {
+        animation: forteRefreshSpinFinal .8s linear infinite;
+      }
+
+      @keyframes forteRefreshSpinFinal {
+        from { transform: translateX(-50%) rotate(0deg); }
+        to { transform: translateX(-50%) rotate(360deg); }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function fixTopIcons(){
+    const feed = document.getElementById('feed-screen') || document.querySelector('.screen.active');
+    if(!feed) return;
+
+    const topButtons = Array.from(feed.querySelectorAll('button, a, div')).filter(el => {
+      const rect = el.getBoundingClientRect();
+      if(rect.top > 170 || rect.left < window.innerWidth - 260) return false;
+
+      const id = (el.id || '').toLowerCase();
+      const cls = (el.className || '').toString().toLowerCase();
+      const onclick = (el.getAttribute('onclick') || '').toLowerCase();
+      const html = (el.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message') ||
+        id.includes('notif') ||
+        cls.includes('notif') ||
+        onclick.includes('notification') ||
+        html.includes('bell') ||
+        html.includes('notification')
+      );
+    });
+
+    topButtons.forEach(btn => {
+      btn.classList.add('forte-top-icon-final');
+    });
+
+    const msgBtn = topButtons.find(btn => {
+      const id = (btn.id || '').toLowerCase();
+      const cls = (btn.className || '').toString().toLowerCase();
+      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
+      const html = (btn.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message')
+      );
+    });
+
+    if(msgBtn){
+      msgBtn.classList.add('forte-top-icon-final');
+      msgBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M8 11.35H16"
+            stroke="currentColor"
+            stroke-linecap="round"
+          />
+        </svg>
+      `;
+    }
+  }
+
+  function fixFeedImages(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    // Reset any avatar that got damaged by the previous patch
+    feed.querySelectorAll('.post-header img, img.avatar, .avatar img').forEach(img => {
+      img.style.width = '36px';
+      img.style.height = '36px';
+      img.style.maxWidth = '36px';
+      img.style.maxHeight = '36px';
+      img.style.borderRadius = '50%';
+      img.style.objectFit = 'cover';
+      img.style.flexShrink = '0';
+    });
+
+    // Only fix main media images, not avatars
+    feed.querySelectorAll('.workout-post').forEach(post => {
+      Array.from(post.children).forEach(child => {
+        if(child.tagName === 'IMG' || child.tagName === 'VIDEO'){
+          child.style.width = '100%';
+          child.style.height = 'auto';
+          child.style.maxHeight = 'none';
+          child.style.objectFit = 'contain';
+          child.style.display = 'block';
+          child.style.background = 'transparent';
+        }
+      });
+    });
+  }
+
+  function removeYourLeaguesSection(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    all.forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt === 'your leagues'){
+        let parent = el;
+
+        for(let i = 0; i < 8 && parent; i++){
+          const ptxt = parent.innerText || '';
+
+          if(
+            ptxt.includes('YOUR LEAGUES') &&
+            ptxt.includes('View all')
+          ){
+            parent.remove();
+            return;
+          }
+
+          parent = parent.parentElement;
+        }
+
+        el.remove();
+      }
+    });
+
+    // Remove any remaining View all row tied to leagues
+    all.forEach(el => {
+      const txt = el.innerText || '';
+
+      if(
+        txt.includes('YOUR LEAGUES') &&
+        txt.includes('View all') &&
+        txt.length < 800
+      ){
+        el.remove();
+      }
+    });
+  }
+
+  function wireFeedPills(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('leagues');
+        };
+        el.style.cursor = 'pointer';
+      }
+
+      if(txt.includes('recipes') && !txt.includes('vote') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipes === 'function') openRecipes();
+              else if(typeof loadRecipes === 'function') loadRecipes('mine');
+            }catch(err){}
+          }, 150);
+        };
+        el.style.cursor = 'pointer';
+      }
+
+      if(txt.includes('recipe vote') && txt.length < 40){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipeVote === 'function') openRecipeVote();
+              else if(typeof showRecipeVote === 'function') showRecipeVote();
+              else if(typeof loadRecipeVote === 'function') loadRecipeVote();
+            }catch(err){}
+          }, 150);
+        };
+        el.style.cursor = 'pointer';
+      }
+    });
+  }
+
+  async function refreshFeed(){
+    const spinner = document.getElementById('forte-pull-refresh-final');
+    if(spinner){
+      spinner.classList.add('show', 'spin');
+      spinner.textContent = '⟳';
+    }
+
+    try{
+      if(typeof loadStories === 'function') await loadStories();
+      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+
+      setTimeout(runFeedFixes, 120);
+    }catch(e){
+      console.error('Refresh failed:', e);
+      toast('Could not refresh');
+    }finally{
+      setTimeout(() => {
+        if(spinner){
+          spinner.classList.remove('show', 'spin');
+        }
+      }, 500);
+    }
+  }
+
+  function addPullRefresh(){
+    if(document.getElementById('forte-pull-refresh-final')) return;
+
+    const spin = document.createElement('div');
+    spin.id = 'forte-pull-refresh-final';
+    spin.className = 'forte-pull-refresh-final';
+    spin.textContent = '⟳';
+    document.body.appendChild(spin);
+
+    let startY = null;
+
+    document.addEventListener('touchstart', e => {
+      const feedActive =
+        document.getElementById('feed-screen')?.classList.contains('active') ||
+        document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed';
+
+      if(!feedActive) return;
+      if(window.scrollY > 8) return;
+
+      startY = e.touches[0].clientY;
+    }, { passive:true });
+
+    document.addEventListener('touchend', e => {
+      if(startY === null) return;
+
+      const endY = e.changedTouches[0].clientY;
+      const diff = endY - startY;
+      startY = null;
+
+      if(diff > 85){
+        refreshFeed();
+      }
+    }, { passive:true });
+  }
+
+  function runFeedFixes(){
+    fixTopIcons();
+    fixFeedImages();
+    removeYourLeaguesSection();
+    wireFeedPills();
+  }
+
+  addCSS();
+  addPullRefresh();
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(runFeedFixes, 80);
+        setTimeout(runFeedFixes, 350);
+      }
+
+      return result;
+    };
+  }
+
+  const oldLoadFeedPosts = window.loadFeedPosts;
+  if(typeof oldLoadFeedPosts === 'function'){
+    window.loadFeedPosts = async function(){
+      const result = await oldLoadFeedPosts.apply(this, arguments);
+      setTimeout(runFeedFixes, 80);
+      setTimeout(runFeedFixes, 300);
+      return result;
+    };
+  }
+
+  setTimeout(runFeedFixes, 400);
+  setTimeout(runFeedFixes, 1200);
+})();
+</script>
+  <script>
+
+  /* -------------------------------------------------------
+     2. Remove league preview area from feed
+  ------------------------------------------------------- */
+  function removeLeaguePreviewArea(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    const pillRow = all.find(el => {
+      const txt = (el.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+
+      return (
+        r.top > 250 &&
+        r.top < 650 &&
+        txt.includes('leagues') &&
+        txt.includes('recipes') &&
+        txt.includes('recipe vote') &&
+        txt.length < 120
+      );
+    });
+
+    const friendsLabel = all.find(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+
+      return txt === 'friends activity' && r.top > 300;
+    });
+
+    if(!pillRow || !friendsLabel) return;
+
+    const pillBottom = pillRow.getBoundingClientRect().bottom;
+    const friendsTop = friendsLabel.getBoundingClientRect().top;
+
+    all.forEach(el => {
+      if(el === pillRow || pillRow.contains(el) || friendsLabel.contains(el)) return;
+
+      const r = el.getBoundingClientRect();
+      if(r.height <= 0) return;
+
+      const txt = (el.innerText || el.textContent || '').trim();
+
+      const betweenPillsAndFriends =
+        r.top > pillBottom + 4 &&
+        r.bottom < friendsTop - 4;
+
+      if(!betweenPillsAndFriends) return;
+
+      const looksLikeLeaguePreview =
+        txt.includes('View all') ||
+        txt.includes('Private') ||
+        txt.includes('IRON SHARPENS IRON') ||
+        txt.includes('Iron sharpens Iron') ||
+        txt.toLowerCase() === 'your leagues';
+
+      if(looksLikeLeaguePreview){
+        el.classList.add('forte-hide-feed-league-preview');
+      }
+    });
+
+    // If the whole block parent remains, hide parent too.
+    const viewAll = all.find(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+      return txt.includes('view all') && r.top > pillBottom && r.top < friendsTop;
+    });
+
+    if(viewAll){
+      let p = viewAll.parentElement;
+      for(let i = 0; i < 6 && p; i++){
+        const r = p.getBoundingClientRect();
+        const txt = p.innerText || '';
+
+        if(
+          r.top > pillBottom &&
+          r.bottom < friendsTop + 40 &&
+          (
+            txt.includes('View all') ||
+            txt.includes('Private') ||
+            txt.includes('IRON SHARPENS IRON') ||
+            txt.includes('Iron sharpens Iron')
+          )
+        ){
+          p.classList.add('forte-hide-feed-league-preview');
+          break;
+        }
+
+        p = p.parentElement;
+      }
+    }
+  }
+
+  function wirePills(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('leagues');
+        };
+      }
+
+      if(txt.includes('recipes') && !txt.includes('vote') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipes === 'function') openRecipes();
+              else if(typeof loadRecipes === 'function') loadRecipes('mine');
+            }catch(err){}
+          }, 150);
+        };
+      }
+
+      if(txt.includes('recipe vote') && txt.length < 40){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipeVote === 'function') openRecipeVote();
+              else if(typeof showRecipeVote === 'function') showRecipeVote();
+              else if(typeof loadRecipeVote === 'function') loadRecipeVote();
+            }catch(err){}
+          }, 150);
+        };
+      }
+    });
+  }
+
+  /* -------------------------------------------------------
+     3. Stop bad refreshes from older patches
+  ------------------------------------------------------- */
+  let touchStartY = null;
+  let touchStartedAtTop = false;
+  let validPullRefresh = false;
+  let blockAccidentalRefreshUntil = 0;
+
+  function installRefreshGuard(){
+    if(window.forteFinalRefreshGuardInstalled) return;
+    window.forteFinalRefreshGuardInstalled = true;
+
+    document.getElementById('forte-pull-refresh')?.remove();
+    document.getElementById('forte-pull-refresh-final')?.remove();
+    document.getElementById('forte-pull-refresh-correct')?.remove();
+
+    if(!document.getElementById('forte-real-pull-refresh')){
+      const spin = document.createElement('div');
+      spin.id = 'forte-real-pull-refresh';
+      spin.textContent = '⟳';
+      document.body.appendChild(spin);
+    }
+
+    document.addEventListener('touchstart', function(e){
+      if(!isFeedActive()) return;
+
+      touchStartY = e.touches[0].clientY;
+      touchStartedAtTop = getScrollTop() <= 2;
+      validPullRefresh = false;
+    }, { passive:true, capture:true });
+
+    document.addEventListener('touchmove', function(e){
+      if(!isFeedActive()) return;
+      if(touchStartY === null) return;
+
+      const diff = e.touches[0].clientY - touchStartY;
+
+      if(touchStartedAtTop && diff > 110 && getScrollTop() <= 2){
+        validPullRefresh = true;
+        document.getElementById('forte-real-pull-refresh')?.classList.add('show');
+      }
+    }, { passive:true, capture:true });
+
+    document.addEventListener('touchend', function(){
+      if(!isFeedActive()) return;
+
+      if(!validPullRefresh){
+        blockAccidentalRefreshUntil = Date.now() + 900;
+        document.getElementById('forte-real-pull-refresh')?.classList.remove('show', 'spin');
+      }else{
+        blockAccidentalRefreshUntil = 0;
+        const spin = document.getElementById('forte-real-pull-refresh');
+        spin?.classList.add('show', 'spin');
+
+        setTimeout(async () => {
+          try{
+            if(typeof window.__forteOriginalLoadStories === 'function') await window.__forteOriginalLoadStories();
+            else if(typeof loadStories === 'function') await loadStories();
+
+            if(typeof window.__forteOriginalLoadFeedPosts === 'function') await window.__forteOriginalLoadFeedPosts();
+            else if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+
+            setTimeout(runFixes, 120);
+          }finally{
+            spin?.classList.remove('show', 'spin');
+          }
+        }, 80);
+      }
+
+      touchStartY = null;
+      touchStartedAtTop = false;
+      validPullRefresh = false;
+    }, { passive:true, capture:true });
+
+    if(typeof window.loadFeedPosts === 'function' && !window.__forteOriginalLoadFeedPosts){
+      window.__forteOriginalLoadFeedPosts = window.loadFeedPosts;
+
+      window.loadFeedPosts = async function(){
+        if(isFeedActive() && Date.now() < blockAccidentalRefreshUntil){
+          return;
+        }
+
+        return await window.__forteOriginalLoadFeedPosts.apply(this, arguments);
+      };
+    }
+
+    if(typeof window.loadStories === 'function' && !window.__forteOriginalLoadStories){
+      window.__forteOriginalLoadStories = window.loadStories;
+
+      window.loadStories = async function(){
+        if(isFeedActive() && Date.now() < blockAccidentalRefreshUntil){
+          return;
+        }
+
+        return await window.__forteOriginalLoadStories.apply(this, arguments);
+      };
+    }
+  }
+
+  function runFixes(){
+    addCSS();
+    fixTopIconsHard();
+    removeLeaguePreviewArea();
+    wirePills();
+  }
+
+  addCSS();
+  installRefreshGuard();
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function' && !window.__forteFinalShowScreenWrapped){
+    window.__forteFinalShowScreenWrapped = true;
+
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(runFixes, 80);
+        setTimeout(runFixes, 350);
+      }
+
+      return result;
+    };
+  }
+
+  setTimeout(runFixes, 300);
+  setTimeout(runFixes, 1000);
+  setTimeout(runFixes, 2000);
+})();
+</script>
+  <script>
+<script>
+/* =========================================================
+   HARD FIX: icons, feed league preview, broken refresh
+   ========================================================= */
+(function () {
+  function addStyle() {
+    if (document.getElementById('forte-hard-final-style')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-hard-final-style';
+    style.textContent = `
+      /* top right icons: force them apart */
+      #feed-screen .topbar-actions {
+        position: absolute !important;
+        right: 24px !important;
+        top: 88px !important;
+        width: 132px !important;
+        height: 56px !important;
+        display: block !important;
+        overflow: visible !important;
+      }
+
+      #feed-screen .forte-hard-msg,
+      #feed-screen .forte-hard-bell {
+        position: absolute !important;
+        top: 0 !important;
+        width: 54px !important;
+        height: 54px !important;
+        min-width: 54px !important;
+        max-width: 54px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.075) !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        transform: none !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        opacity: 1 !important;
+      }
+
+      #feed-screen .forte-hard-msg { right: 74px !important; }
+      #feed-screen .forte-hard-bell { right: 8px !important; }
+
+      #feed-screen .forte-hard-msg svg,
+      #feed-screen .forte-hard-bell svg {
+        width: 32px !important;
+        height: 32px !important;
+      }
+
+      .forte-force-remove {
+        display: none !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function feedActive() {
+    return document.getElementById('feed-screen')?.classList.contains('active');
+  }
+
+  function realTop() {
+    return (
+      window.scrollY <= 2 &&
+      document.documentElement.scrollTop <= 2 &&
+      document.body.scrollTop <= 2
+    );
+  }
+
+  function fixIcons() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const actions = feed.querySelector('.topbar-actions');
+    if (!actions) return;
+
+    const items = Array.from(actions.querySelectorAll('button, a, .icon-btn, div'));
+
+    const msg = items.find(el => {
+      const x = ((el.id || '') + ' ' + (el.className || '') + ' ' + (el.getAttribute('onclick') || '') + ' ' + el.innerHTML).toLowerCase();
+      return x.includes('message') || x.includes('chat') || x.includes('dm');
+    });
+
+    const bell = items.find(el => {
+      if (el === msg) return false;
+      const x = ((el.id || '') + ' ' + (el.className || '') + ' ' + (el.getAttribute('onclick') || '') + ' ' + el.innerHTML).toLowerCase();
+      return x.includes('notif') || x.includes('bell');
+    });
+
+    if (msg) {
+      msg.classList.add('forte-hard-msg');
+      msg.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 11.35H16" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/>
+        </svg>
+      `;
+    }
+
+    if (bell) bell.classList.add('forte-hard-bell');
+  }
+
+  function removeLeagueArea() {
+    const feed = document.getElementById('feed-screen');
+    if (!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    const viewAll = all.find(el => {
+      const text = (el.textContent || '').trim().toLowerCase();
+      const r = el.getBoundingClientRect();
+      return text.includes('view all') && r.top > 350 && r.top < 800;
+    });
+
+    if (!viewAll) return;
+
+    let block = viewAll.parentElement;
+
+    while (
+      block &&
+      block.parentElement &&
+      block.parentElement !== feed &&
+      block.parentElement.innerText &&
+      block.parentElement.innerText.includes('View all') &&
+      block.parentElement.innerText.length < 700
+    ) {
+      block = block.parentElement;
+    }
+
+    if (block) block.classList.add('forte-force-remove');
+
+    // Remove the league cards immediately after View all too
+    let next = block ? block.nextElementSibling : null;
+    let count = 0;
+
+    while (next && count < 4) {
+      const txt = next.innerText || '';
+      if (txt.toLowerCase().includes('friends activity')) break;
+
+      if (
+        txt.includes('IRON SHARPENS') ||
+        txt.includes('Iron sharpens') ||
+        txt.includes('Private') ||
+        txt.includes('League')
+      ) {
+        next.classList.add('forte-force-remove');
+      }
+
+      next = next.nextElementSibling;
+      count++;
+    }
+
+    // Emergency backup: hide any visible league cards before Friends Activity
+    all.forEach(el => {
+      const txt = el.innerText || '';
+      const r = el.getBoundingClientRect();
+
+      if (
+        r.top > 350 &&
+        r.top < 900 &&
+        txt.length < 500 &&
+        (
+          txt.includes('IRON SHARPENS') ||
+          txt.includes('Iron sharpens') ||
+          txt.includes('Private')
+        )
+      ) {
+        el.classList.add('forte-force-remove');
+      }
+    });
+  }
+
+  function stopBadRefresh() {
+    if (window.__forteHardRefreshStop) return;
+    window.__forteHardRefreshStop = true;
+
+    let startY = 0;
+    let startedAtTop = false;
+    let allowRefresh = false;
+
+    document.addEventListener('touchstart', e => {
+      if (!feedActive()) return;
+      startY = e.touches[0].clientY;
+      startedAtTop = realTop();
+      allowRefresh = false;
+    }, true);
+
+    document.addEventListener('touchmove', e => {
+      if (!feedActive()) return;
+      const diff = e.touches[0].clientY - startY;
+      allowRefresh = startedAtTop && realTop() && diff > 140;
+    }, true);
+
+    document.addEventListener('touchend', () => {
+      if (!feedActive()) return;
+
+      if (!allowRefresh) {
+        window.__blockFeedReload = Date.now() + 1200;
+        document.getElementById('forte-pull-refresh')?.remove();
+        document.getElementById('forte-pull-refresh-final')?.remove();
+        document.getElementById('forte-pull-refresh-correct')?.remove();
+        document.getElementById('forte-real-pull-refresh')?.remove();
+      }
+
+      startedAtTop = false;
+      allowRefresh = false;
+    }, true);
+
+    if (typeof window.loadFeedPosts === 'function' && !window.__realLoadFeedPostsHard) {
+      window.__realLoadFeedPostsHard = window.loadFeedPosts;
+      window.loadFeedPosts = async function () {
+        if (feedActive() && Date.now() < (window.__blockFeedReload || 0)) return;
+        return await window.__realLoadFeedPostsHard.apply(this, arguments);
+      };
+    }
+
+    if (typeof window.loadStories === 'function' && !window.__realLoadStoriesHard) {
+      window.__realLoadStoriesHard = window.loadStories;
+      window.loadStories = async function () {
+        if (feedActive() && Date.now() < (window.__blockFeedReload || 0)) return;
+        return await window.__realLoadStoriesHard.apply(this, arguments);
+      };
+    }
+  }
+
+  function run() {
+    addStyle();
+    fixIcons();
+    removeLeagueArea();
+    stopBadRefresh();
+  }
+
+  const oldShowScreen = window.showScreen;
+  window.showScreen = function () {
+    const out = oldShowScreen.apply(this, arguments);
+    setTimeout(run, 100);
+    setTimeout(run, 500);
+    return out;
+  };
+
+  setTimeout(run, 300);
+  setTimeout(run, 1000);
+  setTimeout(run, 2000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
@@ -17565,87 +18754,4 @@ window.obFinish = async function(){
   }, 1000);
 })();
 </script>
-
-<script>
-/* Forte clean pull-to-refresh: only triggers on a real pull from the top of the feed */
-(function(){
-  if(window.__forteCleanPullRefreshInstalled) return;
-  window.__forteCleanPullRefreshInstalled = true;
-
-  function feedEl(){
-    return document.getElementById('feed-screen');
-  }
-
-  function feedIsActive(){
-    const f = feedEl();
-    return !!(f && f.classList.contains('active'));
-  }
-
-  function ensureSpinner(){
-    let sp = document.getElementById('feed-pull-refresh');
-    if(!sp){
-      sp = document.createElement('div');
-      sp.id = 'feed-pull-refresh';
-      sp.textContent = '⟳';
-      document.body.appendChild(sp);
-    }
-    return sp;
-  }
-
-  async function refreshFeedClean(){
-    const sp = ensureSpinner();
-    sp.classList.add('show','spin');
-
-    try{
-      if(typeof loadStories === 'function') await loadStories();
-      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
-    }catch(e){
-      console.error('Feed refresh failed:', e);
-      if(typeof showToast === 'function') showToast('Could not refresh feed');
-    }finally{
-      setTimeout(()=>sp.classList.remove('show','spin'), 450);
-    }
-  }
-
-  const f = feedEl();
-  if(!f) return;
-
-  let startY = 0;
-  let startedAtTop = false;
-  let pulling = false;
-
-  f.addEventListener('touchstart', function(e){
-    if(!feedIsActive()) return;
-    startedAtTop = f.scrollTop <= 0;
-    pulling = startedAtTop;
-    startY = e.touches[0].clientY;
-  }, {passive:true});
-
-  f.addEventListener('touchmove', function(e){
-    if(!pulling || !startedAtTop) return;
-    const diff = e.touches[0].clientY - startY;
-    const sp = ensureSpinner();
-
-    if(diff > 70 && f.scrollTop <= 0){
-      sp.classList.add('show');
-    }
-  }, {passive:true});
-
-  f.addEventListener('touchend', function(e){
-    if(!pulling || !startedAtTop) return;
-
-    const diff = e.changedTouches[0].clientY - startY;
-    const sp = ensureSpinner();
-    pulling = false;
-    startedAtTop = false;
-
-    if(diff > 125 && f.scrollTop <= 0){
-      refreshFeedClean();
-    }else{
-      sp.classList.remove('show','spin');
-    }
-  }, {passive:true});
-})();
-</script>
-
 </html>
