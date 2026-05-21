@@ -15680,6 +15680,374 @@ if('serviceWorker' in navigator){
   }
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE DELETE / REMOVE MISTAKES PATCH
+   Adds delete buttons and delete functions for:
+   - food logs
+   - workouts
+   - recipes
+   - posts
+   - progress photos / updates
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    alert(msg);
+  }
+
+  async function getUser(){
+    if(window.user && window.user.id) return window.user;
+    const { data } = await sb.auth.getUser();
+    if(data && data.user){
+      window.user = data.user;
+      return data.user;
+    }
+    return null;
+  }
+
+  async function deleteOwnRow(table, id, label){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    if(!id || id === 'undefined'){
+      return toast('Missing item ID');
+    }
+
+    if(!confirm(`Delete this ${label || 'item'}?`)) return;
+
+    const { error } = await sb
+      .from(table)
+      .delete()
+      .eq('id', id)
+      .eq('user_id', u.id);
+
+    if(error){
+      console.error(`DELETE ${table} ERROR:`, error);
+      return toast('Could not delete: ' + error.message);
+    }
+
+    toast(`${label || 'Item'} deleted ✅`);
+
+    try{ if(typeof loadNutrition === 'function') await loadNutrition(); }catch(e){}
+    try{ if(typeof renderNutrition === 'function') renderNutrition(); }catch(e){}
+    try{ if(typeof loadWorkouts === 'function') await loadWorkouts(); }catch(e){}
+    try{ if(typeof renderWorkouts === 'function') renderWorkouts(); }catch(e){}
+    try{ if(typeof loadRecipes === 'function') await loadRecipes(currentRecipeTab || 'mine'); }catch(e){}
+    try{ if(typeof loadProfileRecipes === 'function') await loadProfileRecipes(); }catch(e){}
+    try{ if(typeof loadFeedPosts === 'function') await loadFeedPosts(); }catch(e){}
+    try{ if(typeof loadProfilePosts === 'function') await loadProfilePosts(); }catch(e){}
+    try{ if(typeof loadProgressPage === 'function') await loadProgressPage(); }catch(e){}
+  }
+
+  window.deleteFoodLog = function(id){
+    return deleteOwnRow('nutrition_logs', id, 'food log');
+  };
+
+  window.deleteWorkoutLog = function(id){
+    return deleteOwnRow('workouts', id, 'workout');
+  };
+
+  window.deleteRecipeItem = function(id){
+    return deleteOwnRow('recipes', id, 'recipe');
+  };
+
+  window.deleteProgressPhoto = function(id){
+    return deleteOwnRow('progress_photos', id, 'progress photo');
+  };
+
+  window.deleteProgressUpdate = function(id){
+    return deleteOwnRow('progress_updates', id, 'progress update');
+  };
+
+  window.deleteWeightLog = function(id){
+    return deleteOwnRow('weight_logs', id, 'weight log');
+  };
+
+  /* Safer post delete override */
+  window.deletePost = async function(postId){
+    const u = await getUser();
+    if(!u) return toast('Sign in first');
+
+    if(!confirm('Delete this post?')) return;
+
+    const { error } = await sb
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .eq('user_id', u.id);
+
+    if(error){
+      console.error('DELETE POST ERROR:', error);
+      return toast('Could not delete post: ' + error.message);
+    }
+
+    document.getElementById('post-' + postId)?.remove();
+
+    toast('Post deleted ✅');
+
+    try{ if(typeof loadFeedPosts === 'function') await loadFeedPosts(); }catch(e){}
+    try{ if(typeof loadProfilePosts === 'function') await loadProfilePosts(); }catch(e){}
+  };
+
+  function makeDeleteBtn(onclick, small){
+    return `
+      <button onclick="event.stopPropagation();${onclick}" style="
+        background:rgba(255,79,79,.12);
+        border:1px solid rgba(255,79,79,.35);
+        color:#ff4f4f;
+        border-radius:${small ? '7px' : '9px'};
+        padding:${small ? '5px 8px' : '7px 10px'};
+        font-size:${small ? '11px' : '12px'};
+        font-weight:900;
+        cursor:pointer;
+        flex-shrink:0;
+      ">Delete</button>
+    `;
+  }
+
+  function addDeleteButtonsToVisibleItems(){
+    const u = window.user;
+    if(!u || !u.id) return;
+
+    /*
+      Food logs:
+      Looks for elements with nutrition log IDs in common data/id patterns.
+      Also works after renderNutrition reloads.
+    */
+    document.querySelectorAll('[data-food-id], [data-nutrition-id], [data-log-id]').forEach(el => {
+      if(el.dataset.forteDeleteAdded === '1') return;
+
+      const id =
+        el.getAttribute('data-food-id') ||
+        el.getAttribute('data-nutrition-id') ||
+        el.getAttribute('data-log-id');
+
+      if(!id) return;
+
+      el.dataset.forteDeleteAdded = '1';
+      el.style.position = el.style.position || 'relative';
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:8px;display:flex;justify-content:flex-end;';
+      wrap.innerHTML = makeDeleteBtn(`deleteFoodLog('${id}')`, true);
+      el.appendChild(wrap);
+    });
+
+    /*
+      Workout cards:
+    */
+    document.querySelectorAll('[data-workout-id]').forEach(el => {
+      if(el.dataset.forteDeleteAdded === '1') return;
+
+      const id = el.getAttribute('data-workout-id');
+      if(!id) return;
+
+      el.dataset.forteDeleteAdded = '1';
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:8px;display:flex;justify-content:flex-end;';
+      wrap.innerHTML = makeDeleteBtn(`deleteWorkoutLog('${id}')`, true);
+      el.appendChild(wrap);
+    });
+
+    /*
+      Recipe cards:
+    */
+    document.querySelectorAll('[data-recipe-id]').forEach(el => {
+      if(el.dataset.forteDeleteAdded === '1') return;
+
+      const id = el.getAttribute('data-recipe-id');
+      if(!id) return;
+
+      el.dataset.forteDeleteAdded = '1';
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:8px;display:flex;justify-content:flex-end;';
+      wrap.innerHTML = makeDeleteBtn(`deleteRecipeItem('${id}')`, true);
+      el.appendChild(wrap);
+    });
+  }
+
+  /*
+    Nutrition renderer patch:
+    This adds a delete button even if your existing nutrition HTML
+    does not use data attributes, as long as nutLogs has IDs.
+  */
+  const oldRenderNutritionDeletePatch = typeof renderNutrition === 'function' ? renderNutrition : null;
+
+  if(oldRenderNutritionDeletePatch){
+    window.renderNutrition = function(){
+      oldRenderNutritionDeletePatch.apply(this, arguments);
+
+      setTimeout(() => {
+        try{
+          if(!Array.isArray(window.nutLogs) && typeof nutLogs !== 'undefined'){
+            window.nutLogs = nutLogs;
+          }
+
+          const logs = window.nutLogs || [];
+          if(!logs.length) return;
+
+          logs.forEach(log => {
+            if(!log || !log.id) return;
+
+            const name = String(log.food_name || log.name || '').trim();
+            if(!name) return;
+
+            const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+              const txt = el.innerText || '';
+              return txt.includes(name) && txt.length < 600;
+            });
+
+            const card = candidates.find(el =>
+              !el.querySelector('.forte-food-delete-btn') &&
+              (
+                el.innerText.includes('kcal') ||
+                el.innerText.includes('protein') ||
+                el.innerText.includes('carbs') ||
+                el.innerText.includes('fats')
+              )
+            );
+
+            if(card){
+              const btn = document.createElement('button');
+              btn.className = 'forte-food-delete-btn';
+              btn.textContent = 'Delete';
+              btn.onclick = function(e){
+                e.stopPropagation();
+                deleteFoodLog(log.id);
+              };
+              btn.style.cssText = `
+                margin-top:8px;
+                background:rgba(255,79,79,.12);
+                border:1px solid rgba(255,79,79,.35);
+                color:#ff4f4f;
+                border-radius:7px;
+                padding:5px 8px;
+                font-size:11px;
+                font-weight:900;
+                cursor:pointer;
+              `;
+
+              card.appendChild(btn);
+            }
+          });
+        }catch(e){}
+      }, 120);
+    };
+  }
+
+  /*
+    Workout renderer patch:
+    Adds delete to workout cards if wkLogs/workouts are available.
+  */
+  const oldRenderWorkoutsDeletePatch = typeof renderWorkouts === 'function' ? renderWorkouts : null;
+
+  if(oldRenderWorkoutsDeletePatch){
+    window.renderWorkouts = function(){
+      oldRenderWorkoutsDeletePatch.apply(this, arguments);
+
+      setTimeout(() => {
+        try{
+          const possibleLogs =
+            window.workouts ||
+            window.wkLogs ||
+            (typeof wkLogs !== 'undefined' ? wkLogs : []) ||
+            [];
+
+          possibleLogs.forEach(w => {
+            if(!w || !w.id) return;
+
+            const title = String(w.title || w.name || w.workout_name || '').trim();
+            if(!title) return;
+
+            const card = Array.from(document.querySelectorAll('*')).find(el => {
+              const txt = el.innerText || '';
+              return txt.includes(title) &&
+                     txt.length < 700 &&
+                     !el.querySelector('.forte-workout-delete-btn');
+            });
+
+            if(card){
+              const btn = document.createElement('button');
+              btn.className = 'forte-workout-delete-btn';
+              btn.textContent = 'Delete';
+              btn.onclick = function(e){
+                e.stopPropagation();
+                deleteWorkoutLog(w.id);
+              };
+              btn.style.cssText = `
+                margin-top:8px;
+                background:rgba(255,79,79,.12);
+                border:1px solid rgba(255,79,79,.35);
+                color:#ff4f4f;
+                border-radius:7px;
+                padding:5px 8px;
+                font-size:11px;
+                font-weight:900;
+                cursor:pointer;
+              `;
+
+              card.appendChild(btn);
+            }
+          });
+        }catch(e){}
+      }, 120);
+    };
+  }
+
+  /*
+    Progress page delete buttons for photos/history.
+  */
+  const oldLoadProgressPageDeletePatch = typeof loadProgressPage === 'function' ? loadProgressPage : null;
+
+  if(oldLoadProgressPageDeletePatch){
+    window.loadProgressPage = async function(){
+      await oldLoadProgressPageDeletePatch.apply(this, arguments);
+
+      setTimeout(() => {
+        try{
+          const grid = document.getElementById('progress-photos-grid');
+          if(grid){
+            grid.querySelectorAll('[data-progress-photo-id]').forEach(card => {
+              if(card.dataset.forteDeleteAdded === '1') return;
+              card.dataset.forteDeleteAdded = '1';
+
+              const id = card.getAttribute('data-progress-photo-id');
+              if(!id) return;
+
+              const wrap = document.createElement('div');
+              wrap.style.cssText = 'padding:0 9px 9px;';
+              wrap.innerHTML = makeDeleteBtn(`deleteProgressPhoto('${id}')`, true);
+              card.appendChild(wrap);
+            });
+          }
+        }catch(e){}
+      }, 120);
+    };
+  }
+
+  /*
+    General observer catches newly rendered sections.
+  */
+  const observer = new MutationObserver(() => {
+    try{ addDeleteButtonsToVisibleItems(); }catch(e){}
+  });
+
+  observer.observe(document.body, {
+    childList:true,
+    subtree:true
+  });
+
+  setInterval(() => {
+    try{ addDeleteButtonsToVisibleItems(); }catch(e){}
+  }, 1500);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
