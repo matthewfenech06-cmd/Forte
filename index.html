@@ -17054,6 +17054,390 @@ setTimeout(() => {
   setTimeout(runFeedFixes, 1200);
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE FEED FIX OVERRIDE
+   - Fixes top-right icon overlap/glitch
+   - Pull refresh only works when truly at top
+   - Fully removes Your Leagues / View all league cards area
+   ========================================================= */
+
+(function(){
+  function addCSS(){
+    if(document.getElementById('forte-feed-override-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-feed-override-css';
+    style.textContent = `
+      /* Top right icons: clean, separated, no overlap */
+      #feed-screen .topbar-actions {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 10px !important;
+      }
+
+      #feed-screen .topbar-actions button,
+      #feed-screen .topbar-actions .icon-btn {
+        width: 48px !important;
+        height: 48px !important;
+        min-width: 48px !important;
+        max-width: 48px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.07) !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+        transform: none !important;
+      }
+
+      #feed-screen .topbar-actions button svg,
+      #feed-screen .topbar-actions .icon-btn svg {
+        width: 30px !important;
+        height: 30px !important;
+      }
+
+      /* Pull refresh indicator */
+      #forte-pull-refresh-correct {
+        position: fixed;
+        left: 50%;
+        top: 92px;
+        transform: translateX(-50%);
+        z-index: 99999;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgba(20,20,20,.92);
+        border: 1px solid rgba(255,255,255,.18);
+        color: #ff0090;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        pointer-events: none;
+      }
+
+      #forte-pull-refresh-correct.show {
+        display: flex;
+      }
+
+      #forte-pull-refresh-correct.spin {
+        animation: fortePullSpinCorrect .8s linear infinite;
+      }
+
+      @keyframes fortePullSpinCorrect {
+        from { transform: translateX(-50%) rotate(0deg); }
+        to { transform: translateX(-50%) rotate(360deg); }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function fixMessageIcon(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const topbar = feed.querySelector('.topbar-actions');
+    if(!topbar) return;
+
+    const buttons = Array.from(topbar.querySelectorAll('button, .icon-btn'));
+
+    const msgBtn = buttons.find(btn => {
+      const id = (btn.id || '').toLowerCase();
+      const cls = (btn.className || '').toString().toLowerCase();
+      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
+      const html = (btn.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message')
+      );
+    });
+
+    if(msgBtn){
+      msgBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
+            stroke="currentColor"
+            stroke-width="2.15"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M8 11.35H16"
+            stroke="currentColor"
+            stroke-width="2.15"
+            stroke-linecap="round"
+          />
+        </svg>
+      `;
+    }
+  }
+
+  function removeLeagueCardsArea(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    const all = Array.from(feed.querySelectorAll('*'));
+
+    // Find the View all that belongs to leagues and remove from there until Friends Activity.
+    const viewAll = all.find(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      const rect = el.getBoundingClientRect();
+
+      return txt.includes('view all') &&
+             rect.top > 350 &&
+             rect.top < 850;
+    });
+
+    if(viewAll){
+      let container = viewAll.parentElement;
+
+      for(let i = 0; i < 8 && container; i++){
+        const txt = container.innerText || '';
+
+        if(
+          txt.includes('View all') &&
+          (
+            txt.includes('IRON SHARPENS IRON') ||
+            txt.includes('Private') ||
+            txt.includes('YOUR LEAGUES')
+          )
+        ){
+          container.remove();
+          break;
+        }
+
+        container = container.parentElement;
+      }
+    }
+
+    // Remove any remaining league cards after the pills but before Friends Activity.
+    Array.from(feed.querySelectorAll('*')).forEach(el => {
+      const txt = el.innerText || '';
+      const rect = el.getBoundingClientRect();
+
+      if(
+        rect.top > 380 &&
+        rect.top < 900 &&
+        txt.includes('Private') &&
+        (
+          txt.includes('IRON SHARPENS IRON') ||
+          txt.includes('Iron sharpens Iron')
+        ) &&
+        txt.length < 500
+      ){
+        el.remove();
+      }
+    });
+
+    // Remove loose "YOUR LEAGUES" label if still there.
+    Array.from(feed.querySelectorAll('*')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+      if(txt === 'your leagues'){
+        el.remove();
+      }
+    });
+  }
+
+  function wirePills(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+
+    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
+      const txt = (el.textContent || '').trim().toLowerCase();
+
+      if(txt.includes('leagues') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('leagues');
+        };
+      }
+
+      if(txt.includes('recipes') && !txt.includes('vote') && txt.length < 35){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipes === 'function') openRecipes();
+              else if(typeof loadRecipes === 'function') loadRecipes('mine');
+            }catch(err){}
+          }, 150);
+        };
+      }
+
+      if(txt.includes('recipe vote') && txt.length < 40){
+        el.onclick = function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          if(typeof showScreen === 'function') showScreen('nutrition');
+          setTimeout(() => {
+            try{
+              if(typeof openRecipeVote === 'function') openRecipeVote();
+              else if(typeof showRecipeVote === 'function') showRecipeVote();
+              else if(typeof loadRecipeVote === 'function') loadRecipeVote();
+            }catch(err){}
+          }, 150);
+        };
+      }
+    });
+  }
+
+  async function refreshFeed(){
+    const spin = document.getElementById('forte-pull-refresh-correct');
+
+    if(spin){
+      spin.classList.add('show', 'spin');
+      spin.textContent = '⟳';
+    }
+
+    try{
+      if(typeof loadStories === 'function') await loadStories();
+      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+
+      setTimeout(runFixes, 120);
+    }catch(e){
+      console.error('Refresh error:', e);
+    }finally{
+      setTimeout(() => {
+        if(spin) spin.classList.remove('show', 'spin');
+      }, 500);
+    }
+  }
+
+  function setupCorrectPullRefresh(){
+    // Remove old pull refresh indicators if they exist.
+    document.getElementById('forte-pull-refresh-final')?.remove();
+    document.getElementById('forte-pull-refresh')?.remove();
+
+    if(!document.getElementById('forte-pull-refresh-correct')){
+      const spin = document.createElement('div');
+      spin.id = 'forte-pull-refresh-correct';
+      spin.textContent = '⟳';
+      document.body.appendChild(spin);
+    }
+
+    if(window.fortePullRefreshCorrectInstalled) return;
+    window.fortePullRefreshCorrectInstalled = true;
+
+    let startY = null;
+    let startedAtTop = false;
+    let pulling = false;
+
+    function isFeedActive(){
+      return (
+        document.getElementById('feed-screen')?.classList.contains('active') ||
+        document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed'
+      );
+    }
+
+    function atVeryTop(){
+      const feed = document.getElementById('feed-screen');
+
+      const pageTop =
+        window.scrollY <= 2 ||
+        document.documentElement.scrollTop <= 2 ||
+        document.body.scrollTop <= 2;
+
+      const feedTop =
+        !feed ||
+        feed.scrollTop <= 2;
+
+      return pageTop && feedTop;
+    }
+
+    document.addEventListener('touchstart', function(e){
+      if(!isFeedActive()) return;
+
+      startedAtTop = atVeryTop();
+      if(!startedAtTop) return;
+
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }, { passive:true });
+
+    document.addEventListener('touchmove', function(e){
+      if(!pulling || !startedAtTop || startY === null) return;
+
+      const diff = e.touches[0].clientY - startY;
+      const spin = document.getElementById('forte-pull-refresh-correct');
+
+      if(diff > 55 && atVeryTop()){
+        spin?.classList.add('show');
+      }
+    }, { passive:true });
+
+    document.addEventListener('touchend', function(e){
+      if(!pulling || !startedAtTop || startY === null) return;
+
+      const diff = e.changedTouches[0].clientY - startY;
+
+      pulling = false;
+      startY = null;
+      startedAtTop = false;
+
+      if(diff > 105 && atVeryTop()){
+        refreshFeed();
+      }else{
+        document.getElementById('forte-pull-refresh-correct')?.classList.remove('show');
+      }
+    }, { passive:true });
+  }
+
+  function runFixes(){
+    addCSS();
+    fixMessageIcon();
+    removeLeagueCardsArea();
+    wirePills();
+  }
+
+  addCSS();
+  setupCorrectPullRefresh();
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(runFixes, 80);
+        setTimeout(runFixes, 350);
+      }
+
+      return result;
+    };
+  }
+
+  const oldLoadFeedPosts = window.loadFeedPosts;
+  if(typeof oldLoadFeedPosts === 'function'){
+    window.loadFeedPosts = async function(){
+      const result = await oldLoadFeedPosts.apply(this, arguments);
+      setTimeout(runFixes, 100);
+      return result;
+    };
+  }
+
+  setTimeout(runFixes, 300);
+  setTimeout(runFixes, 1000);
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
