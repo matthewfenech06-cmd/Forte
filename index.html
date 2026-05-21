@@ -3099,80 +3099,25 @@ async function joinLeague(leagueId){
   showToast('Joined league! 🏆');loadLeagues();
 }
 
-async function openLeague(leagueId){
-  const{data:league}=await sb.from('leagues').select('*').eq('id',leagueId).single();
-  const{data:members}=await sb.from('league_members').select('profiles(id,username,full_name,avatar_url,points)').eq('league_id',leagueId).eq('status','accepted');
-  if(!league)return;
-  const sorted=(members||[]).map(m=>m.profiles).filter(Boolean).sort((a,b)=>(b.points||0)-(a.points||0));
-  const ranks=['gold','silver','bronze'];
-  const daysLeft=league.end_date?Math.max(0,Math.ceil((new Date(league.end_date)-new Date())/86400000)):null;
-  document.getElementById('post-modal-content').innerHTML=`
-    <div style="margin-bottom:16px">
-      <div style="font-family:'Inter',sans-serif;font-size:18px;font-weight:600;margin-bottom:4px">${league.name}</div>
-      ${league.description?`<div style="font-size:13px;color:var(--text2);margin-bottom:8px">${league.description}</div>`:''}
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${daysLeft!==null?`<span style="background:var(--bg3);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2)">⏳ ${daysLeft} days left</span>`:''}
-        ${league.reward?`<span style="background:var(--accent-dim);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--accent);font-weight:600">🏆 ${league.reward}</span>`:''}
-      </div>
-    </div>
-    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Leaderboard</div>
-    ${sorted.map((u,i)=>`
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="font-family:'Inter',sans-serif;font-size:15px;font-weight:600;width:28px;color:${i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'var(--text3)'}">${i+1}</div>
-        ${avatarEl(u,32)}
-        <div style="flex:1"><div style="font-size:14px;font-weight:600">${u.full_name||u.username}</div></div>
-        <div style="font-family:'Inter',sans-serif;font-size:16px;font-weight:700;color:var(--accent)">${u.points||0}</div>
-      </div>`).join('')}
-    <div style="margin-top:14px">
-      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Invite friends</div>
-      <div id="league-invite-list-${leagueId}"></div>
-    </div>
-  `;
-  loadFriendsForInvite(leagueId);
-  document.getElementById('post-modal').classList.add('open');
-}
+// openLeague defined below — single definitive version
 
 async function loadFriendsForInvite(leagueId){
   if(!user)return;
+  const{data}=await sb.from('friendships').select('addressee_id,profiles!friendships_addressee_id_fkey(id,username,full_name)').eq('requester_id',user.id).eq('status','accepted');
   const el=document.getElementById('league-invite-list-'+leagueId);
   if(!el)return;
-
-  // Get friends
-  const{data:friends}=await sb.from('friendships')
-    .select('addressee_id,profiles!friendships_addressee_id_fkey(id,username,full_name,avatar_url)')
-    .eq('requester_id',user.id).eq('status','accepted');
-
-  // Get people already in or invited to this league
-  const{data:alreadyIn}=await sb.from('league_members')
-    .select('user_id,status')
-    .eq('league_id',leagueId);
-
-  const inLeagueIds = new Set((alreadyIn||[]).map(m=>m.user_id));
-
-  const available = (friends||[]).map(f=>f.profiles).filter(Boolean)
-    .filter(u=>!inLeagueIds.has(u.id));
-
-  if(!available.length){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0">All friends are already in this league</div>';
-    return;
-  }
-  el.innerHTML=available.map(u=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="width:30px;height:30px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent);flex-shrink:0">
-          ${u.avatar_url?`<img src="${u.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:(u.full_name||u.username||'?')[0].toUpperCase()}
-        </div>
-        <div style="font-size:13px;font-weight:500">${u.full_name||u.username}</div>
-      </div>
-      <button onclick="inviteToLeague('${leagueId}','${u.id}',this)" style="background:rgba(255,0,144,.15);border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;color:#ff0090;cursor:pointer">Invite</button>
+  if(!data||!data.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">No friends to invite yet</div>';return;}
+  el.innerHTML=data.map(f=>f.profiles).filter(Boolean).map(u=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:500">${u.full_name||u.username}</div>
+      <button onclick="inviteToLeague('${leagueId}','${u.id}')" style="background:var(--accent-dim);border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer">Invite</button>
     </div>`).join('');
 }
 
-async function inviteToLeague(leagueId,userId,btn){
+async function inviteToLeague(leagueId,userId){
   const{error}=await sb.from('league_members').insert({league_id:leagueId,user_id:userId,status:'pending'});
   if(error)return showToast('Already invited!');
   showToast('Invite sent! 🤝');
-  if(btn){btn.textContent='Invited ✓';btn.disabled=true;btn.style.opacity='.5';}
 }
 
 async function setLeagueTab(el,tab){
@@ -5748,6 +5693,16 @@ function updateRecipeTotals(){
 
 // openCreateRecipe override removed - merged into original
 
+
+async function startLeague(leagueId){
+  if(!user) return;
+  if(!confirm('Start the league now? All members will begin tracking from 0 points at the same time.')) return;
+  const{error} = await sb.from('leagues').update({started_at: new Date().toISOString()}).eq('id',leagueId).eq('created_by',user.id);
+  if(error) return showToast('Could not start league');
+  showToast('League started! 🚀 Points tracking begins now');
+  openLeague(leagueId);
+}
+
 // ─── UTILS ──────────────────────────────────────────────
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
@@ -6793,77 +6748,84 @@ async function startDMWithMessage(otherUserId,message){
   });
 }
 
-openLeague = async function(leagueId){
-  const { data:league } = await sb.from('leagues').select('*').eq('id',leagueId).single();
-  if(!league) return fpToast('League not found');
+async function openLeague(leagueId){
+  const{data:league}=await sb.from('leagues').select('*').eq('id',leagueId).single();
+  if(!league) return showToast('League not found');
 
-  // Fetch all accepted members with profile data
-  const { data:members, error:membErr } = await sb
+  // Fetch ALL accepted members with their profiles
+  const{data:members,error:mErr}=await sb
     .from('league_members')
-    .select('id,user_id,joined_at,profiles(id,username,full_name,avatar_url,points,weekly_workouts)')
+    .select('id,user_id,joined_at,profiles(id,username,full_name,avatar_url,points)')
     .eq('league_id',leagueId)
     .eq('status','accepted');
 
-  if(membErr) console.error('League members error:',membErr);
+  if(mErr) console.error('Members error:',mErr);
 
-  const rows = [];
-  for(const m of (members || [])){
-    const p = m.profiles || {};
-    if(!p.id) continue;
-    // Count workouts since joining
-    let workouts = 0, recipes = 0;
-    try{
-      const start = m.joined_at || league.created_at || '2020-01-01';
-      const [{count:wc},{count:rc}] = await Promise.all([
-        sb.from('workouts').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start),
-        sb.from('recipes').select('*',{count:'exact',head:true}).eq('user_id',m.user_id).gte('created_at',start),
-      ]);
-      workouts = wc||0;
-      recipes = rc||0;
-    }catch(e){}
-    rows.push({
-      ...p,
-      league_points: p.points||0,
-      league_workouts: workouts,
-      league_recipes: recipes,
-    });
-  }
+  const isAdmin = league.created_by === user?.id;
+  const isStarted = !!league.started_at;
+  const daysLeft = league.end_date ? Math.max(0,Math.ceil((new Date(league.end_date)-new Date())/86400000)) : null;
 
-  rows.sort((a,b) => b.league_points - a.league_points);
+  // Build leaderboard rows
+  const rows = (members||[]).map(m=>{
+    const p = m.profiles||{};
+    return {
+      id: p.id,
+      username: p.username,
+      full_name: p.full_name,
+      avatar_url: p.avatar_url,
+      pts: p.points||0,
+    };
+  }).filter(r=>r.id).sort((a,b)=>b.pts-a.pts);
 
-  document.getElementById('post-modal-content').innerHTML = `
-    <div style="margin-bottom:16px">
-      <div style="font-family:'Inter',sans-serif;font-size:18px;font-weight:800;margin-bottom:4px">${fpEsc(league.name)}</div>
-      ${league.description ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">${fpEsc(league.description)}</div>` : ''}
-      <div style="font-size:12px;color:var(--text3)">Leaderboard since joining league</div>
-    </div>
+  const medalColor = i => i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'var(--text3)';
 
-    <div style="display:grid;grid-template-columns:36px 1fr 58px 70px 60px;gap:6px;padding:0 0 8px;font-size:11px;color:var(--text3);font-weight:800;text-transform:uppercase">
-      <div>#</div><div>User</div><div>Pts</div><div>Workouts</div><div>Recipes</div>
-    </div>
-
-    ${rows.map((u,i) => `
-      <div style="display:grid;grid-template-columns:36px 1fr 58px 70px 60px;gap:6px;align-items:center;padding:10px 0;border-top:1px solid var(--border)">
-        <div style="font-weight:800;color:${i===0?'#FFD700':i===1?'#C0C0C0':i===2?'#CD7F32':'var(--text3)'}">${i+1}</div>
-        <div style="display:flex;align-items:center;gap:8px;min-width:0">
-          ${fpAvatar(u,30)}
-          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fpEsc(u.username || u.full_name || 'User')}</div>
-        </div>
-        <div style="font-size:13px;font-weight:800;color:var(--accent)">${u.league_points}</div>
-        <div style="font-size:13px;font-weight:700">${u.league_workouts}</div>
-        <div style="font-size:13px;font-weight:700">${u.league_recipes}</div>
+  document.getElementById('post-modal-content').innerHTML=`
+    <div style="margin-bottom:14px">
+      <div style="font-size:19px;font-weight:700;margin-bottom:4px">${league.name}</div>
+      ${league.description?`<div style="font-size:13px;color:var(--text2);margin-bottom:8px">${league.description}</div>`:''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        ${daysLeft!==null?`<span style="background:var(--bg3);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2)">⏳ ${daysLeft} days left</span>`:''}
+        ${league.reward?`<span style="background:rgba(255,0,144,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#ff0090;font-weight:600">🏆 ${league.reward}</span>`:''}
+        <span style="background:var(--bg3);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2)">${rows.length} member${rows.length!==1?'s':''}</span>
+        ${isStarted?`<span style="background:rgba(0,200,100,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#00c864;font-weight:600">🟢 Active</span>`:`<span style="background:rgba(255,165,0,.1);border-radius:6px;padding:4px 10px;font-size:12px;color:#f0a500;font-weight:600">⏳ Not started</span>`}
       </div>
-    `).join('') || '<div style="font-size:13px;color:var(--text3)">No members yet</div>'}
+      ${isAdmin&&!isStarted?`
+        <button onclick="startLeague('${leagueId}')" style="width:100%;background:#ff0090;border:none;border-radius:var(--radius-sm);padding:12px;font-size:14px;font-weight:700;color:#fff;cursor:pointer;margin-bottom:12px">
+          🚀 Start league — lock in members & begin tracking points
+        </button>
+        <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:12px">Once started, all members begin from 0 points at the same time</div>
+      `:''}
+      ${isAdmin&&isStarted?`<div style="font-size:12px;color:#00c864;margin-bottom:10px">🟢 League started ${new Date(league.started_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>`:''}
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+      ${isStarted?'Leaderboard':'Members'}
+    </div>
+
+    ${rows.length===0?'<div style="font-size:13px;color:var(--text3);padding:12px 0">No members yet</div>':
+      rows.map((u,i)=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:15px;font-weight:700;width:24px;text-align:center;color:${medalColor(i)}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#ff0090;flex-shrink:0">
+            ${u.avatar_url?`<img src="${u.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:(u.full_name||u.username||'?')[0].toUpperCase()}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.full_name||u.username||'User'}</div>
+            <div style="font-size:11px;color:var(--text3)">@${u.username||''}</div>
+          </div>
+          <div style="font-size:16px;font-weight:700;color:#ff0090">${isStarted?u.pts:'-'}</div>
+        </div>`).join('')}
 
     <div style="margin-top:16px">
-      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Invite friends</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Invite friends</div>
       <div id="league-invite-list-${leagueId}"></div>
     </div>
   `;
 
   document.getElementById('post-modal').classList.add('open');
   loadFriendsForInvite(leagueId);
-};
+}
+
 
 /* ---------- profile stats order: Friends / Points / Workouts / Recipes ---------- */
 syncProfile = async function(){
