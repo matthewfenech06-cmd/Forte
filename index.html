@@ -16568,615 +16568,9 @@ setTimeout(() => {
 }, 1500);
 </script>
   <script>
-/* =========================================================
-   FORTE TOP ICONS CLEANUP PATCH
-   - Makes message + notification icons bigger/cleaner
-   - Removes hidden small-circle look
-   - Makes unread badges clearer
-   ========================================================= */
 
-(function(){
-  function improveTopIcons(){
-    const possibleIcons = Array.from(document.querySelectorAll('button, .icon-btn, [onclick], a')).filter(el => {
-      const txt = (el.textContent || '').toLowerCase();
-      const html = (el.innerHTML || '').toLowerCase();
-      const onclick = (el.getAttribute('onclick') || '').toLowerCase();
-      const id = (el.id || '').toLowerCase();
-      const cls = (el.className || '').toString().toLowerCase();
 
-      return (
-        id.includes('message') ||
-        id.includes('notif') ||
-        cls.includes('message') ||
-        cls.includes('notif') ||
-        onclick.includes('message') ||
-        onclick.includes('notification') ||
-        html.includes('bell') ||
-        html.includes('message') ||
-        html.includes('chat') ||
-        html.includes('notification') ||
-        txt === '🔔' ||
-        txt === '💬'
-      );
-    });
 
-    possibleIcons.forEach(btn => {
-      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
-      const id = (btn.id || '').toLowerCase();
-      const cls = (btn.className || '').toString().toLowerCase();
-      const html = (btn.innerHTML || '').toLowerCase();
-
-      const isTopIcon =
-        btn.closest('.topbar') ||
-        btn.closest('.topbar-actions') ||
-        btn.getBoundingClientRect().top < 160;
-
-      if(!isTopIcon) return;
-
-      const isMessage =
-        id.includes('message') ||
-        cls.includes('message') ||
-        onclick.includes('message') ||
-        onclick.includes('dm') ||
-        html.includes('message') ||
-        html.includes('chat');
-
-      const isNotif =
-        id.includes('notif') ||
-        cls.includes('notif') ||
-        onclick.includes('notification') ||
-        html.includes('bell') ||
-        html.includes('notification');
-
-      if(!isMessage && !isNotif) return;
-
-      btn.classList.add('forte-clean-top-icon');
-
-      btn.style.width = '48px';
-      btn.style.height = '48px';
-      btn.style.minWidth = '48px';
-      btn.style.borderRadius = '50%';
-      btn.style.background = 'transparent';
-      btn.style.border = 'none';
-      btn.style.boxShadow = 'none';
-      btn.style.display = 'inline-flex';
-      btn.style.alignItems = 'center';
-      btn.style.justifyContent = 'center';
-      btn.style.position = 'relative';
-      btn.style.color = 'var(--text)';
-      btn.style.padding = '0';
-      btn.style.margin = '0 2px';
-      btn.style.opacity = '1';
-
-      const svg = btn.querySelector('svg');
-      if(svg){
-        svg.style.width = '31px';
-        svg.style.height = '31px';
-        svg.style.strokeWidth = '2.3';
-        svg.style.opacity = '1';
-      }
-
-      // If it is plain emoji/text icon, enlarge it too
-      if(!svg){
-        btn.style.fontSize = '29px';
-        btn.style.lineHeight = '1';
-      }
-    });
-
-    improveBadges();
-  }
-
-  function improveBadges(){
-    const badges = Array.from(document.querySelectorAll('*')).filter(el => {
-      const txt = (el.textContent || '').trim();
-      const cls = (el.className || '').toString().toLowerCase();
-      const id = (el.id || '').toLowerCase();
-
-      return (
-        cls.includes('badge') ||
-        id.includes('badge') ||
-        id.includes('unread') ||
-        cls.includes('unread')
-      ) && txt && txt.length <= 3;
-    });
-
-    badges.forEach(badge => {
-      const parent = badge.parentElement;
-      if(!parent) return;
-
-      const top = parent.getBoundingClientRect().top;
-      if(top > 170) return;
-
-      badge.style.position = 'absolute';
-      badge.style.top = '5px';
-      badge.style.right = '4px';
-      badge.style.minWidth = '18px';
-      badge.style.height = '18px';
-      badge.style.padding = '0 5px';
-      badge.style.borderRadius = '999px';
-      badge.style.background = '#ff2d55';
-      badge.style.color = '#fff';
-      badge.style.fontSize = '11px';
-      badge.style.fontWeight = '900';
-      badge.style.display = 'flex';
-      badge.style.alignItems = 'center';
-      badge.style.justifyContent = 'center';
-      badge.style.border = '2px solid #050505';
-      badge.style.lineHeight = '1';
-      badge.style.zIndex = '5';
-
-      parent.style.position = 'relative';
-    });
-
-    // Also improve tiny dot notifications
-    document.querySelectorAll('.notification-dot, .notif-dot, .unread-dot').forEach(dot => {
-      const top = dot.parentElement?.getBoundingClientRect().top || 999;
-      if(top > 170) return;
-
-      dot.style.width = '10px';
-      dot.style.height = '10px';
-      dot.style.background = '#ff2d55';
-      dot.style.border = '2px solid #050505';
-      dot.style.borderRadius = '50%';
-      dot.style.position = 'absolute';
-      dot.style.top = '8px';
-      dot.style.right = '8px';
-      dot.style.zIndex = '5';
-    });
-  }
-
-  function addIconCSS(){
-    if(document.getElementById('forte-top-icon-css')) return;
-
-    const style = document.createElement('style');
-    style.id = 'forte-top-icon-css';
-    style.textContent = `
-      .forte-clean-top-icon svg {
-        width: 31px !important;
-        height: 31px !important;
-      }
-
-      .forte-clean-top-icon:active {
-        transform: scale(.92);
-      }
-
-      .topbar-actions {
-        gap: 8px !important;
-        align-items: center !important;
-      }
-
-      .forte-clean-top-icon:hover {
-        background: rgba(255,255,255,.06) !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  const oldShowScreenTopIcons = window.showScreen;
-
-  if(typeof oldShowScreenTopIcons === 'function'){
-    window.showScreen = function(){
-      const result = oldShowScreenTopIcons.apply(this, arguments);
-      setTimeout(improveTopIcons, 80);
-      setTimeout(improveTopIcons, 350);
-      return result;
-    };
-  }
-
-  addIconCSS();
-
-  setTimeout(improveTopIcons, 500);
-  setTimeout(improveTopIcons, 1200);
-
-  const obs = new MutationObserver(() => {
-    setTimeout(improveTopIcons, 80);
-  });
-
-  obs.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-})();
-</script>
-  <script>
-/* =========================================================
-   FORTE MESSAGE ICON - ROUNDED CHAT BUBBLE STYLE
-   - replaces message icon with clean rounded bubble
-   - matches the bell icon size/style
-   ========================================================= */
-
-(function () {
-  function fixMessageIconBubble() {
-    const topButtons = Array.from(document.querySelectorAll('button, a, div'))
-      .filter(el => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top > 170 || rect.right < (window.innerWidth - 230)) return false;
-
-        const id = (el.id || '').toLowerCase();
-        const cls = (el.className || '').toString().toLowerCase();
-        const html = (el.innerHTML || '').toLowerCase();
-        const onclick = (el.getAttribute('onclick') || '').toLowerCase();
-
-        return (
-          id.includes('message') ||
-          id.includes('chat') ||
-          id.includes('dm') ||
-          cls.includes('message') ||
-          cls.includes('chat') ||
-          cls.includes('dm') ||
-          onclick.includes('message') ||
-          onclick.includes('chat') ||
-          onclick.includes('dm') ||
-          html.includes('message') ||
-          html.includes('chat')
-        );
-      });
-
-    if (!topButtons.length) return;
-
-    const msgBtn = topButtons[0];
-
-    msgBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"
-        style="width:31px;height:31px;display:block;">
-        <path
-          d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
-          stroke="currentColor"
-          stroke-width="2.15"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-        <path
-          d="M8 11.35H16"
-          stroke="currentColor"
-          stroke-width="2.15"
-          stroke-linecap="round"
-        />
-      </svg>
-    `;
-
-    msgBtn.style.width = '48px';
-    msgBtn.style.height = '48px';
-    msgBtn.style.minWidth = '48px';
-    msgBtn.style.borderRadius = '50%';
-    msgBtn.style.display = 'inline-flex';
-    msgBtn.style.alignItems = 'center';
-    msgBtn.style.justifyContent = 'center';
-    msgBtn.style.background = 'rgba(255,255,255,0.06)';
-    msgBtn.style.border = 'none';
-    msgBtn.style.boxShadow = 'none';
-    msgBtn.style.color = '#fff';
-    msgBtn.style.padding = '0';
-    msgBtn.style.margin = '0 2px';
-    msgBtn.style.position = 'relative';
-    msgBtn.style.opacity = '1';
-    msgBtn.style.transition = 'transform .15s ease, background .15s ease';
-
-    msgBtn.onmousedown = () => msgBtn.style.transform = 'scale(0.93)';
-    msgBtn.onmouseup = () => msgBtn.style.transform = 'scale(1)';
-    msgBtn.onmouseleave = () => msgBtn.style.transform = 'scale(1)';
-  }
-
-  function runFixes() {
-    setTimeout(fixMessageIconBubble, 100);
-    setTimeout(fixMessageIconBubble, 500);
-    setTimeout(fixMessageIconBubble, 1200);
-  }
-
-  const oldShowScreen = window.showScreen;
-
-  if (typeof oldShowScreen === 'function') {
-    window.showScreen = function () {
-      const result = oldShowScreen.apply(this, arguments);
-      runFixes();
-      return result;
-    };
-  }
-
-  const observer = new MutationObserver(() => {
-    runFixes();
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
-  runFixes();
-})();
-</script>
-  <script>
-/* =========================================================
-   FORTE FEED CLEANUP + SPLASH LOADING ANIMATION
-   - Removes league cards from main feed
-   - Makes Leagues pill open leagues screen
-   - Hides login flash with animated Forte splash
-   ========================================================= */
-
-(function(){
-  function addSplashCSS(){
-    if(document.getElementById('forte-splash-css')) return;
-
-    const style = document.createElement('style');
-    style.id = 'forte-splash-css';
-    style.textContent = `
-      #forte-splash {
-        position: fixed;
-        inset: 0;
-        z-index: 999999;
-        background: #050505;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: opacity .35s ease, visibility .35s ease;
-      }
-
-      #forte-splash.hide {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-      }
-
-      .forte-splash-inner {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        transform: translateY(-10px);
-      }
-
-      .forte-splash-bars {
-        display: flex;
-        align-items: flex-end;
-        gap: 5px;
-        height: 46px;
-      }
-
-      .forte-splash-bars span {
-        width: 9px;
-        border-radius: 999px;
-        background: linear-gradient(180deg, #ff0090, #8b0055);
-        animation: forteBarGrow 1.05s ease-in-out infinite;
-        box-shadow: 0 0 18px rgba(255,0,144,.35);
-      }
-
-      .forte-splash-bars span:nth-child(1) {
-        height: 16px;
-        animation-delay: 0s;
-      }
-
-      .forte-splash-bars span:nth-child(2) {
-        height: 26px;
-        animation-delay: .1s;
-      }
-
-      .forte-splash-bars span:nth-child(3) {
-        height: 36px;
-        animation-delay: .2s;
-      }
-
-      .forte-splash-bars span:nth-child(4) {
-        height: 46px;
-        animation-delay: .3s;
-      }
-
-      @keyframes forteBarGrow {
-        0%, 100% {
-          transform: scaleY(.55);
-          opacity: .55;
-        }
-        45% {
-          transform: scaleY(1.1);
-          opacity: 1;
-        }
-      }
-
-      .forte-splash-word {
-        color: #fff;
-        font-size: 34px;
-        font-weight: 900;
-        letter-spacing: -1.5px;
-        font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
-        overflow: hidden;
-        white-space: nowrap;
-        width: 0;
-        animation: forteTyping 1.15s steps(6,end) forwards;
-      }
-
-      .forte-splash-word span {
-        color: #ff0090;
-      }
-
-      @keyframes forteTyping {
-        from { width: 0; }
-        to { width: 92px; }
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  function showSplash(){
-    addSplashCSS();
-
-    if(document.getElementById('forte-splash')) return;
-
-    const splash = document.createElement('div');
-    splash.id = 'forte-splash';
-    splash.innerHTML = `
-      <div class="forte-splash-inner">
-        <div class="forte-splash-bars">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <div class="forte-splash-word">forte<span>.</span></div>
-      </div>
-    `;
-
-    document.body.appendChild(splash);
-  }
-
-  function hideSplash(){
-    const splash = document.getElementById('forte-splash');
-    if(!splash) return;
-
-    splash.classList.add('hide');
-
-    setTimeout(() => {
-      splash.remove();
-    }, 450);
-  }
-
-  function removeFeedLeagueCards(){
-    const feed =
-      document.getElementById('feed-screen') ||
-      document.querySelector('.screen.active');
-
-    if(!feed) return;
-
-    const labels = Array.from(feed.querySelectorAll('*')).filter(el => {
-      const txt = (el.textContent || '').trim().toLowerCase();
-      return txt === 'your leagues';
-    });
-
-    labels.forEach(label => {
-      let section = label;
-
-      for(let i = 0; i < 7 && section; i++){
-        const txt = section.innerText || '';
-
-        if(
-          txt.includes('YOUR LEAGUES') &&
-          txt.includes('View all')
-        ){
-          section.remove();
-          return;
-        }
-
-        section = section.parentElement;
-      }
-
-      label.remove();
-    });
-
-    // Fallback: remove league card containers if the label/card split is different
-    Array.from(feed.querySelectorAll('*')).forEach(el => {
-      const txt = el.innerText || '';
-
-      if(
-        txt.includes('YOUR LEAGUES') &&
-        txt.includes('View all') &&
-        txt.length < 600
-      ){
-        el.remove();
-      }
-    });
-  }
-
-  function makeLeaguePillOpenLeagues(){
-    const feed =
-      document.getElementById('feed-screen') ||
-      document.querySelector('.screen.active');
-
-    if(!feed) return;
-
-    Array.from(feed.querySelectorAll('button, div, a')).forEach(el => {
-      const txt = (el.textContent || '').trim().toLowerCase();
-
-      if(txt.includes('leagues') && txt.length < 30){
-        el.onclick = function(e){
-          e.preventDefault();
-          e.stopPropagation();
-
-          if(typeof showScreen === 'function'){
-            showScreen('leagues');
-          }else if(typeof openLeagues === 'function'){
-            openLeagues();
-          }else{
-            const leaguesScreen = document.getElementById('leagues-screen');
-            if(leaguesScreen){
-              document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-              leaguesScreen.classList.add('active');
-            }
-          }
-        };
-
-        el.style.cursor = 'pointer';
-      }
-    });
-  }
-
-  function feedCleanup(){
-    removeFeedLeagueCards();
-    makeLeaguePillOpenLeagues();
-  }
-
-  // Show splash immediately if possible
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', showSplash);
-  }else{
-    showSplash();
-  }
-
-  // Hide splash only after auth/app has had time to decide logged-in state
-  window.addEventListener('load', function(){
-    setTimeout(hideSplash, 1400);
-  });
-
-  // Backup hide so it never gets stuck
-  setTimeout(hideSplash, 3200);
-
-  const oldInitSplash = window.init;
-  if(typeof oldInitSplash === 'function'){
-    window.init = async function(){
-      showSplash();
-
-      try{
-        const result = await oldInitSplash.apply(this, arguments);
-        setTimeout(hideSplash, 700);
-        return result;
-      }catch(e){
-        setTimeout(hideSplash, 900);
-        throw e;
-      }
-    };
-  }
-
-  const oldShowScreenFeedCleanup = window.showScreen;
-  if(typeof oldShowScreenFeedCleanup === 'function'){
-    window.showScreen = function(name){
-      const result = oldShowScreenFeedCleanup.apply(this, arguments);
-
-      if(name === 'feed'){
-        setTimeout(feedCleanup, 80);
-        setTimeout(feedCleanup, 350);
-      }
-
-      return result;
-    };
-  }
-
-  const obs = new MutationObserver(() => {
-    const activeFeed =
-      document.getElementById('feed-screen')?.classList.contains('active') ||
-      document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed';
-
-    if(activeFeed){
-      setTimeout(feedCleanup, 80);
-    }
-  });
-
-  obs.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
-  setTimeout(feedCleanup, 700);
-  setTimeout(feedCleanup, 1500);
-})();
-</script>
-  <script>
 /* =========================================================
    FORTE REMOVE INSTANT SPLASH
    Removes the early splash only after app/auth is ready.
@@ -17211,6 +16605,359 @@ setTimeout(() => {
 
   // Safety so it never gets stuck
   setTimeout(removeInstantSplash, 3500);
+})();
+</script>
+  <script>
+/* =========================================================
+   FORTE PERFORMANCE + FEED IMAGE + PULL REFRESH + NAV FIX
+   - Removes expensive repeated scanning behaviour
+   - Fixes feed images so full image shows
+   - Adds Instagram-style pull to refresh
+   - Restores bottom nav size
+   - Keeps clean message/bell icon styling without heavy loops
+   ========================================================= */
+
+(function(){
+  function toast(msg){
+    if(typeof showToast === 'function') return showToast(msg);
+    if(typeof fpToast === 'function') return fpToast(msg);
+    if(typeof safeToast === 'function') return safeToast(msg);
+    console.log(msg);
+  }
+
+  function addPerfCSS(){
+    if(document.getElementById('forte-performance-css')) return;
+
+    const style = document.createElement('style');
+    style.id = 'forte-performance-css';
+    style.textContent = `
+      /* Restore bottom nav size */
+      #bottom-nav,
+      .bottom-nav {
+        height: 82px !important;
+        min-height: 82px !important;
+        padding: 8px 14px calc(8px + env(safe-area-inset-bottom)) !important;
+      }
+
+      #bottom-nav .nav-item,
+      .bottom-nav .nav-item {
+        min-width: 58px !important;
+        height: 58px !important;
+        gap: 4px !important;
+        font-size: 12px !important;
+      }
+
+      #bottom-nav .nav-item svg,
+      .bottom-nav .nav-item svg {
+        width: 29px !important;
+        height: 29px !important;
+        min-width: 29px !important;
+        min-height: 29px !important;
+      }
+
+      #bottom-nav .nav-item span,
+      .bottom-nav .nav-item span {
+        font-size: 12px !important;
+        font-weight: 800 !important;
+      }
+
+      /* Feed images: show full image, no black/cropped huge gaps */
+      #feed-screen .workout-post img,
+      #feed-posts .workout-post img,
+      #feed-posts img {
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        object-fit: contain !important;
+        display: block !important;
+        background: transparent !important;
+      }
+
+      #feed-screen .workout-post,
+      #feed-posts .workout-post {
+        overflow: hidden !important;
+        contain: layout paint;
+      }
+
+      /* Prevent weird massive blank gaps inside feed posts */
+      #feed-posts .workout-post video {
+        width: 100% !important;
+        height: auto !important;
+        max-height: 650px !important;
+        object-fit: contain !important;
+        background: #000 !important;
+      }
+
+      /* Cleaner top icons without constant JS scanning */
+      .forte-top-clean-icon {
+        width: 48px !important;
+        height: 48px !important;
+        min-width: 48px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.06) !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #fff !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+      }
+
+      .forte-top-clean-icon svg {
+        width: 31px !important;
+        height: 31px !important;
+        stroke-width: 2.15 !important;
+      }
+
+      .forte-pull-refresh {
+        position: fixed;
+        left: 50%;
+        top: 78px;
+        transform: translateX(-50%) scale(.85);
+        z-index: 99999;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgba(20,20,20,.92);
+        border: 1px solid rgba(255,255,255,.12);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        color: #999;
+        font-size: 20px;
+        transition: transform .18s ease, opacity .18s ease;
+      }
+
+      .forte-pull-refresh.show {
+        display: flex;
+      }
+
+      .forte-pull-refresh.spin {
+        color: #ff0090;
+        animation: forteRefreshSpin .8s linear infinite;
+      }
+
+      @keyframes forteRefreshSpin {
+        from { transform: translateX(-50%) rotate(0deg); }
+        to { transform: translateX(-50%) rotate(360deg); }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function fixTopIconsOnce(){
+    const topArea = document.querySelector('.topbar-actions') || document.querySelector('#feed-screen .topbar-actions');
+    if(!topArea) return;
+
+    const candidates = Array.from(topArea.querySelectorAll('button, a, div')).filter(el => {
+      const id = (el.id || '').toLowerCase();
+      const cls = (el.className || '').toString().toLowerCase();
+      const onclick = (el.getAttribute('onclick') || '').toLowerCase();
+      const html = (el.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message') ||
+        html.includes('bell') ||
+        id.includes('notif') ||
+        cls.includes('notif') ||
+        onclick.includes('notification')
+      );
+    });
+
+    candidates.forEach(btn => {
+      btn.classList.add('forte-top-clean-icon');
+    });
+
+    const messageBtn = candidates.find(btn => {
+      const id = (btn.id || '').toLowerCase();
+      const cls = (btn.className || '').toString().toLowerCase();
+      const onclick = (btn.getAttribute('onclick') || '').toLowerCase();
+      const html = (btn.innerHTML || '').toLowerCase();
+
+      return (
+        id.includes('message') ||
+        id.includes('chat') ||
+        id.includes('dm') ||
+        cls.includes('message') ||
+        cls.includes('chat') ||
+        onclick.includes('message') ||
+        onclick.includes('dm') ||
+        html.includes('chat') ||
+        html.includes('message')
+      );
+    });
+
+    if(messageBtn && !messageBtn.dataset.forteBubbleIcon){
+      messageBtn.dataset.forteBubbleIcon = '1';
+      messageBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M8 11.35H16"
+            stroke="currentColor"
+            stroke-linecap="round"
+          />
+        </svg>
+      `;
+    }
+  }
+
+  function fixFeedImagesNow(){
+    document.querySelectorAll('#feed-posts img, #feed-screen .workout-post img').forEach(img => {
+      img.style.width = '100%';
+      img.style.height = 'auto';
+      img.style.maxHeight = 'none';
+      img.style.objectFit = 'contain';
+      img.style.background = 'transparent';
+
+      img.onload = function(){
+        img.style.height = 'auto';
+        img.style.maxHeight = 'none';
+      };
+    });
+  }
+
+  async function refreshFeed(){
+    const spinner = document.getElementById('forte-pull-refresh');
+    if(spinner){
+      spinner.classList.add('show', 'spin');
+      spinner.textContent = '⟳';
+    }
+
+    try{
+      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+      if(typeof loadStories === 'function') await loadStories();
+      if(typeof loadFeedLeagues === 'function') await loadFeedLeagues();
+
+      setTimeout(fixFeedImagesNow, 100);
+      setTimeout(fixTopIconsOnce, 100);
+    }catch(e){
+      console.error('REFRESH FEED ERROR:', e);
+      toast('Could not refresh feed');
+    }finally{
+      setTimeout(() => {
+        if(spinner){
+          spinner.classList.remove('spin');
+          spinner.classList.remove('show');
+        }
+      }, 450);
+    }
+  }
+
+  function addPullRefresh(){
+    if(document.getElementById('forte-pull-refresh')) return;
+
+    const spinner = document.createElement('div');
+    spinner.id = 'forte-pull-refresh';
+    spinner.className = 'forte-pull-refresh';
+    spinner.textContent = '⟳';
+    document.body.appendChild(spinner);
+
+    let startY = null;
+    let pulling = false;
+
+    document.addEventListener('touchstart', function(e){
+      const activeFeed =
+        document.getElementById('feed-screen')?.classList.contains('active') ||
+        document.querySelector('.nav-item.active span')?.textContent?.trim().toLowerCase() === 'feed';
+
+      if(!activeFeed) return;
+      if(window.scrollY > 5) return;
+
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }, { passive:true });
+
+    document.addEventListener('touchmove', function(e){
+      if(!pulling || startY === null) return;
+
+      const y = e.touches[0].clientY;
+      const diff = y - startY;
+
+      if(diff > 35){
+        spinner.classList.add('show');
+        spinner.style.transform = `translateX(-50%) scale(${Math.min(1.15, .85 + diff / 260)})`;
+      }
+    }, { passive:true });
+
+    document.addEventListener('touchend', function(e){
+      if(!pulling || startY === null) return;
+
+      const endY = e.changedTouches[0].clientY;
+      const diff = endY - startY;
+
+      pulling = false;
+      startY = null;
+      spinner.style.transform = 'translateX(-50%) scale(.85)';
+
+      if(diff > 80){
+        refreshFeed();
+      }else{
+        spinner.classList.remove('show');
+      }
+    }, { passive:true });
+  }
+
+  function lightweightBootFixes(){
+    addPerfCSS();
+    addPullRefresh();
+
+    requestAnimationFrame(() => {
+      fixTopIconsOnce();
+      fixFeedImagesNow();
+    });
+
+    setTimeout(fixTopIconsOnce, 400);
+    setTimeout(fixFeedImagesNow, 400);
+  }
+
+  const oldShowScreen = window.showScreen;
+  if(typeof oldShowScreen === 'function'){
+    window.showScreen = function(name){
+      const result = oldShowScreen.apply(this, arguments);
+
+      if(name === 'feed'){
+        setTimeout(() => {
+          fixTopIconsOnce();
+          fixFeedImagesNow();
+        }, 120);
+      }
+
+      return result;
+    };
+  }
+
+  const oldLoadFeedPosts = window.loadFeedPosts;
+  if(typeof oldLoadFeedPosts === 'function'){
+    window.loadFeedPosts = async function(){
+      const result = await oldLoadFeedPosts.apply(this, arguments);
+      setTimeout(fixFeedImagesNow, 80);
+      return result;
+    };
+  }
+
+  window.forteRefreshFeed = refreshFeed;
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', lightweightBootFixes);
+  }else{
+    lightweightBootFixes();
+  }
 })();
 </script>
    Paste directly before </body>
