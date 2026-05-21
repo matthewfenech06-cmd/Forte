@@ -16697,6 +16697,113 @@ setTimeout(() => {
   });
 })();
 </script>
+  <script>
+/* =========================================================
+   FORTE MESSAGE ICON - ROUNDED CHAT BUBBLE STYLE
+   - replaces message icon with clean rounded bubble
+   - matches the bell icon size/style
+   ========================================================= */
+
+(function () {
+  function fixMessageIconBubble() {
+    const topButtons = Array.from(document.querySelectorAll('button, a, div'))
+      .filter(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top > 170 || rect.right < (window.innerWidth - 230)) return false;
+
+        const id = (el.id || '').toLowerCase();
+        const cls = (el.className || '').toString().toLowerCase();
+        const html = (el.innerHTML || '').toLowerCase();
+        const onclick = (el.getAttribute('onclick') || '').toLowerCase();
+
+        return (
+          id.includes('message') ||
+          id.includes('chat') ||
+          id.includes('dm') ||
+          cls.includes('message') ||
+          cls.includes('chat') ||
+          cls.includes('dm') ||
+          onclick.includes('message') ||
+          onclick.includes('chat') ||
+          onclick.includes('dm') ||
+          html.includes('message') ||
+          html.includes('chat')
+        );
+      });
+
+    if (!topButtons.length) return;
+
+    const msgBtn = topButtons[0];
+
+    msgBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"
+        style="width:31px;height:31px;display:block;">
+        <path
+          d="M7.5 18.2H7.1C4.45 18.2 2.75 16.55 2.75 14V8.65C2.75 6.1 4.45 4.45 7.1 4.45H16.9C19.55 4.45 21.25 6.1 21.25 8.65V14C21.25 16.55 19.55 18.2 16.9 18.2H12.25L8.15 21.05C7.85 21.25 7.5 21.05 7.5 20.7V18.2Z"
+          stroke="currentColor"
+          stroke-width="2.15"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M8 11.35H16"
+          stroke="currentColor"
+          stroke-width="2.15"
+          stroke-linecap="round"
+        />
+      </svg>
+    `;
+
+    msgBtn.style.width = '48px';
+    msgBtn.style.height = '48px';
+    msgBtn.style.minWidth = '48px';
+    msgBtn.style.borderRadius = '50%';
+    msgBtn.style.display = 'inline-flex';
+    msgBtn.style.alignItems = 'center';
+    msgBtn.style.justifyContent = 'center';
+    msgBtn.style.background = 'rgba(255,255,255,0.06)';
+    msgBtn.style.border = 'none';
+    msgBtn.style.boxShadow = 'none';
+    msgBtn.style.color = '#fff';
+    msgBtn.style.padding = '0';
+    msgBtn.style.margin = '0 2px';
+    msgBtn.style.position = 'relative';
+    msgBtn.style.opacity = '1';
+    msgBtn.style.transition = 'transform .15s ease, background .15s ease';
+
+    msgBtn.onmousedown = () => msgBtn.style.transform = 'scale(0.93)';
+    msgBtn.onmouseup = () => msgBtn.style.transform = 'scale(1)';
+    msgBtn.onmouseleave = () => msgBtn.style.transform = 'scale(1)';
+  }
+
+  function runFixes() {
+    setTimeout(fixMessageIconBubble, 100);
+    setTimeout(fixMessageIconBubble, 500);
+    setTimeout(fixMessageIconBubble, 1200);
+  }
+
+  const oldShowScreen = window.showScreen;
+
+  if (typeof oldShowScreen === 'function') {
+    window.showScreen = function () {
+      const result = oldShowScreen.apply(this, arguments);
+      runFixes();
+      return result;
+    };
+  }
+
+  const observer = new MutationObserver(() => {
+    runFixes();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  runFixes();
+})();
+</script>
    Paste directly before </body>
    ========================================================= */
 
