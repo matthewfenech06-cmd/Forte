@@ -1548,7 +1548,7 @@ body.light svg[stroke="var(--text3)"]{stroke:rgba(16,17,20,.42)!important}
       <button onclick="toggleStoryLike()" id="story-like-btn" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer">🤍</button>
     </div>
     <!-- Viewers button (only for own stories) -->
-    <button id="story-viewers-btn" onclick="openStoryViewers()" style="display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:8px 14px;color:#fff;font-size:13px;cursor:pointer;display:none;align-items:center;gap:6px">
+    <button id="story-viewers-btn" onclick="event.stopPropagation();openStoryViewers(event)" style="display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:8px 14px;color:#fff;font-size:13px;cursor:pointer;align-items:center;gap:6px">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       <span id="story-view-count">0</span>
     </button>
@@ -6686,22 +6686,47 @@ async function uploadStory(){
 
 
 // ─── STORY VIEWERS + LIKES ───────────────────────────────
-async function openStoryViewers(){
+function getCurrentStorySafe(){
+  return storyGroups?.[currentStoryGroup]?.stories?.[currentStoryIdx] || null;
+}
+
+function getCurrentStoryGroupSafe(){
+  return storyGroups?.[currentStoryGroup] || null;
+}
+
+async function openStoryViewers(ev){
+  if(ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+
   const panel = document.getElementById('story-viewers-panel');
-  panel.style.display = 'block';
-  // Pause story timer
+  if(!panel) return;
+
+  const story = getCurrentStorySafe();
+  if(!story) return showToast('No story selected');
+
   clearTimeout(storyTimer);
-  const story = storyGroups[currentStoryGroup]?.stories[currentStoryIdx];
-  if(!story) return;
-  loadStoryViewers(story.id);
+  panel.style.display = 'block';
+  panel.style.transform = 'translateY(100%)';
+  panel.style.transition = 'transform .22s ease';
+  requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
+
+  await loadStoryViewers(story.id);
 }
 
 function closeStoryViewers(){
-  document.getElementById('story-viewers-panel').style.display = 'none';
-  // Resume story
-  const story = storyGroups[currentStoryGroup]?.stories[currentStoryIdx];
-  const duration = story?.media_type==='video' ? 15000 : 5000;
-  storyTimer = setTimeout(()=>nextStory(), duration);
+  const panel = document.getElementById('story-viewers-panel');
+  if(panel){
+    panel.style.transform = 'translateY(100%)';
+    setTimeout(() => {
+      panel.style.display = 'none';
+      panel.style.transform = '';
+      panel.style.transition = '';
+    }, 180);
+  }
+
+  const story = getCurrentStorySafe();
+  const duration = story?.media_type === 'video' ? 15000 : 5000;
+  clearTimeout(storyTimer);
+  storyTimer = setTimeout(() => nextStory(), duration);
 }
 
 function setViewersTab(el, tab){
@@ -6715,134 +6740,234 @@ function setViewersTab(el, tab){
   document.getElementById('sv-likes-list').style.display = tab==='likes'?'block':'none';
 }
 
+function storyViewerAvatar(p, liked){
+  const letter = ((p?.full_name || p?.username || '?')[0] || '?').toUpperCase();
+  return `<div style="position:relative;width:42px;height:42px;flex-shrink:0">
+    <div style="width:42px;height:42px;border-radius:50%;background:var(--bg3);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#ff0090">
+      ${p?.avatar_url ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : letter}
+    </div>
+    ${liked ? `<div style="position:absolute;right:-3px;bottom:-3px;width:19px;height:19px;border-radius:50%;background:#ff0090;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">♥</div>` : ''}
+  </div>`;
+}
+
+async function fetchStoryViewerRows(table, storyId){
+  const { data, error } = await sb
+    .from(table)
+    .select('user_id,created_at')
+    .eq('story_id', storyId)
+    .order('created_at', { ascending:false });
+
+  if(error){
+    console.warn(table + ' load failed:', error);
+    return [];
+  }
+
+  const seen = new Set();
+  return (data || []).filter(row => {
+    if(!row.user_id || seen.has(row.user_id)) return false;
+    seen.add(row.user_id);
+    return true;
+  });
+}
+
 async function loadStoryViewers(storyId){
-  // Load views
-  const{data:views} = await sb.from('story_views')
-    .select('*,profiles(id,username,full_name,avatar_url)')
-    .eq('story_id', storyId)
-    .order('created_at',{ascending:false});
+  const viewsList = document.getElementById('sv-views-list');
+  const likesList = document.getElementById('sv-likes-list');
+  if(viewsList) viewsList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading viewers...</div>';
+  if(likesList) likesList.innerHTML = '';
 
-  // Load likes
-  const{data:likes} = await sb.from('story_likes')
-    .select('*,profiles(id,username,full_name,avatar_url)')
-    .eq('story_id', storyId)
-    .order('created_at',{ascending:false});
+  const [views, likes] = await Promise.all([
+    fetchStoryViewerRows('story_views', storyId),
+    fetchStoryViewerRows('story_likes', storyId)
+  ]);
 
-  const viewCount = views?.length||0;
-  const likeCount = likes?.length||0;
+  const likedIds = new Set(likes.map(x => x.user_id));
+  const allIds = [...new Set([...views.map(x => x.user_id), ...likes.map(x => x.user_id)])];
 
-  document.getElementById('sv-view-count').textContent = viewCount;
-  document.getElementById('sv-like-count').textContent = likeCount;
-  document.getElementById('story-view-count').textContent = viewCount;
+  let profileMap = new Map();
+  if(allIds.length){
+    const { data:profilesData, error:profilesError } = await sb
+      .from('profiles')
+      .select('id,username,full_name,avatar_url')
+      .in('id', allIds);
 
-  const renderList = (data, el) => {
-    if(!data||!data.length){
-      el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">None yet</div>';
+    if(profilesError) console.warn('viewer profiles load failed:', profilesError);
+    profileMap = new Map((profilesData || []).map(p => [p.id, p]));
+  }
+
+  const viewCount = views.length;
+  const likeCount = likes.length;
+
+  const svViewCount = document.getElementById('sv-view-count');
+  const svLikeCount = document.getElementById('sv-like-count');
+  const storyViewCount = document.getElementById('story-view-count');
+  if(svViewCount) svViewCount.textContent = viewCount;
+  if(svLikeCount) svLikeCount.textContent = likeCount;
+  if(storyViewCount) storyViewCount.textContent = viewCount;
+
+  const renderList = (rows, el, showHeartFromLikes=true) => {
+    if(!el) return;
+    if(!rows || !rows.length){
+      el.innerHTML = '<div style="padding:24px 20px;text-align:center;color:var(--text3);font-size:13px">No one yet</div>';
       return;
     }
-    el.innerHTML = data.map(v=>{
-      const p = v.profiles||{};
-      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
-        <div style="width:38px;height:38px;border-radius:50%;background:var(--bg3);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#ff0090">
-          ${p.avatar_url?`<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:(p.full_name||p.username||'?')[0].toUpperCase()}
+
+    el.innerHTML = rows.map(row => {
+      const p = profileMap.get(row.user_id) || {};
+      const liked = showHeartFromLikes && likedIds.has(row.user_id);
+      return `<div onclick="viewProfile('${row.user_id}')" style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--border);cursor:pointer">
+        ${storyViewerAvatar(p, liked)}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${forteEscapeHtml(p.full_name || p.username || 'User')}</div>
+          <div style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${forteEscapeHtml(p.username || '')}</div>
         </div>
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:500">${p.full_name||p.username||'User'}</div>
-          <div style="font-size:11px;color:var(--text3)">@${p.username||''}</div>
-        </div>
+        ${liked ? '<div style="font-size:16px;color:#ff0090">♥</div>' : ''}
       </div>`;
     }).join('');
   };
 
-  renderList(views, document.getElementById('sv-views-list'));
-  renderList(likes, document.getElementById('sv-likes-list'));
+  renderList(views, viewsList, true);
+  renderList(likes, likesList, true);
 }
 
 async function toggleStoryLike(){
   if(!user) return showToast('Sign in first');
-  const story = storyGroups[currentStoryGroup]?.stories[currentStoryIdx];
+  const story = getCurrentStorySafe();
   if(!story) return;
+
   const btn = document.getElementById('story-like-btn');
-  const isLiked = btn.textContent === '❤️';
+  const isLiked = btn?.textContent === '❤️';
+
   if(isLiked){
-    await sb.from('story_likes').delete().eq('story_id',story.id).eq('user_id',user.id);
-    btn.textContent = '🤍';
+    await sb.from('story_likes').delete().eq('story_id', story.id).eq('user_id', user.id);
+    if(btn) btn.textContent = '🤍';
   } else {
-    await sb.from('story_likes').insert({story_id:story.id, user_id:user.id}).catch(()=>{});
-    btn.textContent = '❤️';
-    // Notify story owner
+    const { error } = await sb.from('story_likes').insert({ story_id:story.id, user_id:user.id, created_at:new Date().toISOString() });
+    if(error && !String(error.message || '').toLowerCase().includes('duplicate')){
+      console.warn('story_like insert failed:', error);
+      // fallback for tables with unique constraint: ignore duplicate via upsert
+      await sb.from('story_likes').upsert({ story_id:story.id, user_id:user.id }, { onConflict:'story_id,user_id' });
+    }
+    if(btn) btn.textContent = '❤️';
+
     if(story.user_id !== user.id){
-      const name = profile?.full_name||profile?.username||'Someone';
-      await sendNotification(story.user_id,'story_like',name+' liked your story ❤️',null);
+      const name = profile?.full_name || profile?.username || 'Someone';
+      await sendNotification(story.user_id, 'story_like', name + ' liked your story ❤️', null);
     }
   }
 }
 
 async function sendStoryReply(){
   const inp = document.getElementById('story-reply-inp');
-  const msg = inp.value.trim();
+  const msg = inp?.value.trim();
   if(!msg) return;
-  const story = storyGroups[currentStoryGroup]?.stories[currentStoryIdx];
-  if(!story||!user) return;
-  inp.value='';
-  // Send as DM
+
+  const story = getCurrentStorySafe();
+  if(!story || !user) return;
+
+  inp.value = '';
   await startDM(story.user_id);
-  // Small delay then send
   setTimeout(async()=>{
     const inp2 = document.getElementById('chat-input');
-    if(inp2){ inp2.value = '↩️ Replied to your story: '+msg; sendMessage(); }
-  },400);
+    if(inp2){
+      inp2.value = '↩️ Replied to your story: ' + msg;
+      sendMessage();
+    }
+  }, 400);
   showToast('Reply sent 💬');
 }
 
-// Record story view
+// Record story view — works even if story_views has no unique constraint.
 async function recordStoryView(storyId){
-  if(!user||!storyId) return;
-  await sb.from('story_views').upsert({
-    story_id:storyId, user_id:user.id
-  },{onConflict:'story_id,user_id'}).catch(()=>{});
+  if(!user || !storyId) return;
+
+  const { data:existing, error:checkError } = await sb
+    .from('story_views')
+    .select('user_id')
+    .eq('story_id', storyId)
+    .eq('user_id', user.id)
+    .limit(1);
+
+  if(!checkError && existing && existing.length) return;
+
+  const { error:insertError } = await sb
+    .from('story_views')
+    .insert({ story_id:storyId, user_id:user.id, created_at:new Date().toISOString() });
+
+  if(insertError){
+    // If the table has a unique constraint, this is safe as a fallback.
+    const { error:upsertError } = await sb
+      .from('story_views')
+      .upsert({ story_id:storyId, user_id:user.id }, { onConflict:'story_id,user_id' });
+    if(upsertError) console.warn('story view record failed:', insertError, upsertError);
+  }
 }
 
 // Override showStory to record view + show correct bottom bar
 const _origShowStory = showStory;
 showStory = function(groupIdx, storyIdx){
   _origShowStory(groupIdx, storyIdx);
+
   const group = storyGroups[groupIdx];
-  const story = group?.stories[storyIdx];
-  const isMe = group?.isMe;
-  // Show/hide correct bottom bar elements
+  const story = group?.stories?.[storyIdx];
+  const isMe = !!group?.isMe || story?.user_id === user?.id;
+
   const replyWrap = document.getElementById('story-reply-wrap');
   const viewersBtn = document.getElementById('story-viewers-btn');
+  const likeBtn = document.getElementById('story-like-btn');
+
   if(replyWrap) replyWrap.style.display = isMe ? 'none' : 'flex';
   if(viewersBtn){
     viewersBtn.style.display = isMe ? 'flex' : 'none';
+    viewersBtn.onclick = function(ev){ ev.stopPropagation(); openStoryViewers(ev); };
     if(isMe) loadStoryViewCount(story?.id);
   }
-  // Reset like button
-  const likeBtn = document.getElementById('story-like-btn');
-  if(likeBtn) likeBtn.textContent = '🤍';
+
+  if(likeBtn){
+    likeBtn.textContent = '🤍';
+    likeBtn.style.display = isMe ? 'none' : 'inline-block';
+  }
+
   if(!isMe && story && user) recordStoryView(story.id);
-  // Check if liked
-  if(!isMe && story && user){
-    sb.from('story_likes').select('id').eq('story_id',story.id).eq('user_id',user.id).then(({data})=>{
-      if(data&&data.length && likeBtn) likeBtn.textContent='❤️';
-    });
+
+  if(!isMe && story && user && likeBtn){
+    sb.from('story_likes')
+      .select('user_id')
+      .eq('story_id', story.id)
+      .eq('user_id', user.id)
+      .limit(1)
+      .then(({data}) => {
+        if(data && data.length && likeBtn) likeBtn.textContent = '❤️';
+      });
   }
 };
 
 async function loadStoryViewCount(storyId){
-  if(!storyId) return;
-  const{count} = await sb.from('story_views').select('*',{count:'exact',head:true}).eq('story_id',storyId);
   const el = document.getElementById('story-view-count');
-  if(el) el.textContent = count||0;
+  if(!storyId){ if(el) el.textContent = '0'; return; }
+
+  const { data, error } = await sb
+    .from('story_views')
+    .select('user_id')
+    .eq('story_id', storyId);
+
+  if(error){
+    console.warn('story view count failed:', error);
+    if(el) el.textContent = '0';
+    return;
+  }
+
+  const count = new Set((data || []).map(v => v.user_id).filter(Boolean)).size;
+  if(el) el.textContent = count;
 }
 
-// Close viewers panel when tapping story
+// Close viewers panel when tapping outside the slide-up panel, but not when pressing the viewers button.
 document.addEventListener('click', e=>{
   const panel = document.getElementById('story-viewers-panel');
-  if(panel && panel.style.display==='block' && !panel.contains(e.target)){
-    closeStoryViewers();
-  }
+  const btn = document.getElementById('story-viewers-btn');
+  if(!panel || panel.style.display !== 'block') return;
+  if(panel.contains(e.target) || btn?.contains(e.target)) return;
+  closeStoryViewers();
 });
 
 // ─── CAMERA SWIPE FILTERS ────────────────────────────────
