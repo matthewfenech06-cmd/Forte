@@ -210,9 +210,42 @@ select.inp{appearance:none}
 /* Forte feed cleanup */
 .feed-header-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px}
 .feed-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-shrink:0}
-.feed-top-icon{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg3);border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--text);position:relative;padding:0;margin:0;box-shadow:none;cursor:pointer;transition:transform .15s ease,background .15s ease}
+.feed-top-icon{
+  width:42px;
+  height:42px;
+  min-width:42px;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.16), transparent 34%),
+    linear-gradient(145deg, rgba(255,0,144,.18), var(--bg3) 58%);
+  border:1px solid rgba(255,255,255,.10);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--text);
+  position:relative;
+  padding:0;
+  margin:0;
+  box-shadow:
+    0 8px 22px rgba(0,0,0,.32),
+    inset 0 1px 0 rgba(255,255,255,.08);
+  cursor:pointer;
+  transition:transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
 .feed-top-icon:active{transform:scale(.92)}
+.feed-top-icon:hover{
+  border-color:rgba(255,0,144,.35);
+  box-shadow:
+    0 10px 26px rgba(0,0,0,.36),
+    0 0 18px rgba(255,0,144,.12),
+    inset 0 1px 0 rgba(255,255,255,.10);
+}
 .feed-top-icon svg{width:20px;height:20px;display:block}
+.feed-message-icon{
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255,255,255,.18), transparent 34%),
+    linear-gradient(145deg, rgba(255,0,144,.28), rgba(255,0,144,.06) 42%, var(--bg3));
+}
 .feed-icon-dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;border:2px solid var(--bg)}
 .feed-icon-dot.pink{background:#ff0090}
 .feed-icon-dot.red{background:var(--red)}
@@ -524,10 +557,13 @@ select.inp{appearance:none}
         <span style="font-family:'Inter',sans-serif;font-size:16px;font-weight:600;letter-spacing:-.3px;color:var(--text)">forte<span style="color:#ff0090">.</span></span>
       </div>
       <div class="feed-top-actions">
-        <button class="feed-top-icon feed-message-icon" onclick="openDMs()" aria-label="Messages">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
-          <span id="dm-dot" class="feed-icon-dot pink" style="display:none"></span>
-        </button>
+       <button class="feed-top-icon feed-message-icon" onclick="openDMs()" aria-label="Messages">
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5.2 5.6C6.7 4.25 9.05 3.5 12 3.5s5.3.75 6.8 2.1C20.25 6.9 21 8.75 21 11.05c0 2.22-.78 4.02-2.35 5.38-1.57 1.36-3.72 2.04-6.45 2.04-.46 0-.93-.02-1.4-.07L6.2 20.55c-.62.29-1.27-.27-1.08-.93l.93-3.18C4.02 15.08 3 13.28 3 11.05c0-2.3.75-4.15 2.2-5.45Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+    <path d="M8.35 10.75h.02M12 10.75h.02M15.65 10.75h.02" stroke="currentColor" stroke-width="2.7" stroke-linecap="round"/>
+  </svg>
+  <span id="dm-dot" class="feed-icon-dot pink" style="display:none"></span>
+</button>
         <button class="feed-top-icon feed-bell-icon" id="notif-btn" onclick="openNotifications()" aria-label="Notifications">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span id="notif-dot" class="feed-icon-dot red" style="display:none"></span>
@@ -3996,10 +4032,106 @@ async function initSearchScreen(){
   }, 300);
 }
 
+let followerIds = new Set();
+
+async function forteGetCurrentUserSafe(){
+  if(typeof user !== 'undefined' && user?.id) return user;
+  if(window.user?.id) return window.user;
+
+  const { data } = await sb.auth.getUser();
+  if(data?.user){
+    window.user = data.user;
+    try{ user = data.user; }catch(e){}
+    return data.user;
+  }
+
+  return null;
+}
+
+function forteEscapeHtml(v){
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+if(typeof window.forteEscHtml !== 'function'){
+  window.forteEscHtml = forteEscapeHtml;
+}
+if(typeof window.forteCurrentUser !== 'function'){
+  window.forteCurrentUser = forteGetCurrentUserSafe;
+}
+
 async function loadFollowingIds(){
-  if(!user) return;
-  const{data} = await sb.from('friendships').select('addressee_id').eq('requester_id', user.id);
-  followingIds = new Set((data||[]).map(f => f.addressee_id));
+  const me = await forteGetCurrentUserSafe();
+  followingIds = new Set();
+  followerIds = new Set();
+
+  if(!me) return;
+
+  const [{ data:outgoing }, { data:incoming }] = await Promise.all([
+    sb.from('friendships')
+      .select('addressee_id')
+      .eq('requester_id', me.id)
+      .eq('status', 'accepted'),
+
+    sb.from('friendships')
+      .select('requester_id')
+      .eq('addressee_id', me.id)
+      .eq('status', 'accepted')
+  ]);
+
+  followingIds = new Set((outgoing || []).map(f => f.addressee_id));
+  followerIds = new Set((incoming || []).map(f => f.requester_id));
+}
+
+async function loadFollowRelationsForUsers(ids){
+  const me = await forteGetCurrentUserSafe();
+  if(!me || !ids || !ids.length) return;
+
+  const cleanIds = [...new Set(ids.filter(Boolean).filter(id => id !== me.id))];
+  if(!cleanIds.length) return;
+
+  const [{ data:outgoing }, { data:incoming }] = await Promise.all([
+    sb.from('friendships')
+      .select('addressee_id')
+      .eq('requester_id', me.id)
+      .in('addressee_id', cleanIds)
+      .eq('status', 'accepted'),
+
+    sb.from('friendships')
+      .select('requester_id')
+      .eq('addressee_id', me.id)
+      .in('requester_id', cleanIds)
+      .eq('status', 'accepted')
+  ]);
+
+  (outgoing || []).forEach(f => followingIds.add(f.addressee_id));
+  (incoming || []).forEach(f => followerIds.add(f.requester_id));
+}
+
+function getFollowLabel(targetId){
+  const iFollowThem = followingIds.has(targetId);
+  const theyFollowMe = followerIds.has(targetId);
+
+  if(iFollowThem && theyFollowMe) return 'Friends';
+  if(iFollowThem) return 'Following';
+  if(theyFollowMe) return 'Follow back';
+  return 'Follow';
+}
+
+function styleFollowButton(btn, label){
+  if(!btn) return;
+
+  const active = label === 'Follow' || label === 'Follow back';
+
+  btn.textContent = label;
+  btn.style.background = active ? 'var(--accent)' : 'var(--bg3)';
+  btn.style.color = active ? '#0a0a0a' : 'var(--text2)';
+  btn.style.border = active ? 'none' : '1.5px solid var(--border)';
 }
 
 async function loadSuggestedUsers(){
@@ -4073,11 +4205,29 @@ function clearMainSearch(){
 async function doSearch(q, tab){
   const el = document.getElementById('search-results-list');
   if(!el) return;
-  if(tab === 'people'){
-    const{data} = await sb.from('profiles').select('id,username,full_name,avatar_url,points,streak').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id', user?.id||'').limit(15);
-    if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No users found for "'+q+'"</div>';return;}
-    el.innerHTML = '<div style="margin-bottom:8px;font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600">'+data.length+' results</div>' + data.map(u => userSearchCard(u)).join('');
-  } else if(tab === 'workouts'){
+ if(tab === 'people'){
+  const me = await forteGetCurrentUserSafe();
+
+  const { data } = await sb
+    .from('profiles')
+    .select('id,username,full_name,avatar_url,points,streak')
+    .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
+    .neq('id', me?.id || '')
+    .limit(15);
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">No users found for "' + q + '"</div>';
+    return;
+  }
+
+  await loadFollowRelationsForUsers(data.map(u => u.id));
+
+  el.innerHTML =
+    '<div style="margin-bottom:8px;font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600">' +
+    data.length +
+    ' results</div>' +
+    data.map(u => userSearchCard(u)).join('');
+}
     const{data} = await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)').ilike('workouts.title', '%'+q+'%').limit(10);
     if(!data||!data.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text3)">No workouts found</div>';return;}
     el.innerHTML = data.filter(p=>p.workouts).map(p=>{
@@ -4109,55 +4259,84 @@ async function doSearch(q, tab){
     el.innerHTML = await Promise.all(data.map(l=>renderLeagueCard(l,true))).then(cards=>cards.join(''));
   }
 }
-
 function userSearchCard(u){
-  const isFollowing = followingIds.has(u.id);
   const isMe = user && u.id === user.id;
+  const label = getFollowLabel(u.id);
+  const active = label === 'Follow' || label === 'Follow back';
+
   return `<div style="background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px">
-    <div onclick="viewProfile('${u.id}')" style="cursor:pointer;display:flex;align-items:center;gap:12px;flex:1">
+    <div onclick="viewProfile('${u.id}')" style="cursor:pointer;display:flex;align-items:center;gap:12px;flex:1;min-width:0">
       ${avatarEl(u, 44)}
-      <div>
-        <div style="font-size:15px;font-weight:600">${u.full_name||u.username}</div>
-        <div style="font-size:12px;color:var(--text3)">@${u.username}</div>
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${forteEscapeHtml(u.full_name || u.username || 'User')}</div>
+        <div style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${forteEscapeHtml(u.username || '')}</div>
         <div style="display:flex;gap:10px;margin-top:3px">
-          <span style="font-size:11px;color:var(--accent);font-weight:600">${u.points||0} pts</span>
-          <span style="font-size:12px;color:var(--text3)">🔥 ${u.streak||0}</span>
+          <span style="font-size:11px;color:var(--accent);font-weight:600">${u.points || 0} pts</span>
+          <span style="font-size:12px;color:var(--text3)">🔥 ${u.streak || 0}</span>
         </div>
       </div>
     </div>
-    ${isMe?'':`<button onclick="toggleFollow('${u.id}',this)" style="background:${isFollowing?'var(--bg3)':'var(--accent)'};border:${isFollowing?'1.5px solid var(--border)':'none'};border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;color:${isFollowing?'var(--text2)':'#0a0a0a'};cursor:pointer;white-space:nowrap;flex-shrink:0">${isFollowing?'Following':'Follow'}</button>`}
+    ${isMe ? '' : `<button onclick="event.stopPropagation();toggleFollow('${u.id}',this)" style="background:${active ? 'var(--accent)' : 'var(--bg3)'};border:${active ? 'none' : '1.5px solid var(--border)'};border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;color:${active ? '#0a0a0a' : 'var(--text2)'};cursor:pointer;white-space:nowrap;flex-shrink:0">${label}</button>`}
   </div>`;
 }
 
-async function toggleFollow(userId, btn){
-  if(!user) return showToast('Sign in first');
-  const isFollowing = followingIds.has(userId);
-  if(isFollowing){
-    // Unfollow
-    await sb.from('friendships').delete().eq('requester_id', user.id).eq('addressee_id', userId);
-    followingIds.delete(userId);
-    btn.textContent = 'Follow';
-    btn.style.background = 'var(--accent)';
-    btn.style.color = '#0a0a0a';
-    btn.style.border = 'none';
-    showToast('Unfollowed');
-  } else {
-    // Follow
-    await sb.from('friendships').insert({requester_id: user.id, addressee_id: userId, status: 'accepted'});
-    followingIds.add(userId);
-    btn.textContent = 'Following';
-    btn.style.background = 'var(--bg3)';
-    btn.style.color = 'var(--text2)';
-    btn.style.border = '1.5px solid var(--border)';
-    showToast('Following! 👋');
-  }
-}
+
 
 // ─── NOTIFICATIONS ────────────────────────────────────────
 function openNotifications(){
   showToast('Notifications coming soon!');
 }
+async function toggleFollow(userId, btn){
+  const me = await forteGetCurrentUserSafe();
+  if(!me) return showToast('Sign in first');
+  if(!userId || userId === me.id) return;
 
+  const currentlyFollowing = followingIds.has(userId);
+
+  if(currentlyFollowing){
+    const { error } = await sb
+      .from('friendships')
+      .delete()
+      .eq('requester_id', me.id)
+      .eq('addressee_id', userId);
+
+    if(error){
+      console.error('UNFOLLOW ERROR:', error);
+      return showToast('Could not unfollow');
+    }
+
+    followingIds.delete(userId);
+    await loadFollowRelationsForUsers([userId]);
+    styleFollowButton(btn, getFollowLabel(userId));
+    showToast('Unfollowed');
+    return;
+  }
+
+  const { error } = await sb
+    .from('friendships')
+    .upsert(
+      {
+        requester_id: me.id,
+        addressee_id: userId,
+        status: 'accepted'
+      },
+      {
+        onConflict: 'requester_id,addressee_id'
+      }
+    );
+
+  if(error){
+    console.error('FOLLOW ERROR:', error);
+    return showToast('Could not follow');
+  }
+
+  followingIds.add(userId);
+  await loadFollowRelationsForUsers([userId]);
+  styleFollowButton(btn, getFollowLabel(userId));
+
+  const label = getFollowLabel(userId);
+  showToast(label === 'Friends' ? 'You are now friends 🤝' : 'Following! 👋');
+}
 
 // ─── STORIES ─────────────────────────────────────────────
 let allStories = [];
@@ -15937,7 +16116,7 @@ function ensureUserProfileScreen(){
 
   screen.innerHTML = `
     <div class="topbar">
-      <button class="icon-btn" onclick="showScreen('feed')" style="margin-right:8px">
+      <button class="icon-btn" onclick="showScreen('search')" style="margin-right:8px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="19" y1="12" x2="5" y2="12"></line>
           <polyline points="12 19 5 12 12 5"></polyline>
@@ -15950,7 +16129,7 @@ function ensureUserProfileScreen(){
     <div class="profile-hero">
       <div class="profile-top">
         <div class="profile-avatar" id="view-profile-avatar"></div>
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="profile-name" id="view-profile-name">Loading...</div>
           <div class="profile-username" id="view-profile-username">@username</div>
           <div style="margin-top:10px;display:flex;gap:8px">
@@ -15961,24 +16140,24 @@ function ensureUserProfileScreen(){
       </div>
 
       <div class="profile-stats">
-        <div class="profile-stat" onclick="loadViewedProfilePosts()" style="cursor:pointer">
+        <div class="profile-stat">
           <div class="profile-stat-val" id="view-profile-friends">0</div>
           <div class="profile-stat-label">Friends</div>
+        </div>
+        <div class="profile-stat" onclick="setViewedProfileTab('workouts')" style="cursor:pointer">
+          <div class="profile-stat-val" id="view-profile-workouts">0</div>
+          <div class="profile-stat-label">Workouts</div>
         </div>
         <div class="profile-stat">
           <div class="profile-stat-val" style="color:var(--accent)" id="view-profile-points">0</div>
           <div class="profile-stat-label">Points</div>
         </div>
-        <div class="profile-stat" onclick="loadViewedProfileWorkouts()" style="cursor:pointer">
-          <div class="profile-stat-val" id="view-profile-workouts">0</div>
-          <div class="profile-stat-label">Workouts</div>
-        </div>
       </div>
     </div>
 
     <div style="display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:2px">
-      <button id="view-tab-posts" onclick="setViewedProfileTab('posts')" style="flex:1;padding:12px;background:none;border:none;color:#ff0090;font-size:12px;font-weight:700;border-bottom:2px solid #ff0090">POSTS</button>
-      <button id="view-tab-workouts" onclick="setViewedProfileTab('workouts')" style="flex:1;padding:12px;background:none;border:none;color:var(--text3);font-size:12px;font-weight:700;border-bottom:2px solid transparent">WORKOUTS</button>
+      <button id="view-tab-workouts" onclick="setViewedProfileTab('workouts')" style="flex:1;padding:12px;background:none;border:none;color:#ff0090;font-size:12px;font-weight:700;border-bottom:2px solid #ff0090">WORKOUTS</button>
+      <button id="view-tab-posts" onclick="setViewedProfileTab('posts')" style="flex:1;padding:12px;background:none;border:none;color:var(--text3);font-size:12px;font-weight:700;border-bottom:2px solid transparent">POSTS</button>
       <button id="view-tab-recipes" onclick="setViewedProfileTab('recipes')" style="flex:1;padding:12px;background:none;border:none;color:var(--text3);font-size:12px;font-weight:700;border-bottom:2px solid transparent">RECIPES</button>
     </div>
 
@@ -15996,24 +16175,15 @@ function showUserProfileScreen(){
 }
 
 async function isFollowingUser(targetId){
-  const u = await forteCurrentUser();
-  if(!u || !targetId) return false;
-
-  const { data } = await sb
-    .from('friendships')
-    .select('id')
-    .or(`and(requester_id.eq.${u.id},addressee_id.eq.${targetId}),and(requester_id.eq.${targetId},addressee_id.eq.${u.id})`)
-    .eq('status','accepted')
-    .maybeSingle();
-
-  return !!data;
+  await loadFollowRelationsForUsers([targetId]);
+  return followingIds.has(targetId);
 }
 
 viewProfile = async function(userId){
-  const u = await forteCurrentUser();
+  const me = await forteGetCurrentUserSafe();
   if(!userId) return;
 
-  if(u && userId === u.id){
+  if(me && userId === me.id){
     showScreen('profile');
     return;
   }
@@ -16024,16 +16194,18 @@ viewProfile = async function(userId){
   const avatar = document.getElementById('view-profile-avatar');
   const content = document.getElementById('view-profile-content');
 
-  if(content) content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">Loading profile...</div>';
+  if(content){
+    content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text3)">Loading profile...</div>';
+  }
 
   try{
     const { data:p, error } = await sb
       .from('profiles')
-      .select('*')
+      .select('id,username,full_name,avatar_url,points')
       .eq('id', userId)
       .single();
 
-    if(error) throw error;
+    if(error || !p) throw error || new Error('Profile not found');
 
     document.getElementById('view-profile-title').textContent = '@' + (p.username || '');
     document.getElementById('view-profile-name').textContent = p.full_name || p.username || 'User';
@@ -16041,55 +16213,92 @@ viewProfile = async function(userId){
 
     avatar.innerHTML = p.avatar_url
       ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
-      : `<span>${forteEscHtml((p.full_name || p.username || '?')[0]).toUpperCase()}</span>`;
+      : `<span>${forteEscapeHtml((p.full_name || p.username || '?')[0]).toUpperCase()}</span>`;
 
-    document.getElementById('view-profile-points').textContent = p.points || 0;
+    const [{ count:friends }, { count:workouts }] = await Promise.all([
+      sb.from('friendships')
+        .select('*', { count:'exact', head:true })
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+        .eq('status', 'accepted'),
 
-    const [{ count:workouts }, { count:recipes }, { count:friends }] = await Promise.all([
-      sb.from('workouts').select('*', { count:'exact', head:true }).eq('user_id', userId).eq('is_public', true),
-      sb.from('recipes').select('*', { count:'exact', head:true }).eq('user_id', userId).eq('is_private', false),
-      sb.from('friendships').select('*', { count:'exact', head:true }).or(`requester_id.eq.${userId},addressee_id.eq.${userId}`).eq('status','accepted')
+      sb.from('workouts')
+        .select('*', { count:'exact', head:true })
+        .eq('user_id', userId)
+        .eq('is_public', true)
     ]);
 
-    document.getElementById('view-profile-workouts').textContent = workouts || 0;
     document.getElementById('view-profile-friends').textContent = friends || 0;
+    document.getElementById('view-profile-workouts').textContent = workouts || 0;
+    document.getElementById('view-profile-points').textContent = p.points || 0;
 
-    const followBtn = document.getElementById('view-profile-follow-btn');
-    const following = await isFollowingUser(userId);
-    followBtn.textContent = following ? 'Following' : 'Follow';
-    followBtn.style.background = following ? 'var(--bg3)' : 'var(--accent)';
-    followBtn.style.color = following ? 'var(--text2)' : '#0a0a0a';
-    followBtn.style.border = following ? '1.5px solid var(--border)' : 'none';
+    await loadFollowRelationsForUsers([userId]);
+    styleFollowButton(document.getElementById('view-profile-follow-btn'), getFollowLabel(userId));
 
-    setViewedProfileTab('posts');
+    setViewedProfileTab('workouts');
 
   }catch(e){
     console.error('VIEW PROFILE SCREEN ERROR:', e);
-    if(content) content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--red)">Could not load profile</div>';
+    if(content){
+      content.innerHTML = '<div style="padding:30px;text-align:center;color:var(--red)">Could not load profile</div>';
+    }
   }
 };
 
 async function followFromProfile(){
   if(!viewedProfileId) return;
+
   const btn = document.getElementById('view-profile-follow-btn');
-  if(typeof toggleFollow === 'function'){
-    await toggleFollow(viewedProfileId, btn);
-  }
-  viewProfile(viewedProfileId);
+  await toggleFollow(viewedProfileId, btn);
+
+  await loadFollowRelationsForUsers([viewedProfileId]);
+  styleFollowButton(btn, getFollowLabel(viewedProfileId));
 }
 
 function setViewedProfileTab(tab){
-  ['posts','workouts','recipes'].forEach(t => {
+  ['workouts','posts','recipes'].forEach(t => {
     const btn = document.getElementById('view-tab-' + t);
     if(!btn) return;
+
     const active = t === tab;
     btn.style.color = active ? '#ff0090' : 'var(--text3)';
     btn.style.borderBottom = active ? '2px solid #ff0090' : '2px solid transparent';
   });
 
-  if(tab === 'posts') loadViewedProfilePosts();
   if(tab === 'workouts') loadViewedProfileWorkouts();
+  if(tab === 'posts') loadViewedProfilePosts();
   if(tab === 'recipes') loadViewedProfileRecipes();
+}
+
+async function loadViewedProfileWorkouts(){
+  const el = document.getElementById('view-profile-content');
+  if(!el || !viewedProfileId) return;
+
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading workouts...</div>';
+
+  const { data } = await sb
+    .from('workouts')
+    .select('*')
+    .eq('user_id', viewedProfileId)
+    .eq('is_public', true)
+    .order('created_at', { ascending:false })
+    .limit(30);
+
+  if(!data || !data.length){
+    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)">No public workouts yet</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="padding:12px 16px">
+      ${data.map(w => `
+        <div onclick="viewPastWorkout('${w.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;cursor:pointer">
+          <div style="font-size:14px;font-weight:700">${forteEscapeHtml(w.title || 'Workout')}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${new Date(w.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:6px">+${w.points_earned || 0} pts</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 async function loadViewedProfilePosts(){
@@ -16118,40 +16327,8 @@ async function loadViewedProfilePosts(){
             ? `<img src="${p.media_url}" style="width:100%;height:100%;object-fit:cover">`
             : p.media_url && p.media_type === 'video'
             ? `<video src="${p.media_url}" style="width:100%;height:100%;object-fit:cover"></video>`
-            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text3);padding:8px">${forteEscHtml(p.workouts?.title || 'Workout')}</div>`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text3);padding:8px">${forteEscapeHtml(p.workouts?.title || p.caption || 'Post')}</div>`
           }
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-async function loadViewedProfileWorkouts(){
-  const el = document.getElementById('view-profile-content');
-  if(!el || !viewedProfileId) return;
-
-  el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Loading workouts...</div>';
-
-  const { data } = await sb
-    .from('workouts')
-    .select('*')
-    .eq('user_id', viewedProfileId)
-    .eq('is_public', true)
-    .order('created_at', { ascending:false })
-    .limit(30);
-
-  if(!data || !data.length){
-    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)">No public workouts yet</div>';
-    return;
-  }
-
-  el.innerHTML = `
-    <div style="padding:12px 16px">
-      ${data.map(w => `
-        <div onclick="viewPastWorkout('${w.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;cursor:pointer">
-          <div style="font-size:14px;font-weight:700">${forteEscHtml(w.title || 'Workout')}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">${new Date(w.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
-          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:6px">+${w.points_earned || 0} pts</div>
         </div>
       `).join('')}
     </div>
@@ -16185,7 +16362,7 @@ async function loadViewedProfileRecipes(){
             ${r.image_url ? `<img src="${r.image_url}" style="width:100%;height:100%;object-fit:cover">` : '🍽️'}
           </div>
           <div style="flex:1">
-            <div style="font-size:14px;font-weight:700">${forteEscHtml(r.title)}</div>
+            <div style="font-size:14px;font-weight:700">${forteEscapeHtml(r.title || 'Recipe')}</div>
             <div style="font-size:12px;color:var(--accent);font-weight:700;margin-top:4px">${r.calories || 0} kcal · ${r.protein || 0}g protein</div>
             <div style="font-size:11px;color:var(--text3);margin-top:4px">${getTimeAgo(r.created_at)}</div>
           </div>
@@ -16194,8 +16371,6 @@ async function loadViewedProfileRecipes(){
     </div>
   `;
 }
-
-
 /* Make username/profile clicks use the full profile screen */
 document.addEventListener('click', function(e){
   const profileNode = e.target.closest('[data-profile-id]');
