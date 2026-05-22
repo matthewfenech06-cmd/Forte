@@ -15333,52 +15333,6 @@ if('serviceWorker' in navigator){
     }
   };
 
-  function addStoryReplyBox(){
-    const modal = document.getElementById('story-viewer-modal') || document.getElementById('story-modal');
-    if(!modal || document.getElementById('story-reply-box')) return;
-
-    const storyImg = modal.querySelector('img,video');
-    const activeStory =
-      window.currentStory ||
-      window.activeStory ||
-      (window.storyGroups && window.currentStoryGroupIndex !== undefined && window.currentStoryIndex !== undefined
-        ? window.storyGroups[window.currentStoryGroupIndex]?.stories?.[window.currentStoryIndex]
-        : null);
-
-    if(!activeStory || activeStory.user_id === window.user?.id) return;
-
-    const box = document.createElement('div');
-    box.id = 'story-reply-box';
-    box.style.cssText = `
-      position:absolute;
-      left:14px;
-      right:14px;
-      bottom:22px;
-      display:flex;
-      gap:8px;
-      z-index:9999;
-    `;
-
-    box.innerHTML = `
-      <input id="story-reply-input" placeholder="Reply to story..." style="flex:1;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
-      <button id="story-reply-send" style="width:46px;border:none;border-radius:50%;background:#ff0090;color:#fff;font-weight:900;font-size:18px">➤</button>
-    `;
-
-    const parent = storyImg?.parentElement || modal.querySelector('.modal') || modal;
-    parent.style.position = 'relative';
-    parent.appendChild(box);
-
-    document.getElementById('story-reply-send').onclick = () => {
-      const txt = document.getElementById('story-reply-input').value;
-      replyToStory(activeStory.id, activeStory.user_id, txt);
-      document.getElementById('story-reply-input').value = '';
-    };
-  }
-
-  setInterval(() => {
-    try{ addStoryReplyBox(); }catch(e){}
-  }, 1000);
-
   /* -----------------------------
      INSTANT CHAT SEND FIX
   ----------------------------- */
@@ -16306,67 +16260,6 @@ if('serviceWorker' in navigator){
     document.body.appendChild(tray);
     setTimeout(() => document.getElementById('forte-story-reply-input-tray')?.focus(), 120);
   };
-
-  function addStoryControls(){
-    const viewer = document.getElementById('story-viewer');
-    if(!viewer || viewer.style.display === 'none') return;
-
-    const story = getActiveStory();
-    if(!story) return;
-
-    const old = document.getElementById('forte-story-controls');
-    if(old) old.remove();
-
-    if(story.user_id === window.user?.id) return;
-
-    const controls = document.createElement('div');
-    controls.id = 'forte-story-controls';
-    controls.style.cssText = `
-      position:fixed;
-      left:12px;
-      right:12px;
-      bottom:20px;
-      z-index:9999;
-      display:flex;
-      align-items:center;
-      gap:8px;
-    `;
-
-    controls.innerHTML = `
-      <input id="forte-story-reply-input" placeholder="Reply to story..." style="flex:1;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
-      <button onclick="forteReplyToStory()" style="width:44px;height:44px;border-radius:50%;border:none;background:#ff0090;color:#fff;font-size:18px;font-weight:900;cursor:pointer">➤</button>
-      <button id="forte-story-like-btn" onclick="forteLikeStory()" style="width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.45);color:#fff;font-size:22px;cursor:pointer">♡</button>
-    `;
-
-    document.body.appendChild(controls);
-  }
-
-  const oldShowStoryForInteractions = typeof showStory === 'function' ? showStory : null;
-
-  if(oldShowStoryForInteractions){
-    window.showStory = function(groupIdx, storyIdx){
-      const result = oldShowStoryForInteractions.apply(this, arguments);
-
-      try{
-        if(typeof storyGroups !== 'undefined'){
-          window.currentStory = storyGroups[groupIdx]?.stories?.[storyIdx] || null;
-        }
-      }catch(e){}
-
-      setTimeout(addStoryControls, 80);
-      return result;
-    };
-  }
-
-  const oldOpenStoryViewerForInteractions = typeof openStoryViewer === 'function' ? openStoryViewer : null;
-
-  if(oldOpenStoryViewerForInteractions){
-    window.openStoryViewer = function(groupIdx){
-      const result = oldOpenStoryViewerForInteractions.apply(this, arguments);
-      setTimeout(addStoryControls, 120);
-      return result;
-    };
-  }
 
   /* swipe up on story opens reaction tray */
   let storyTouchStartY = null;
@@ -18131,353 +18024,7 @@ setTimeout(() => {
   <script>
 /* =========================================================
    FINAL SIGNUP + ONBOARDING FIX
-   Paste this directly before <script>
-/* =========================================================
-   FORTE STORY UX PATCH
-   - Smooth split-second transitions between stories
-   - Records real story views in Supabase
-   - Lets story owner open Instagram-style viewer list
-   Paste before </body>
-   ========================================================= */
-(function(){
-  if(window.__forteStoryUxPatchV1) return;
-  window.__forteStoryUxPatchV1 = true;
-
-  const css = document.createElement('style');
-  css.textContent = `
-    #story-viewer{background:#000!important;overflow:hidden!important}
-    #story-media-wrap{overflow:hidden!important;background:#000!important}
-    #story-img,#story-video{
-      transition:opacity .18s ease, transform .18s ease, filter .18s ease!important;
-      will-change:opacity, transform;
-      backface-visibility:hidden;
-      -webkit-backface-visibility:hidden;
-    }
-    .forte-story-ghost{
-      position:absolute!important;
-      inset:0!important;
-      width:100%!important;
-      height:100vh!important;
-      object-fit:cover!important;
-      z-index:1!important;
-      pointer-events:none!important;
-      transition:opacity .18s ease, transform .18s ease!important;
-      will-change:opacity, transform;
-    }
-    #story-viewers-panel{
-      background:#0b0b0f!important;
-      color:#fff!important;
-      box-shadow:0 -16px 44px rgba(0,0,0,.45)!important;
-    }
-    .light #story-viewers-panel{
-      background:#fff!important;
-      color:#111!important;
-    }
-    #story-viewers-btn{
-      backdrop-filter:blur(12px);
-      -webkit-backdrop-filter:blur(12px);
-    }
-  `;
-  document.head.appendChild(css);
-
-  function esc(v){
-    if(typeof fpEsc === 'function') return fpEsc(v);
-    return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  function ago(v){
-    if(typeof fpTimeAgo === 'function') return fpTimeAgo(v);
-    if(typeof getTimeAgo === 'function') return getTimeAgo(v);
-    return '';
-  }
-
-  function toast(msg){
-    if(typeof fpToast === 'function') return fpToast(msg);
-    if(typeof showToast === 'function') return showToast(msg);
-    console.log(msg);
-  }
-
-  async function forteRecordStoryView(story){
-    if(!story || !story.id || !window.user?.id) return;
-    if(story.user_id === window.user.id) return;
-
-    try{
-      await sb.from('story_views').upsert({
-        story_id: story.id,
-        user_id: window.user.id
-      }, { onConflict:'story_id,user_id' });
-    }catch(e){
-      console.warn('story view not recorded', e);
-    }
-  }
-
-  async function forteLoadStoryViewCount(storyId){
-    const el = document.getElementById('story-view-count');
-    if(!el || !storyId) return;
-    try{
-      const { count } = await sb
-        .from('story_views')
-        .select('*', { count:'exact', head:true })
-        .eq('story_id', storyId);
-      el.textContent = count || 0;
-    }catch(e){
-      el.textContent = '0';
-    }
-  }
-
-  function setStoryBottomBar(group, story){
-    const isMe = !!group?.isMe || story?.user_id === window.user?.id;
-    const replyWrap = document.getElementById('story-reply-wrap');
-    const viewersBtn = document.getElementById('story-viewers-btn');
-    const viewersPanel = document.getElementById('story-viewers-panel');
-
-    if(viewersPanel) viewersPanel.style.display = 'none';
-    if(replyWrap) replyWrap.style.display = isMe ? 'none' : 'flex';
-    if(viewersBtn){
-      viewersBtn.style.display = isMe ? 'flex' : 'none';
-      if(isMe) forteLoadStoryViewCount(story?.id);
-    }
-
-    const likeBtn = document.getElementById('story-like-btn');
-    if(likeBtn) likeBtn.textContent = '🤍';
-
-    if(!isMe && story?.id && window.user?.id && likeBtn){
-      sb.from('story_likes')
-        .select('id')
-        .eq('story_id', story.id)
-        .eq('user_id', window.user.id)
-        .limit(1)
-        .then(({ data }) => {
-          if(data && data.length) likeBtn.textContent = '❤️';
-        });
-    }
-  }
-
-  function animateStoryMedia(story, direction){
-    const wrap = document.getElementById('story-media-wrap');
-    const img = document.getElementById('story-img');
-    const vid = document.getElementById('story-video');
-    if(!wrap || !img || !vid || !story) return;
-
-    const active = img.style.display !== 'none' ? img : (vid.style.display !== 'none' ? vid : null);
-    if(active && (active.getAttribute('src') || active.src)){
-      try{
-        const ghost = active.cloneNode(true);
-        ghost.removeAttribute('id');
-        ghost.className = 'forte-story-ghost';
-        ghost.style.opacity = '1';
-        ghost.style.transform = 'translateX(0) scale(1)';
-        if(ghost.tagName === 'VIDEO'){
-          ghost.muted = true;
-          ghost.pause?.();
-        }
-        wrap.appendChild(ghost);
-        requestAnimationFrame(() => {
-          ghost.style.opacity = '0';
-          ghost.style.transform = `translateX(${-18 * direction}px) scale(.985)`;
-        });
-        setTimeout(() => ghost.remove(), 230);
-      }catch(e){}
-    }
-
-    const incoming = story.media_type === 'video' ? vid : img;
-    const outgoing = story.media_type === 'video' ? img : vid;
-
-    outgoing.style.display = 'none';
-    outgoing.style.opacity = '0';
-
-    incoming.style.display = 'block';
-    incoming.style.position = 'relative';
-    incoming.style.zIndex = '2';
-    incoming.style.opacity = '0';
-    incoming.style.transform = `translateX(${18 * direction}px) scale(.985)`;
-
-    if(story.media_type === 'video'){
-      img.removeAttribute('src');
-      vid.pause?.();
-      vid.src = story.media_url;
-      vid.currentTime = 0;
-      const playVideo = () => vid.play?.().catch(()=>{});
-      vid.onloadeddata = playVideo;
-      setTimeout(playVideo, 120);
-    }else{
-      vid.pause?.();
-      vid.removeAttribute('src');
-      img.src = story.media_url;
-    }
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        incoming.style.opacity = '1';
-        incoming.style.transform = 'translateX(0) scale(1)';
-      });
-    });
-  }
-
-  window.showStory = function(groupIdx, storyIdx){
-    const group = window.storyGroups?.[groupIdx];
-    if(!group || !group.stories?.length) return;
-
-    const story = group.stories[storyIdx];
-    if(!story) return;
-
-    clearTimeout(window.storyTimer);
-
-    const previousGroup = Number.isInteger(window.__forteLastStoryGroup) ? window.__forteLastStoryGroup : groupIdx;
-    const previousIdx = Number.isInteger(window.__forteLastStoryIdx) ? window.__forteLastStoryIdx : storyIdx;
-    let direction = window.__forteStoryDirection || 1;
-    if(groupIdx < previousGroup || (groupIdx === previousGroup && storyIdx < previousIdx)) direction = -1;
-    if(groupIdx > previousGroup || (groupIdx === previousGroup && storyIdx > previousIdx)) direction = 1;
-    if(groupIdx === previousGroup && storyIdx === previousIdx && !window.__forteStoryHasShownOnce) direction = 1;
-    window.__forteLastStoryGroup = groupIdx;
-    window.__forteLastStoryIdx = storyIdx;
-    window.__forteStoryHasShownOnce = true;
-    window.__forteStoryDirection = direction;
-
-    window.currentStoryGroup = groupIdx;
-    window.currentStoryIdx = storyIdx;
-
-    try{
-      localStorage.setItem('viewed_story_' + story.id, '1');
-      setTimeout(() => { if(typeof loadStories === 'function') loadStories(); }, 80);
-    }catch(e){}
-
-    forteRecordStoryView(story);
-    setStoryBottomBar(group, story);
-
-    const p = group.profile || {};
-    const info = document.getElementById('story-user-info');
-    if(info){
-      info.innerHTML = `
-        ${p.avatar_url ? `<img src="${p.avatar_url}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">` : `<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,0,144,.18);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#ff0090">${esc((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`}
-        <div>
-          <div style="color:#fff;font-size:14px;font-weight:800">${esc(p.full_name || p.username || 'User')}</div>
-          <div style="color:rgba(255,255,255,.68);font-size:11px">${ago(story.created_at)}</div>
-        </div>
-        ${group.isMe ? `<button onclick="deleteStory('${story.id}')" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;padding:6px 10px">Delete</button>` : ''}
-      `;
-    }
-
-    const total = group.stories.length;
-    const bars = document.getElementById('story-progress-bars');
-    if(bars){
-      bars.innerHTML = Array.from({ length: total }, (_, i) => `
-        <div style="flex:1;height:3px;background:rgba(255,255,255,.32);border-radius:999px;overflow:hidden">
-          <div id="prog-${i}" style="height:100%;background:#fff;border-radius:999px;width:${i < storyIdx ? '100%' : '0%'};transition:none"></div>
-        </div>
-      `).join('');
-    }
-
-    animateStoryMedia(story, direction);
-
-    const cap = document.getElementById('story-caption');
-    if(cap){
-      if(story.caption){
-        cap.textContent = story.caption;
-        cap.style.display = 'block';
-      }else{
-        cap.style.display = 'none';
-      }
-    }
-
-    const duration = story.media_type === 'video' ? 15000 : 5000;
-    const bar = document.getElementById('prog-' + storyIdx);
-    if(bar){
-      setTimeout(() => {
-        bar.style.transition = `width ${duration}ms linear`;
-        bar.style.width = '100%';
-      }, 60);
-    }
-
-    window.storyTimer = setTimeout(() => window.nextStory(), duration);
-  };
-
-  window.nextStory = function(){
-    const group = window.storyGroups?.[window.currentStoryGroup];
-    if(!group) return;
-    window.__forteStoryDirection = 1;
-
-    if(window.currentStoryIdx < group.stories.length - 1){
-      window.currentStoryIdx++;
-      window.showStory(window.currentStoryGroup, window.currentStoryIdx);
-    }else if(window.currentStoryGroup < window.storyGroups.length - 1){
-      window.currentStoryGroup++;
-      window.currentStoryIdx = 0;
-      window.showStory(window.currentStoryGroup, window.currentStoryIdx);
-    }else{
-      if(typeof closeStoryViewer === 'function') closeStoryViewer();
-    }
-  };
-
-  window.prevStory = function(){
-    window.__forteStoryDirection = -1;
-
-    if(window.currentStoryIdx > 0){
-      window.currentStoryIdx--;
-      window.showStory(window.currentStoryGroup, window.currentStoryIdx);
-    }else if(window.currentStoryGroup > 0){
-      window.currentStoryGroup--;
-      const group = window.storyGroups?.[window.currentStoryGroup];
-      window.currentStoryIdx = Math.max(0, (group?.stories?.length || 1) - 1);
-      window.showStory(window.currentStoryGroup, window.currentStoryIdx);
-    }
-  };
-
-  window.openStoryViewers = async function(){
-    const panel = document.getElementById('story-viewers-panel');
-    if(!panel) return;
-
-    const story = window.storyGroups?.[window.currentStoryGroup]?.stories?.[window.currentStoryIdx];
-    if(!story) return;
-
-    clearTimeout(window.storyTimer);
-    panel.style.display = 'block';
-    panel.style.transform = 'translateY(100%)';
-    panel.style.transition = 'transform .22s ease';
-    requestAnimationFrame(() => panel.style.transform = 'translateY(0)');
-
-    if(typeof loadStoryViewers === 'function'){
-      await loadStoryViewers(story.id);
-    }else{
-      await window.forteLoadStoryViewers?.(story.id);
-    }
-  };
-
-  window.closeStoryViewers = function(){
-    const panel = document.getElementById('story-viewers-panel');
-    if(panel){
-      panel.style.transform = 'translateY(100%)';
-      setTimeout(() => {
-        panel.style.display = 'none';
-        panel.style.transform = '';
-      }, 200);
-    }
-
-    const story = window.storyGroups?.[window.currentStoryGroup]?.stories?.[window.currentStoryIdx];
-    const duration = story?.media_type === 'video' ? 15000 : 5000;
-    clearTimeout(window.storyTimer);
-    window.storyTimer = setTimeout(() => window.nextStory(), duration);
-  };
-
-  const oldOpenStoryViewer = window.openStoryViewer;
-  window.openStoryViewer = function(groupIdx){
-    window.__forteLastStoryGroup = groupIdx;
-    window.__forteLastStoryIdx = 0;
-    window.__forteStoryHasShownOnce = false;
-    if(typeof oldOpenStoryViewer === 'function'){
-      return oldOpenStoryViewer.apply(this, arguments);
-    }
-    const viewer = document.getElementById('story-viewer');
-    if(viewer) viewer.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    window.currentStoryGroup = groupIdx;
-    window.currentStoryIdx = 0;
-    window.showStory(groupIdx, 0);
-  };
-})();
-</script>
-
-</body>
+   Paste this directly before </body>
    ========================================================= */
 
 function forteAuthMsg(msg, ok = false){
@@ -19094,4 +18641,136 @@ window.obFinish = async function(){
 })();
 </script>
 
+
+<script>
+/* =========================================================
+   SAFE STORY VIEWER CLEANUP + SMOOTH TRANSITIONS
+   - Uses the app's real storyGroups/showStory/nextStory/prevStory
+   - Does not create a second bottom reply bar
+   - Does not replace story media loading
+========================================================= */
+(function(){
+  if(window.__forteSafeStoryPatchApplied) return;
+  window.__forteSafeStoryPatchApplied = true;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #forte-story-controls,
+    #story-reply-box,
+    #forte-story-reaction-tray{display:none!important}
+    #story-media-wrap{overflow:hidden;background:#000}
+    #story-img,#story-video{will-change:opacity,transform;backface-visibility:hidden}
+    #story-bottom-bar{z-index:30!important}
+  `;
+  document.head.appendChild(style);
+
+  function cleanupLegacyStoryBars(){
+    try{ document.getElementById('forte-story-controls')?.remove(); }catch(e){}
+    try{ document.getElementById('story-reply-box')?.remove(); }catch(e){}
+    try{ document.getElementById('forte-story-reaction-tray')?.remove(); }catch(e){}
+  }
+
+  function activeStoryMedia(){
+    const img = document.getElementById('story-img');
+    const vid = document.getElementById('story-video');
+    if(img && img.style.display !== 'none') return img;
+    if(vid && vid.style.display !== 'none') return vid;
+    return null;
+  }
+
+  function animateStoryIn(direction){
+    const media = activeStoryMedia();
+    if(!media) return;
+
+    media.style.transition = 'none';
+    media.style.opacity = '0';
+    media.style.transform = `translate3d(${direction * 16}px,0,0) scale(.992)`;
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      media.style.transition = 'opacity 180ms ease, transform 180ms ease';
+      media.style.opacity = '1';
+      media.style.transform = 'translate3d(0,0,0) scale(1)';
+    }));
+  }
+
+  function syncStoryOwnerControls(groupIdx, storyIdx){
+    try{
+      const group = storyGroups?.[groupIdx];
+      const story = group?.stories?.[storyIdx];
+      if(!group || !story) return;
+
+      const isMine = !!group.isMe || story.user_id === user?.id;
+      const replyWrap = document.getElementById('story-reply-wrap');
+      const viewersBtn = document.getElementById('story-viewers-btn');
+      const likeBtn = document.getElementById('story-like-btn');
+
+      if(replyWrap) replyWrap.style.display = isMine ? 'none' : 'flex';
+      if(viewersBtn){
+        viewersBtn.style.display = isMine ? 'flex' : 'none';
+        if(isMine && typeof loadStoryViewCount === 'function') loadStoryViewCount(story.id);
+      }
+      if(likeBtn && !isMine) likeBtn.style.display = 'inline-block';
+      if(!isMine && typeof recordStoryView === 'function') recordStoryView(story.id);
+    }catch(e){}
+  }
+
+  const originalShowStory = typeof showStory === 'function' ? showStory : null;
+  if(originalShowStory){
+    showStory = function(groupIdx, storyIdx){
+      cleanupLegacyStoryBars();
+
+      const prevGroup = window.__forteLastStoryGroup ?? groupIdx;
+      const prevIdx = window.__forteLastStoryIdx ?? storyIdx;
+      let direction = window.__forteStoryDirection || 1;
+      if(groupIdx < prevGroup || (groupIdx === prevGroup && storyIdx < prevIdx)) direction = -1;
+      if(groupIdx > prevGroup || (groupIdx === prevGroup && storyIdx > prevIdx)) direction = 1;
+
+      const result = originalShowStory.apply(this, arguments);
+
+      window.__forteLastStoryGroup = groupIdx;
+      window.__forteLastStoryIdx = storyIdx;
+      syncStoryOwnerControls(groupIdx, storyIdx);
+      animateStoryIn(direction);
+      setTimeout(cleanupLegacyStoryBars, 80);
+      setTimeout(cleanupLegacyStoryBars, 220);
+      return result;
+    };
+    window.showStory = showStory;
+  }
+
+  const originalNextStory = typeof nextStory === 'function' ? nextStory : null;
+  if(originalNextStory){
+    nextStory = function(){
+      window.__forteStoryDirection = 1;
+      cleanupLegacyStoryBars();
+      return originalNextStory.apply(this, arguments);
+    };
+    window.nextStory = nextStory;
+  }
+
+  const originalPrevStory = typeof prevStory === 'function' ? prevStory : null;
+  if(originalPrevStory){
+    prevStory = function(){
+      window.__forteStoryDirection = -1;
+      cleanupLegacyStoryBars();
+      return originalPrevStory.apply(this, arguments);
+    };
+    window.prevStory = prevStory;
+  }
+
+  const originalOpenStoryViewer = typeof openStoryViewer === 'function' ? openStoryViewer : null;
+  if(originalOpenStoryViewer){
+    openStoryViewer = function(groupIdx){
+      window.__forteLastStoryGroup = groupIdx;
+      window.__forteLastStoryIdx = 0;
+      window.__forteStoryDirection = 1;
+      cleanupLegacyStoryBars();
+      const result = originalOpenStoryViewer.apply(this, arguments);
+      setTimeout(cleanupLegacyStoryBars, 80);
+      return result;
+    };
+    window.openStoryViewer = openStoryViewer;
+  }
+})();
+</script>
 </html>
