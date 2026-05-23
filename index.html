@@ -835,17 +835,17 @@ body.light .exercise-start-card.workout{color:#fff}
     </div>
   </div>
 
-  <!-- LOG WEIGHT BUTTON — prominent -->
+  <!-- WORKOUT / RUN HISTORY BUTTONS -->
   <div style="margin:0 20px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-    <button onclick="openWeightLog()" style="background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;align-items:flex-start;cursor:pointer;text-align:left">
-      <span style="font-size:22px;margin-bottom:6px">⚖️</span>
-      <div style="font-size:13px;font-weight:600;color:var(--text)">Log weight</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:2px">Track progress</div>
+    <button onclick="openLoggedWorkouts()" style="background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;align-items:flex-start;cursor:pointer;text-align:left">
+      <span style="font-size:22px;margin-bottom:6px">📋</span>
+      <div style="font-size:13px;font-weight:700;color:var(--text)">Logged workouts</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">View previous sessions</div>
     </button>
-    <button onclick="openLogStepsManual()" style="background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;align-items:flex-start;cursor:pointer;text-align:left">
-      <span style="font-size:22px;margin-bottom:6px">👟</span>
-      <div style="font-size:13px;font-weight:600;color:var(--text)">Log steps</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:2px">Manual entry</div>
+    <button onclick="openSavedRuns()" style="background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;align-items:flex-start;cursor:pointer;text-align:left">
+      <span style="font-size:22px;margin-bottom:6px">🏃</span>
+      <div style="font-size:13px;font-weight:700;color:var(--text)">Saved runs</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">Distance, pace and map</div>
     </button>
   </div>
 
@@ -19504,4 +19504,285 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
 </script>
 
+
+<style id="forte-run-history-final-css">
+  .forte-history-list{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow:auto;padding-bottom:14px}
+  .forte-history-card{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px 15px;cursor:pointer}
+  .forte-history-card:active{transform:scale(.99)}
+  .forte-run-countdown{position:absolute;inset:0;z-index:30;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;flex-direction:column;color:#fff;backdrop-filter:blur(4px)}
+  .forte-run-countdown.show{display:flex}
+  .forte-run-count-num{font-family:'Inter',sans-serif;font-size:86px;font-weight:900;line-height:1;color:#ff0090;text-shadow:0 0 32px rgba(255,0,144,.45)}
+  .forte-run-count-label{font-size:15px;color:rgba(255,255,255,.75);font-weight:700;letter-spacing:.4px;margin-top:10px}
+  .forte-run-summary-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;margin-top:12px}
+  .forte-run-summary-title{font-size:18px;font-weight:900;margin-bottom:10px;color:#fff}
+  .forte-run-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .forte-run-summary-item{background:rgba(0,0,0,.24);border-radius:14px;padding:12px 8px;text-align:center}
+  .forte-run-summary-val{font-size:19px;font-weight:900;color:#ff0090}
+  .forte-run-summary-lbl{font-size:11px;color:rgba(255,255,255,.58);margin-top:3px;text-transform:uppercase;letter-spacing:.4px}
+  .forte-run-finish-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .forte-run-save-btn{border:0;border-radius:14px;padding:14px 10px;font-size:14px;font-weight:900;cursor:pointer}
+  .forte-run-save-btn.primary{background:#ff0090;color:#fff}.forte-run-save-btn.secondary{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.14)}
+  #run-screen{position:relative;background:#050509;color:#fff}
+</style>
+
+<script id="forte-exercise-run-history-final-js">
+(function(){
+  const qs = id => document.getElementById(id);
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmtDate = iso => { try{return new Date(iso).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}catch(e){return '';} };
+  const fmtTime = sec => { sec=Math.max(0,Math.floor(sec||0)); const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60; return h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; };
+  const fmtPace = s => !s || !isFinite(s) ? '—' : `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+  const toast = msg => { if(typeof showToast==='function') showToast(msg); else alert(msg); };
+  async function getMe(){
+    if(window.user?.id) return window.user;
+    try{ if(typeof user !== 'undefined' && user?.id) return user; }catch(e){}
+    try{ const {data}=await sb.auth.getUser(); if(data?.user){ window.user=data.user; return data.user; } }catch(e){}
+    return null;
+  }
+
+  window.openLoggedWorkouts = async function(){
+    const me = await getMe();
+    if(!me) return toast('Sign in first');
+    const content = qs('post-modal-content'), modal = qs('post-modal');
+    if(!content || !modal) return;
+    content.innerHTML = '<div style="font-size:18px;font-weight:900;margin-bottom:12px">Logged workouts</div><div style="color:var(--text3);padding:16px 0">Loading workouts...</div>';
+    modal.classList.add('open');
+    const {data, error} = await sb.from('workouts').select('*').eq('user_id', me.id).order('created_at',{ascending:false}).limit(100);
+    if(error){ content.innerHTML = '<div style="font-size:18px;font-weight:900;margin-bottom:12px">Logged workouts</div><div style="color:var(--red);padding:16px 0">Could not load workouts.</div>'; return; }
+    if(!data || !data.length){ content.innerHTML = '<div style="font-size:18px;font-weight:900;margin-bottom:12px">Logged workouts</div><div style="color:var(--text3);padding:16px 0">No workouts logged yet.</div>'; return; }
+    content.innerHTML = `
+      <div style="font-size:18px;font-weight:900;margin-bottom:4px">Logged workouts</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:14px">Tap a workout to see exercises, sets, reps and weight.</div>
+      <div class="forte-history-list">
+        ${data.map(w=>`
+          <div class="forte-history-card" onclick="viewPastWorkout('${w.id}')">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div style="min-width:0">
+                <div style="font-size:15px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(w.title || 'Workout')}</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">${fmtDate(w.created_at)}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:14px;font-weight:900;color:var(--accent)">+${w.points_earned || 0} pts</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:3px">View →</div>
+              </div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  };
+
+  let runMap = null, runLine = null, runWatch = null, runTimer = null;
+  let runRoute = [], runDistance = 0, runElapsed = 0, runStartedAt = 0, runPaused = false, runActive = false, pendingRunSummary = null, runSaved = false;
+  let startMarker = null, endMarker = null;
+
+  function hav(a,b){
+    const R=6371, toRad=x=>x*Math.PI/180;
+    const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lng-a.lng);
+    const s=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+  }
+  function ensureLeaflet(){
+    return new Promise((resolve,reject)=>{
+      if(window.L) return resolve();
+      if(!document.querySelector('link[data-forte-run-leaflet]')){
+        const l=document.createElement('link'); l.rel='stylesheet'; l.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; l.dataset.forteRunLeaflet='1'; document.head.appendChild(l);
+      }
+      const existing=document.querySelector('script[data-forte-run-leaflet]');
+      if(existing){ existing.addEventListener('load',()=>resolve()); existing.addEventListener('error',reject); return; }
+      const s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.dataset.forteRunLeaflet='1'; s.onload=()=>resolve(); s.onerror=reject; document.head.appendChild(s);
+    });
+  }
+  function ensureRunScreen(){
+    let s=qs('run-screen');
+    if(s) s.remove();
+    const app=qs('app') || document.body;
+    s=document.createElement('div'); s.id='run-screen'; s.className='screen';
+    s.innerHTML=`
+      <div class="run-topbar">
+        <button class="run-icon-btn" onclick="closeRunTracker()" aria-label="Back"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
+        <div style="text-align:center"><div class="run-title">Run</div><div class="run-sub">GPS route · distance · pace</div></div>
+        <button class="run-icon-btn" onclick="centerRunMap()" aria-label="Center"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      </div>
+      <div id="run-map" class="run-map"><div style="height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:14px">Loading map...</div></div>
+      <div id="run-countdown" class="forte-run-countdown"><div id="run-count-num" class="forte-run-count-num">5</div><div class="forte-run-count-label">Get ready</div></div>
+      <div class="run-panel">
+        <div class="run-status-pill"><span class="run-live-dot"></span><span id="run-status-text">Ready to start</span></div>
+        <div class="run-stats">
+          <div class="run-stat"><div class="run-stat-val" id="run-distance">0.00</div><div class="run-stat-lbl">km</div></div>
+          <div class="run-stat"><div class="run-stat-val" id="run-time">00:00</div><div class="run-stat-lbl">time</div></div>
+          <div class="run-stat"><div class="run-stat-val" id="run-pace">—</div><div class="run-stat-lbl">pace /km</div></div>
+        </div>
+        <div id="run-controls" class="run-controls">
+          <button class="run-btn primary" onclick="startRunTracking()">Start run</button>
+          <button class="run-btn secondary" onclick="closeRunTracker()">Cancel</button>
+        </div>
+        <div class="run-hint">Allow location access. Keep Forte open while running so GPS can draw your route.</div>
+      </div>`;
+    app.appendChild(s); return s;
+  }
+  async function initRunMap(){
+    await ensureLeaflet().catch(()=>null);
+    const el=qs('run-map'); if(!el || !window.L) return;
+    runMap=L.map(el,{zoomControl:false}).setView([35.8997,14.5146],13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(runMap);
+    L.control.zoom({position:'bottomright'}).addTo(runMap);
+    runLine=L.polyline([], {color:'#ff0090',weight:5,opacity:.95}).addTo(runMap);
+    setTimeout(()=>runMap.invalidateSize(),180);
+    if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(p=>runMap.setView([p.coords.latitude,p.coords.longitude],16),()=>{}, {enableHighAccuracy:true,timeout:5000}); }
+  }
+  function updateRunStats(){
+    const pace = runDistance ? Math.round(runElapsed/runDistance) : null;
+    const set=(id,v)=>{const el=qs(id); if(el) el.textContent=v;};
+    set('run-distance', runDistance.toFixed(2)); set('run-time', fmtTime(runElapsed)); set('run-pace', fmtPace(pace));
+  }
+  function setRunStatus(t){ const el=qs('run-status-text'); if(el) el.textContent=t; }
+  function redrawRun(){
+    if(!runMap||!runLine) return;
+    const pts=runRoute.map(p=>[p.lat,p.lng]); runLine.setLatLngs(pts);
+    if(pts.length===1){ runMap.setView(pts[0],17); }
+    if(pts.length>1){ runMap.panTo(pts[pts.length-1],{animate:true}); }
+    if(pts.length && !startMarker){ startMarker=L.marker(pts[0],{icon:L.divIcon({className:'',html:'<div class="run-route-pin run-route-start"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(runMap); }
+  }
+  function handleRunPos(pos){
+    if(!runActive || runPaused) return;
+    const p={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy||0,ts:Date.now()};
+    if(p.accuracy>90 && runRoute.length) return;
+    const last=runRoute[runRoute.length-1];
+    if(last){ const seg=hav(last,p); if(seg<0.003 || seg>0.25) return; runDistance+=seg; }
+    runRoute.push(p); redrawRun(); updateRunStats();
+  }
+  function beep(){
+    try{ const A=window.AudioContext||window.webkitAudioContext; const ctx=new A(); const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=.08; o.connect(g); g.connect(ctx.destination); o.start(); setTimeout(()=>{o.stop();ctx.close();},180);}catch(e){}
+  }
+  function countdownThen(fn){
+    const overlay=qs('run-countdown'), num=qs('run-count-num'); let n=5;
+    if(overlay) overlay.classList.add('show'); if(num) num.textContent=n;
+    setRunStatus('Starting in 5...');
+    const tick=setInterval(()=>{ n--; if(n>0){ if(num) num.textContent=n; setRunStatus('Starting in '+n+'...'); } else { clearInterval(tick); if(num) num.textContent='GO'; beep(); setRunStatus('GPS tracking'); setTimeout(()=>{ if(overlay) overlay.classList.remove('show'); fn(); },350); } },1000);
+  }
+  function startWatchAfterCountdown(){
+    runRoute=[]; runDistance=0; runElapsed=0; runStartedAt=Date.now(); runPaused=false; runActive=true; pendingRunSummary=null; runSaved=false;
+    if(runLine) runLine.setLatLngs([]); if(startMarker){startMarker.remove();startMarker=null;} if(endMarker){endMarker.remove();endMarker=null;}
+    updateRunStats();
+    const controls=qs('run-controls'); if(controls){ controls.className='run-controls three'; controls.innerHTML='<button class="run-btn secondary" onclick="pauseResumeRun()" id="run-pause-btn">Pause</button><button class="run-btn danger" onclick="finishRunTracking()">Finish</button><button class="run-btn secondary" onclick="centerRunMap()">Center</button>'; }
+    runTimer=setInterval(()=>{ if(!runPaused){ runElapsed=Math.floor((Date.now()-runStartedAt)/1000); updateRunStats(); }},1000);
+    runWatch=navigator.geolocation.watchPosition(handleRunPos, err=>{ console.warn('GPS error',err); toast(err.code===1?'Allow location to track runs':'Searching for GPS...'); }, {enableHighAccuracy:true,maximumAge:1000,timeout:10000});
+  }
+  function stopWatch(){ if(runWatch!=null){navigator.geolocation.clearWatch(runWatch);runWatch=null;} if(runTimer){clearInterval(runTimer);runTimer=null;} }
+  function buildSummary(){ const me=window.user || (typeof user!=='undefined'?user:null); return { id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())), user_id:me?.id||null, distance_km:+runDistance.toFixed(3), duration_seconds:runElapsed, pace_seconds_per_km:runDistance?Math.round(runElapsed/runDistance):null, route:runRoute.slice(), created_at:new Date().toISOString() }; }
+
+  window.openRunTracker=function(){
+    ensureRunScreen(); document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active')); qs('run-screen').classList.add('active'); const nav=qs('bottom-nav'); if(nav)nav.style.display='none'; initRunMap(); updateRunStats();
+  };
+  window.closeRunTracker=function(){
+    if(runActive && !confirm('Discard this active run?')) return;
+    stopWatch(); runActive=false; runPaused=false;
+    document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active')); const ex=qs('exercise-screen'); if(ex) ex.classList.add('active'); const nav=qs('bottom-nav'); if(nav) nav.style.display='flex';
+  };
+  window.centerRunMap=function(){ if(!runMap) return; if(runRoute.length) runMap.setView([runRoute[runRoute.length-1].lat,runRoute[runRoute.length-1].lng],17); else navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>runMap.setView([p.coords.latitude,p.coords.longitude],17),()=>{}); };
+  window.startRunTracking=function(){ if(!navigator.geolocation) return toast('Location not available on this device'); countdownThen(startWatchAfterCountdown); };
+  window.pauseResumeRun=function(){ if(!runActive) return; runPaused=!runPaused; const btn=qs('run-pause-btn'); if(btn) btn.textContent=runPaused?'Resume':'Pause'; if(runPaused){ setRunStatus('Paused'); } else { runStartedAt=Date.now()-(runElapsed*1000); setRunStatus('GPS tracking'); } };
+  window.finishRunTracking=function(){
+    if(!runActive) return;
+    stopWatch(); runActive=false; runPaused=false; pendingRunSummary=buildSummary();
+    if(runMap && runRoute.length){ const last=runRoute[runRoute.length-1]; if(endMarker) endMarker.remove(); endMarker=L.marker([last.lat,last.lng],{icon:L.divIcon({className:'',html:'<div class="run-route-pin"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(runMap); if(runRoute.length>1) runMap.fitBounds(runLine.getBounds(),{padding:[30,30]}); }
+    setRunStatus('Run finished');
+    const controls=qs('run-controls');
+    if(controls){ controls.className='run-controls'; controls.innerHTML=`
+      <div class="forte-run-summary-card" style="grid-column:1/-1">
+        <div class="forte-run-summary-title">Run summary</div>
+        <div class="forte-run-summary-grid">
+          <div class="forte-run-summary-item"><div class="forte-run-summary-val">${pendingRunSummary.distance_km.toFixed(2)}</div><div class="forte-run-summary-lbl">km</div></div>
+          <div class="forte-run-summary-item"><div class="forte-run-summary-val">${fmtTime(pendingRunSummary.duration_seconds)}</div><div class="forte-run-summary-lbl">time</div></div>
+          <div class="forte-run-summary-item"><div class="forte-run-summary-val">${fmtPace(pendingRunSummary.pace_seconds_per_km)}</div><div class="forte-run-summary-lbl">pace</div></div>
+        </div>
+        <div class="forte-run-finish-actions">
+          <button class="forte-run-save-btn secondary" onclick="saveFinishedRun(false)">Save run</button>
+          <button class="forte-run-save-btn primary" onclick="saveFinishedRun(true)">Save & share</button>
+        </div>
+      </div>`; }
+  };
+  async function persistRun(summary){
+    if(!summary) return null;
+    try{ const arr=JSON.parse(localStorage.getItem('forte_run_activities')||'[]').filter(r=>r.id!==summary.id); arr.unshift(summary); localStorage.setItem('forte_run_activities',JSON.stringify(arr.slice(0,100))); }catch(e){}
+    try{ if(window.sb && summary.user_id){ await sb.from('run_activities').insert({user_id:summary.user_id,distance_km:summary.distance_km,duration_seconds:summary.duration_seconds,pace_seconds_per_km:summary.pace_seconds_per_km,route:summary.route,created_at:summary.created_at}); } }catch(e){ console.warn('RUN SUPABASE SAVE SKIPPED:',e); }
+    runSaved=true; return summary;
+  }
+  window.saveFinishedRun=async function(share){
+    if(!pendingRunSummary) return toast('No finished run to save');
+    await persistRun(pendingRunSummary);
+    if(share){ openRunShareDraft(pendingRunSummary); }
+    else { toast('Run saved'); openSavedRuns(); }
+  };
+  window.openRunShareDraft=function(summary){
+    const cap=`🏃 ${(profile?.full_name || profile?.username || 'I')} Shared a Run!\n${summary.distance_km.toFixed(2)} km · ${fmtTime(summary.duration_seconds)} · ${fmtPace(summary.pace_seconds_per_km)}/km`;
+    try{ window.pendingWorkoutId=null; }catch(e){}
+    const preview=qs('share-workout-preview'), name=qs('share-workout-name'), stats=qs('share-workout-stats'), capEl=qs('share-caption'), input=qs('share-media-input');
+    if(preview) preview.style.display='block';
+    if(name) name.textContent='🏃 Shared a Run!';
+    if(stats) stats.textContent=`${summary.distance_km.toFixed(2)} km · ${fmtTime(summary.duration_seconds)} · ${fmtPace(summary.pace_seconds_per_km)}/km`;
+    if(capEl) capEl.value=cap;
+    if(input) input.value='';
+    const img=qs('share-img-preview'), vid=qs('share-vid-preview'), media=qs('share-media-preview'), txt=qs('share-media-label-text');
+    if(img) img.style.display='none'; if(vid) vid.style.display='none'; if(media) media.style.display='none'; if(txt) txt.textContent='Tap to add photo or video';
+    const modal=qs('share-modal'); if(modal) modal.classList.add('open');
+    toast('Run saved — finish your post');
+  };
+
+  async function getRuns(){
+    const me=await getMe();
+    let local=[]; try{ local=JSON.parse(localStorage.getItem('forte_run_activities')||'[]'); }catch(e){}
+    let remote=[];
+    try{ if(me?.id && window.sb){ const {data}=await sb.from('run_activities').select('*').eq('user_id',me.id).order('created_at',{ascending:false}).limit(100); remote=data||[]; } }catch(e){ console.warn('load remote runs skipped',e); }
+    const byKey=new Map(); [...remote,...local].forEach(r=>{ const key=r.id || `${r.created_at}-${r.distance_km}-${r.duration_seconds}`; if(!byKey.has(key)) byKey.set(key,r); });
+    return [...byKey.values()].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  }
+  window.openSavedRuns=async function(){
+    const content=qs('post-modal-content'), modal=qs('post-modal'); if(!content||!modal) return;
+    content.innerHTML='<div style="font-size:18px;font-weight:900;margin-bottom:12px">Saved runs</div><div style="color:var(--text3);padding:16px 0">Loading runs...</div>'; modal.classList.add('open');
+    const runs=await getRuns();
+    if(!runs.length){ content.innerHTML='<div style="font-size:18px;font-weight:900;margin-bottom:12px">Saved runs</div><div style="color:var(--text3);padding:16px 0">No saved runs yet.</div>'; return; }
+    window.forteSavedRunsCache=runs;
+    content.innerHTML=`
+      <div style="font-size:18px;font-weight:900;margin-bottom:4px">Saved runs</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:14px">Tap a run to view the map route, time, distance and pace.</div>
+      <div class="forte-history-list">
+        ${runs.map((r,i)=>`
+          <div class="forte-history-card" onclick="viewSavedRun(${i})">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+              <div>
+                <div style="font-size:15px;font-weight:900">🏃 ${Number(r.distance_km||0).toFixed(2)} km run</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">${fmtDate(r.created_at)}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:14px;font-weight:900;color:var(--accent)">${fmtPace(r.pace_seconds_per_km)}/km</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:3px">${fmtTime(r.duration_seconds)}</div>
+              </div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  };
+  window.viewSavedRun=async function(i){
+    const r=(window.forteSavedRunsCache||[])[i]; if(!r) return;
+    const content=qs('post-modal-content'); if(!content) return;
+    content.innerHTML=`
+      <div style="font-size:18px;font-weight:900;margin-bottom:4px">🏃 ${Number(r.distance_km||0).toFixed(2)} km run</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">${fmtDate(r.created_at)}</div>
+      <div id="saved-run-map" style="height:260px;border-radius:18px;overflow:hidden;background:var(--bg3);margin-bottom:12px"></div>
+      <div class="forte-run-summary-grid" style="margin-bottom:14px">
+        <div class="forte-run-summary-item"><div class="forte-run-summary-val">${Number(r.distance_km||0).toFixed(2)}</div><div class="forte-run-summary-lbl">km</div></div>
+        <div class="forte-run-summary-item"><div class="forte-run-summary-val">${fmtTime(r.duration_seconds)}</div><div class="forte-run-summary-lbl">time</div></div>
+        <div class="forte-run-summary-item"><div class="forte-run-summary-val">${fmtPace(r.pace_seconds_per_km)}</div><div class="forte-run-summary-lbl">pace</div></div>
+      </div>
+      <button class="btn-secondary" onclick="openSavedRuns()">← Back to saved runs</button>`;
+    await ensureLeaflet().catch(()=>null);
+    if(window.L){
+      const pts=(r.route||[]).map(p=>[p.lat,p.lng]).filter(x=>isFinite(x[0])&&isFinite(x[1]));
+      const map=L.map('saved-run-map',{zoomControl:false}).setView(pts[0]||[35.8997,14.5146], pts.length?15:12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);
+      if(pts.length){ const line=L.polyline(pts,{color:'#ff0090',weight:5,opacity:.95}).addTo(map); if(pts.length>1)map.fitBounds(line.getBounds(),{padding:[20,20]}); }
+      setTimeout(()=>map.invalidateSize(),120);
+    }
+  };
+})();
+</script>
 </html>
