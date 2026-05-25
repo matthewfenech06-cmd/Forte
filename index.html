@@ -21179,10 +21179,90 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     }).join('');
   };
 
-  // Also store set type when saving (best-effort — column may not exist yet)
-  const _origSaveWorkout2 = window.saveWorkout;
-  // Note: saveWorkout was already patched above; we just ensure type flows into the insert
-  // by patching the wkExs iteration at save time (handled via wkExs[i].sets[j].type)
+})();
+</script>
+
+<script>
+/* ── FIX: submitPost — wrap in try/catch so button never stays stuck ── */
+(function(){
+  if(window.__forteSubmitPostFixed) return;
+  window.__forteSubmitPostFixed = true;
+
+  submitPost = async function(){
+    if(!user) return (typeof fpToast==='function'?fpToast:showToast)('Sign in first');
+
+    const btn = document.getElementById('share-submit-btn');
+    if(btn){ btn.disabled = true; btn.textContent = 'Sharing...'; }
+
+    const resetBtn = () => { if(btn){ btn.disabled = false; btn.textContent = 'Share to feed'; } };
+
+    try {
+      const caption = document.getElementById('share-caption')?.value?.trim() || '';
+      const mediaInput = document.getElementById('share-media-input');
+      const mediaFile = mediaInput?.files?.[0];
+
+      let mediaUrl = null;
+      let mediaType = null;
+
+      if(mediaFile){
+        try {
+          const ext = mediaFile.name.split('.').pop().toLowerCase();
+          const path = `posts/${user.id}/${Date.now()}.${ext}`;
+          const { error: upErr } = await sb.storage.from('forte-media').upload(path, mediaFile, {
+            upsert: true,
+            contentType: mediaFile.type
+          });
+          if(!upErr){
+            mediaUrl = sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+            mediaType = mediaFile.type.startsWith('video') ? 'video' : 'image';
+          } else {
+            console.warn('Media upload failed, posting without media:', upErr.message);
+          }
+        } catch(uploadErr) {
+          console.warn('Media upload threw, posting without media:', uploadErr);
+        }
+      }
+
+      const snapshot = window.pendingWorkoutSnapshot || [];
+      const post = {
+        user_id: user.id,
+        workout_id: pendingWorkoutId || null,
+        caption,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        likes_count: 0,
+        comments_count: 0,
+        created_at: new Date().toISOString()
+      };
+
+      // Try with workout_snapshot column first, fall back without it
+      let { error } = await sb.from('posts').insert({ ...post, workout_snapshot: snapshot });
+      if(error){
+        console.warn('insert with snapshot failed, retrying without:', error.message);
+        ({ error } = await sb.from('posts').insert(post));
+      }
+
+      resetBtn();
+
+      if(error){
+        console.error('post insert error:', error);
+        return (typeof fpToast==='function'?fpToast:showToast)('Could not share post: ' + error.message);
+      }
+
+      // success
+      if(mediaInput) mediaInput.value = '';
+      closeModal('share-modal');
+      pendingWorkoutId = null;
+      window.pendingWorkoutSnapshot = [];
+      (typeof fpToast==='function'?fpToast:showToast)('Posted! 🔥');
+      try{ loadFeedPosts(); }catch(e){}
+
+    } catch(err) {
+      console.error('submitPost threw:', err);
+      resetBtn();
+      (typeof fpToast==='function'?fpToast:showToast)('Something went wrong, please try again');
+    }
+  };
 })();
 </script>
 
