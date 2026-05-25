@@ -24,8 +24,8 @@
 .light{--bg:#f5f5f5;--bg2:#fff;--bg3:#ebebeb;--bg4:#e0e0e0;--border:rgba(0,0,0,0.08);--text:#0a0a0a;--text2:rgba(0,0,0,0.65);--text3:rgba(0,0,0,0.45);--accent:#5a8a00;--accent-dim:rgba(90,138,0,0.1)}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden}
-#app{height:100vh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;position:relative;background:var(--bg)}
-.screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--nav-h)+60px)}
+#app{height:100vh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;position:relative;background:transparent}
+.screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--nav-h)+60px);background:transparent}
 .screen.active{display:block;min-height:calc(100vh - var(--nav-h))}.screen::-webkit-scrollbar{display:none}
 *{-webkit-tap-highlight-color:transparent}
 body{overscroll-behavior:none}
@@ -313,7 +313,13 @@ body.light .exercise-start-card.workout{color:#fff}
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230a0a0a' rx='115'/%3E%3Crect x='72' y='338' width='62' height='112' fill='%23ff0090' opacity='.2'/%3E%3Crect x='165' y='262' width='62' height='188' fill='%23ff0090' opacity='.45'/%3E%3Crect x='258' y='184' width='62' height='266' fill='%23ff0090' opacity='.7'/%3E%3Crect x='350' y='92' width='62' height='358' fill='%23ff0090'/%3E%3C/svg%3E">
   <style id="forte-instant-splash-css">
   html.forte-booting body {
-    background: #050505 !important;
+    background: #08080e !important;
+    background-image:
+      radial-gradient(ellipse 90% 60% at 10% 15%, rgba(255,0,144,0.16) 0%, transparent 60%),
+      radial-gradient(ellipse 70% 55% at 88% 85%, rgba(100,0,255,0.13) 0%, transparent 60%),
+      radial-gradient(ellipse 55% 45% at 65% 20%, rgba(255,0,144,0.07) 0%, transparent 55%),
+      radial-gradient(ellipse 45% 65% at 18% 78%, rgba(80,0,200,0.09) 0%, transparent 58%) !important;
+    background-attachment: fixed !important;
   }
 
   html.forte-booting #auth-screen,
@@ -383,7 +389,80 @@ body.light .exercise-start-card.workout{color:#fff}
 </script>
 </head>
 <body>
-  <div id="forte-instant-splash">
+  
+<!-- BACKGROUND ILLUSTRATIONS -->
+<div id="forte-bg-art" style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden">
+  <svg width="100%" height="100%" viewBox="0 0 390 844" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+    <!-- Barbell top left -->
+    <g opacity="0.055" fill="none" stroke="#ff0090" stroke-width="3" transform="rotate(-35, 60, 120)">
+      <rect x="20" y="100" width="20" height="52" rx="6"/>
+      <rect x="20" y="162" width="20" height="52" rx="6"/>
+      <rect x="120" y="100" width="20" height="52" rx="6"/>
+      <rect x="120" y="162" width="20" height="52" rx="6"/>
+      <rect x="40" y="116" width="80" height="18" rx="4"/>
+    </g>
+    <!-- Dumbbell top right -->
+    <g opacity="0.05" fill="none" stroke="#ff0090" stroke-width="2.5" transform="rotate(20, 330, 80)">
+      <circle cx="300" cy="70" r="28"/>
+      <circle cx="300" cy="70" r="18"/>
+      <circle cx="370" cy="70" r="28"/>
+      <circle cx="370" cy="70" r="18"/>
+      <rect x="328" y="63" width="42" height="14" rx="4" fill="none"/>
+    </g>
+    <!-- Weight plate mid left -->
+    <g opacity="0.04" fill="none" stroke="#ff0090" stroke-width="2" transform="translate(-30, 350)">
+      <circle cx="60" cy="60" r="55"/>
+      <circle cx="60" cy="60" r="40"/>
+      <circle cx="60" cy="60" r="12"/>
+    </g>
+    <!-- Barbell bottom right -->
+    <g opacity="0.05" fill="none" stroke="#ff0090" stroke-width="2.5" transform="rotate(-20, 380, 720)">
+      <rect x="320" y="700" width="16" height="44" rx="5"/>
+      <rect x="320" y="748" width="16" height="44" rx="5"/>
+      <rect x="410" y="700" width="16" height="44" rx="5"/>
+      <rect x="410" y="748" width="16" height="44" rx="5"/>
+      <rect x="336" y="715" width="74" height="14" rx="4"/>
+    </g>
+    <!-- Rising bars logo watermark center -->
+    <g opacity="0.03" fill="#ff0090" transform="translate(120, 360) scale(2.2)">
+      <rect x="8" y="42" width="14" height="22" opacity="0.4"/>
+      <rect x="30" y="28" width="14" height="36" opacity="0.6"/>
+      <rect x="52" y="14" width="14" height="50" opacity="0.8"/>
+      <rect x="74" y="4" width="14" height="60"/>
+    </g>
+    <!-- Dumbbell mid right -->
+    <g opacity="0.045" fill="none" stroke="#7000ff" stroke-width="2" transform="rotate(45, 380, 450)">
+      <circle cx="370" cy="420" r="22"/>
+      <circle cx="370" cy="420" r="13"/>
+      <circle cx="420" cy="420" r="22"/>
+      <circle cx="420" cy="420" r="13"/>
+      <rect x="392" y="413" width="28" height="14" rx="4"/>
+    </g>
+    <!-- Apple / food shape top center -->
+    <g opacity="0.04" fill="none" stroke="#ff0090" stroke-width="2" transform="translate(160, 30)">
+      <path d="M35 20 C10 20 5 45 5 60 C5 85 20 100 35 100 C50 100 65 85 65 60 C65 45 60 20 35 20Z"/>
+      <path d="M35 20 C35 10 42 5 42 5"/>
+      <path d="M20 35 C15 30 10 32 8 38"/>
+    </g>
+    <!-- Small weight plates scattered -->
+    <g opacity="0.035" fill="none" stroke="#ff0090" stroke-width="1.5">
+      <circle cx="340" cy="280" r="30"/>
+      <circle cx="340" cy="280" r="20"/>
+      <circle cx="340" cy="280" r="8"/>
+      <circle cx="55" cy="600" r="35"/>
+      <circle cx="55" cy="600" r="24"/>
+      <circle cx="55" cy="600" r="9"/>
+    </g>
+    <!-- Kettle bell bottom left -->
+    <g opacity="0.05" fill="none" stroke="#7000ff" stroke-width="2.5" transform="translate(10, 730)">
+      <circle cx="45" cy="65" r="38"/>
+      <path d="M20 27 C20 15 32 8 45 8 C58 8 70 15 70 27"/>
+      <rect x="33" y="0" width="24" height="12" rx="6"/>
+    </g>
+  </svg>
+</div>
+
+<div id="forte-instant-splash">
   <div class="forte-instant-inner">
     <div class="forte-instant-bars">
       <span></span>
@@ -2214,6 +2293,11 @@ function setLbFilter(el){document.querySelectorAll('.lb-filter').forEach(f=>f.cl
 // ─── NUTRITION ──────────────────────────────────────────
 async function loadNutrition(){
   if(!user)return;
+  // Always fetch fresh profile to get accurate goals
+  if(!profile || !profile.calorie_goal){
+    const{data:freshProfile} = await sb.from('profiles').select('*').eq('id',user.id).single().catch(()=>({data:null}));
+    if(freshProfile) profile = freshProfile;
+  }
   // Sync nutrition goals from profile
   if(profile){
     if(profile.calorie_goal) goals.cal = profile.calorie_goal;
@@ -7560,7 +7644,21 @@ loadNotifications = async function(){
     story_like:'🔥', story_reply:'↩️', pr:'🏋️', default:'🔔'
   };
 
+  // Fetch missing actor avatars from profiles
+  const missingActors = data.filter(n=>n.data?.actor_id && !n.data?.actor_avatar).map(n=>n.data.actor_id);
+  let actorProfiles = {};
+  if(missingActors.length){
+    const{data:actors} = await sb.from('profiles').select('id,username,full_name,avatar_url').in('id',[...new Set(missingActors)]).catch(()=>({data:[]}));
+    (actors||[]).forEach(a=>{ actorProfiles[a.id]=a; });
+  }
+
   el.innerHTML = data.map(n => {
+    // Merge actor profile data
+    if(n.data?.actor_id && actorProfiles[n.data.actor_id]){
+      const ap = actorProfiles[n.data.actor_id];
+      n.data.actor_avatar = n.data.actor_avatar || ap.avatar_url;
+      n.data.actor_name = n.data.actor_name || ap.full_name || ap.username;
+    }
     const d = n.data || {};
     let actions = '';
     const icon = typeIcon[n.type]||typeIcon.default;
