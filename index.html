@@ -21266,4 +21266,94 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 </script>
 
+<script>
+/* ── FIX viewPastWorkout: add Share to feed button, hide stray comment box ── */
+(function(){
+  if(window.__forteViewPastWorkoutFixed) return;
+  window.__forteViewPastWorkoutFixed = true;
+
+  window.viewPastWorkout = async function(id){
+    const { data:sets } = await sb.from('workout_sets').select('*').eq('workout_id',id).order('set_number');
+    const { data:wk } = await sb.from('workouts').select('*').eq('id',id).single();
+    if(!wk) return;
+
+    const grouped = {};
+    (sets||[]).forEach(s=>{
+      if(!grouped[s.exercise_name]) grouped[s.exercise_name]=[];
+      grouped[s.exercise_name].push(s);
+    });
+
+    const snapshot = (sets||[]).length
+      ? Object.entries(grouped).map(([name,ss])=>({
+          name,
+          sets: ss.map(s=>({weight:s.weight,reps:s.reps}))
+        }))
+      : (wk.workout_snapshot || []);
+
+    const content = `
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px">${wk.title||'Workout'}</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:16px">
+        ${new Date(wk.created_at).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
+      </div>
+      ${Object.entries(grouped).map(([name,ss])=>`
+        <div style="margin-bottom:14px">
+          <div style="font-size:14px;font-weight:700;margin-bottom:8px">${name}</div>
+          ${ss.map(s=>`
+            <div style="display:flex;gap:12px;font-size:13px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text3);width:40px">Set ${s.set_number}</span>
+              <span>${s.weight}kg</span><span>×</span><span>${s.reps} reps</span>
+              <span style="color:var(--text3);margin-left:auto">${Math.round(s.weight*s.reps)}kg vol</span>
+            </div>`).join('')}
+        </div>`).join('')}
+      <button onclick="shareExistingWorkout('${wk.id}','${(wk.title||'Workout').replace(/'/g,"\\'")}',window._viewPastSnap||[])"
+        style="width:100%;background:linear-gradient(135deg,#ff0090,#c4006e);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;color:#fff;cursor:pointer;margin-top:8px">
+        Share to feed ↑
+      </button>
+    `;
+
+    window._viewPastSnap = snapshot;
+
+    const content_el = document.getElementById('post-modal-content');
+    if(content_el) content_el.innerHTML = content;
+
+    // clear postId so comment-Post button does nothing, and hide comment box
+    const inp = document.getElementById('comment-inp');
+    if(inp){ inp.dataset.postId = ''; inp.value = ''; }
+    const commentRow = inp?.closest('div[style*="border-top"]') || inp?.parentElement?.parentElement;
+    if(commentRow) commentRow.style.display = 'none';
+
+    document.getElementById('post-modal').classList.add('open');
+  };
+
+  window.shareExistingWorkout = function(workoutId, title, snapshot){
+    closeModal('post-modal');
+
+    // restore comment box for next time
+    const inp = document.getElementById('comment-inp');
+    const commentRow = inp?.closest('div[style*="border-top"]') || inp?.parentElement?.parentElement;
+    if(commentRow) commentRow.style.display = '';
+
+    pendingWorkoutId = workoutId;
+    window.pendingWorkoutSnapshot = snapshot;
+
+    const preview = document.getElementById('share-workout-preview');
+    if(preview) preview.innerHTML = typeof fpWorkoutHtml==='function' ? fpWorkoutHtml(snapshot) : '';
+    const nameEl = document.getElementById('share-workout-name');
+    if(nameEl) nameEl.textContent = title;
+    const statsEl = document.getElementById('share-workout-stats');
+    if(statsEl) statsEl.textContent = snapshot.length + ' exercises';
+    const cap = document.getElementById('share-caption');
+    if(cap){ cap.value=''; cap.disabled=false; }
+    const mediaInput = document.getElementById('share-media-input');
+    if(mediaInput) mediaInput.value = '';
+    document.getElementById('share-img-preview').style.display='none';
+    document.getElementById('share-vid-preview').style.display='none';
+    document.getElementById('share-media-preview').style.display='none';
+    document.getElementById('share-media-label-text').textContent='Tap to add photo or video';
+
+    setTimeout(()=>{ document.getElementById('share-modal').classList.add('open'); }, 300);
+  };
+})();
+</script>
+
 </html>
