@@ -17524,7 +17524,7 @@ setTimeout(() => {
         </div>
         <button onclick="document.getElementById('cam-sticker-picker').style.display='none'" style="width:100%;margin-top:14px;background:rgba(255,255,255,.1);border:none;border-radius:14px;padding:12px;color:#fff;font-weight:900">Done</button>
       </div>
-      <div style="position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:25;display:flex;align-items:center;justify-content:space-around;padding:0 22px">
+      <div id="cam-controls-row" style="position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:25;display:flex;align-items:center;justify-content:space-around;padding:0 22px">
         <label class="forte-story-tool" style="font-size:22px">
           🖼️
           <input id="story-gallery-input" type="file" accept="image/*,video/*" style="display:none" onchange="handleGalleryPick(this)">
@@ -17563,6 +17563,9 @@ setTimeout(() => {
 
   async function startCam(){
     stopCam();
+    // Restore preview to live-cam mode
+    const prev = document.getElementById('cam-preview');
+    if(prev) prev.style.display = 'none';
     try{
       camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:camFacing},audio:true});
       const vid = document.getElementById('story-cam-video');
@@ -17587,6 +17590,8 @@ setTimeout(() => {
     document.getElementById('cam-preview-img').style.display = 'none';
     document.getElementById('cam-preview-vid').style.display = 'none';
     document.getElementById('cam-caption-row').style.display = 'none';
+    const ctrlRow = document.getElementById('cam-controls-row');
+    if(ctrlRow) ctrlRow.style.display = 'flex';
     document.getElementById('cam-capture-btn').style.display = 'flex';
     document.getElementById('cam-stickers-layer').innerHTML = '';
     const retakeBtn = document.getElementById('cam-retake-btn');
@@ -17624,6 +17629,9 @@ setTimeout(() => {
 
   function showPreview(url,type){
     stopCam();
+    // Hide live camera video so it doesn't bleed through
+    const liveVid = document.getElementById('story-cam-video');
+    if(liveVid){ liveVid.style.display = 'none'; liveVid.srcObject = null; }
     const prev = document.getElementById('cam-preview');
     const img = document.getElementById('cam-preview-img');
     const vid = document.getElementById('cam-preview-vid');
@@ -17634,8 +17642,9 @@ setTimeout(() => {
     }else{
       img.src = url; img.style.display = 'block'; vid.style.display = 'none';
     }
-    // Hide live camera controls, show preview controls
-    document.getElementById('cam-capture-btn').style.display = 'none';
+    // Hide the whole capture controls row (gallery + capture button)
+    const ctrlRow = document.getElementById('cam-controls-row');
+    if(ctrlRow) ctrlRow.style.display = 'none';
     document.getElementById('cam-caption-row').style.display = 'flex';
     // Show retake button
     let retakeBtn = document.getElementById('cam-retake-btn');
@@ -17660,6 +17669,8 @@ setTimeout(() => {
     document.getElementById('cam-preview-img').style.display = 'none';
     document.getElementById('cam-preview-vid').style.display = 'none';
     document.getElementById('cam-caption-row').style.display = 'none';
+    const ctrlRowR = document.getElementById('cam-controls-row');
+    if(ctrlRowR) ctrlRowR.style.display = 'flex';
     document.getElementById('cam-capture-btn').style.display = 'flex';
     document.getElementById('cam-stickers-layer').innerHTML = '';
     const retakeBtn = document.getElementById('cam-retake-btn');
@@ -17725,7 +17736,12 @@ setTimeout(() => {
     if(!file) return;
     capturedBlob = file;
     capturedType = file.type.startsWith('video') ? 'video' : 'image';
-    showPreview(URL.createObjectURL(file), capturedType);
+    const url = URL.createObjectURL(file);
+    // On iOS the camera UI may be hidden while the file picker was open — restore it first
+    const camEl = document.getElementById('forte-story-camera');
+    if(camEl) camEl.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    setTimeout(()=>showPreview(url, capturedType), 80);
   };
 
   function makeDrag(el){
