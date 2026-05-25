@@ -18230,6 +18230,12 @@ setTimeout(() => {
   },{passive:true});
 
   setTimeout(()=>{ ensureStoryCss(); ensureStoryViewerExtras(); ensureStoryCamera(); },600);
+
+  // Expose camera internals so a final override can use them
+  window.__forteCam = { startCam, stopCam, ensureStoryCss, ensureStoryCamera,
+    getState(){ return {capturedBlob, capturedType, camPreviewActive}; },
+    resetState(){ capturedBlob=null; capturedType='image'; camPreviewActive=false; }
+  };
 })();
 </script>
 
@@ -21569,6 +21575,56 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     // Update button
     const btn = document.querySelector(`[onclick*="saveWorkoutFromPost('${workoutId}'"]`);
     if(btn){ btn.textContent='✓ Saved!'; btn.disabled=true; btn.style.opacity='.6'; }
+  };
+})();
+</script>
+
+<script>
+/* ── DEFINITIVE openAddStory: always launches full-screen camera ── */
+(function(){
+  // Run last so this wins over all previous definitions
+  window.openAddStory = async function(){
+    // Dismiss the old simple modal if it's open
+    const oldModal = document.getElementById('add-story-modal');
+    if(oldModal) oldModal.classList.remove('open');
+
+    const fc = window.__forteCam;
+    if(fc){
+      fc.ensureStoryCss();
+      fc.ensureStoryCamera();
+      fc.resetState();
+    }
+
+    const cam = document.getElementById('forte-story-camera');
+    if(!cam){
+      // Camera infrastructure not ready — show simple modal as fallback
+      if(oldModal) oldModal.classList.add('open');
+      return;
+    }
+
+    // Reset camera UI to capture mode
+    cam.style.display = 'block';
+    const preview = document.getElementById('cam-preview');
+    if(preview) preview.style.display = 'none';
+    const previewImg = document.getElementById('cam-preview-img');
+    if(previewImg) previewImg.style.display = 'none';
+    const previewVid = document.getElementById('cam-preview-vid');
+    if(previewVid){ previewVid.style.display = 'none'; previewVid.src = ''; }
+    const captionRow = document.getElementById('cam-caption-row');
+    if(captionRow) captionRow.style.display = 'none';
+    const ctrlRow = document.getElementById('cam-controls-row');
+    if(ctrlRow) ctrlRow.style.display = 'flex';
+    const captureBtn = document.getElementById('cam-capture-btn');
+    if(captureBtn) captureBtn.style.display = 'flex';
+    const stickersLayer = document.getElementById('cam-stickers-layer');
+    if(stickersLayer) stickersLayer.innerHTML = '';
+    const retakeBtn = document.getElementById('cam-retake-btn');
+    if(retakeBtn) retakeBtn.style.display = 'none';
+    const topRow = document.querySelector('#forte-story-camera > div[style*="top:calc(18px"]');
+    if(topRow) topRow.style.opacity = '1';
+    document.body.style.overflow = 'hidden';
+
+    if(fc) await fc.startCam();
   };
 })();
 </script>
