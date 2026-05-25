@@ -21580,51 +21580,237 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 </script>
 
 <script>
-/* ── DEFINITIVE openAddStory: always launches full-screen camera ── */
+/* ── DEFINITIVE openAddStory: self-contained full-screen camera ── */
 (function(){
-  // Run last so this wins over all previous definitions
-  window.openAddStory = async function(){
-    // Dismiss the old simple modal if it's open
-    const oldModal = document.getElementById('add-story-modal');
-    if(oldModal) oldModal.classList.remove('open');
+  let _stream=null, _facing='environment', _blob=null, _blobType='image', _recorder=null, _chunks=[], _recording=false, _recTimer=null;
+  const FILTERS=[
+    {n:'Normal',f:'none'},{n:'B&W',f:'grayscale(100%)'},{n:'Vintage',f:'sepia(75%)'},
+    {n:'Vivid',f:'contrast(1.35) saturate(1.7)'},{n:'Warm',f:'brightness(1.12) saturate(1.35) hue-rotate(10deg)'},
+    {n:'Cool',f:'brightness(.95) contrast(1.15) hue-rotate(200deg)'},{n:'Drama',f:'contrast(1.55) brightness(.92) saturate(1.2)'}
+  ];
+  let _fi=0, _swipeX=0;
 
-    const fc = window.__forteCam;
-    if(fc){
-      fc.ensureStoryCss();
-      fc.ensureStoryCamera();
-      fc.resetState();
+  function toast(m){try{(fpToast||showToast)(m);}catch(e){}}
+
+  function buildCamera(){
+    if(document.getElementById('_fc')) return;
+    const d=document.createElement('div');
+    d.id='_fc';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:9000;background:#000;color:#fff;overflow:hidden;touch-action:none';
+    d.innerHTML=`
+      <video id="_fcV" autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+      <canvas id="_fcC" style="display:none"></canvas>
+      <div id="_fcPrev" style="display:none;position:absolute;inset:0;z-index:5">
+        <img id="_fcPI" style="width:100%;height:100%;object-fit:cover;display:none">
+        <video id="_fcPV" style="width:100%;height:100%;object-fit:cover;display:none" playsinline muted autoplay loop></video>
+      </div>
+      <div id="_fcFilter" style="position:absolute;left:50%;bottom:200px;transform:translateX(-50%);z-index:20;font-size:13px;font-weight:900;text-shadow:0 2px 8px rgba(0,0,0,.8);opacity:0;transition:opacity .25s;letter-spacing:.5px"></div>
+      <!-- top bar -->
+      <div style="position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:14px;right:14px;z-index:30;display:flex;align-items:center;justify-content:space-between">
+        <button onclick="_fcClose()" style="width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.52);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)">×</button>
+        <div style="display:flex;gap:10px">
+          <button onclick="_fcFlip()" style="width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.52);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)">↻</button>
+          <button onclick="_fcShowText()" style="width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.52);color:#fff;font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)">Aa</button>
+          <button onclick="_fcShowStickers()" style="width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.52);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)">✨</button>
+        </div>
+      </div>
+      <!-- sticker layer over preview -->
+      <div id="_fcSLayer" style="position:absolute;inset:0;z-index:12;pointer-events:none"></div>
+      <!-- text tool overlay -->
+      <div id="_fcText" style="display:none;position:absolute;inset:0;z-index:50;background:rgba(0,0,0,.75);flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px">
+        <input id="_fcTI" placeholder="Type something..." style="width:100%;background:transparent;border:none;border-bottom:2px solid rgba(255,255,255,.4);color:#fff;font-size:28px;font-weight:900;text-align:center;outline:none;padding:8px">
+        <button onclick="_fcAddText()" style="background:#ff0090;border:none;border-radius:999px;padding:12px 28px;color:#fff;font-weight:900;font-size:15px">Add text</button>
+        <button onclick="document.getElementById('_fcText').style.display='none'" style="background:rgba(255,255,255,.12);border:none;border-radius:999px;padding:10px 20px;color:#fff;font-weight:700">Cancel</button>
+      </div>
+      <!-- sticker picker -->
+      <div id="_fcSP" style="display:none;position:absolute;left:0;right:0;bottom:0;z-index:50;background:rgba(14,14,14,.97);border-radius:22px 22px 0 0;padding:16px 16px calc(26px + env(safe-area-inset-bottom,0px))">
+        <div style="width:38px;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin:0 auto 14px"></div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px">
+          ${['💪','🔥','🏆','⚡','🎯','💯','🏋️','🥗','❤️','🙌','👊','✨','😂','😍','😤','🚀','⭐','🎵'].map(e=>`<button onclick="_fcAddEmoji('${e}')" style="height:44px;border-radius:12px;border:none;background:rgba(255,255,255,.08);font-size:26px">${e}</button>`).join('')}
+        </div>
+        <button onclick="document.getElementById('_fcSP').style.display='none'" style="width:100%;background:rgba(255,255,255,.1);border:none;border-radius:14px;padding:12px;color:#fff;font-weight:900">Done</button>
+      </div>
+      <!-- bottom controls (capture mode) -->
+      <div id="_fcCtrl" style="position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:25;display:flex;align-items:center;justify-content:space-around;padding:0 28px">
+        <label style="width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;border:1.5px solid rgba(255,255,255,.25)">
+          🖼️<input id="_fcGal" type="file" accept="image/*,video/*" style="display:none" onchange="_fcGallery(this)">
+        </label>
+        <button id="_fcBtn" onpointerdown="_fcStartRec(event)" onpointerup="_fcStopRec(event)" onpointercancel="_fcStopRec(event)"
+          style="width:80px;height:80px;border-radius:50%;border:4px solid #fff;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center">
+          <div style="width:60px;height:60px;border-radius:50%;background:#fff"></div>
+        </button>
+        <div style="width:52px;height:52px"></div>
+      </div>
+      <!-- caption + post (preview mode) -->
+      <div id="_fcPost" style="display:none;position:absolute;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:30;flex-direction:row;gap:10px;align-items:center">
+        <button onclick="_fcRetake()" style="width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:20px;flex-shrink:0">↩</button>
+        <input id="_fcCap" placeholder="Add a caption..." style="flex:1;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:13px 14px;color:#fff;outline:none;font-size:14px;min-width:0">
+        <button onclick="_fcUpload()" style="border:none;border-radius:999px;background:#ff0090;color:#fff;font-weight:900;font-size:15px;padding:13px 18px;white-space:nowrap;flex-shrink:0">Post</button>
+      </div>
+    `;
+    document.body.appendChild(d);
+    // swipe left/right for filters
+    d.addEventListener('touchstart',e=>{_swipeX=e.touches[0].clientX;},{passive:true});
+    d.addEventListener('touchend',e=>{
+      if(document.getElementById('_fcPrev')?.style.display==='block') return;
+      const dx=e.changedTouches[0].clientX-_swipeX;
+      if(Math.abs(dx)>50){ _fi=dx<0?(_fi+1)%FILTERS.length:(_fi-1+FILTERS.length)%FILTERS.length; _applyFilter(); }
+    },{passive:true});
+  }
+
+  async function _startCam(){
+    _stopCam();
+    document.getElementById('_fcV').style.display='block';
+    try{
+      _stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:_facing,width:{ideal:1280},height:{ideal:720}},audio:true});
+      const v=document.getElementById('_fcV'); v.srcObject=_stream; _applyFilter();
+    }catch(e){
+      toast('Camera unavailable — pick from gallery');
     }
+  }
+  function _stopCam(){if(_stream){_stream.getTracks().forEach(t=>t.stop());_stream=null;}}
+  function _applyFilter(){
+    const v=document.getElementById('_fcV'),f=FILTERS[_fi];
+    if(v) v.style.filter=f.f==='none'?'':f.f;
+    const n=document.getElementById('_fcFilter');
+    if(n){n.textContent=f.n;n.style.opacity='1';clearTimeout(n._t);n._t=setTimeout(()=>n.style.opacity='0',900);}
+  }
 
-    const cam = document.getElementById('forte-story-camera');
-    if(!cam){
-      // Camera infrastructure not ready — show simple modal as fallback
-      if(oldModal) oldModal.classList.add('open');
+  function _showPreview(url,type){
+    _blob=null; _blobType=type;
+    _stopCam();
+    document.getElementById('_fcV').style.display='none';
+    const prev=document.getElementById('_fcPrev'); prev.style.display='block';
+    const img=document.getElementById('_fcPI'), vid=document.getElementById('_fcPV');
+    if(type==='image'){img.src=url;img.style.display='block';vid.style.display='none';}
+    else{vid.src=url;vid.style.display='block';img.style.display='none';}
+    document.getElementById('_fcCtrl').style.display='none';
+    document.getElementById('_fcPost').style.display='flex';
+  }
+
+  window._fcClose=function(){
+    _stopCam(); if(_recorder){try{_recorder.stop();}catch(e){}} clearTimeout(_recTimer);
+    _recording=false; _blob=null;
+    document.getElementById('_fc').style.display='none';
+    document.body.style.overflow='';
+  };
+  window._fcFlip=function(){_facing=_facing==='user'?'environment':'user';_startCam();};
+  window._fcShowText=function(){const t=document.getElementById('_fcText');t.style.display='flex';document.getElementById('_fcTI').value='';};
+  window._fcShowStickers=function(){document.getElementById('_fcSP').style.display='block';};
+  window._fcAddText=function(){
+    const txt=document.getElementById('_fcTI').value.trim();
+    if(!txt) return;
+    document.getElementById('_fcText').style.display='none';
+    const el=document.createElement('div');
+    el.textContent=txt;
+    el.style.cssText='position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:28px;font-weight:900;text-shadow:0 2px 8px rgba(0,0,0,.8);cursor:move;pointer-events:auto;user-select:none;z-index:20;white-space:nowrap';
+    el.addEventListener('touchmove',e=>{e.preventDefault();const r=document.getElementById('_fc').getBoundingClientRect();el.style.left=((e.touches[0].clientX-r.left)/r.width*100)+'%';el.style.top=((e.touches[0].clientY-r.top)/r.height*100)+'%';},{passive:false});
+    document.getElementById('_fcSLayer').appendChild(el);
+    document.getElementById('_fcSLayer').style.pointerEvents='auto';
+  };
+  window._fcAddEmoji=function(e){
+    document.getElementById('_fcSP').style.display='none';
+    const el=document.createElement('div');
+    el.textContent=e; el.style.cssText='position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:52px;cursor:move;pointer-events:auto;user-select:none;z-index:20';
+    el.addEventListener('touchmove',ev=>{ev.preventDefault();const r=document.getElementById('_fc').getBoundingClientRect();el.style.left=((ev.touches[0].clientX-r.left)/r.width*100)+'%';el.style.top=((ev.touches[0].clientY-r.top)/r.height*100)+'%';},{passive:false});
+    document.getElementById('_fcSLayer').appendChild(el);
+    document.getElementById('_fcSLayer').style.pointerEvents='auto';
+  };
+  window._fcGallery=function(input){
+    const file=input.files[0]; if(!file) return;
+    _blob=file; _blobType=file.type.startsWith('video')?'video':'image';
+    _showPreview(URL.createObjectURL(file),_blobType);
+    input.value='';
+  };
+  window._fcStartRec=function(e){
+    e.preventDefault();
+    const vid=document.getElementById('_fcV');
+    if(!_stream){toast('No camera'); return;}
+    const canvas=document.getElementById('_fcC');
+    canvas.width=vid.videoWidth||640; canvas.height=vid.videoHeight||480;
+    const ctx=canvas.getContext('2d');
+    _blobType='image';
+    _recTimer=setTimeout(()=>{
+      // long press = video
+      _blobType='video'; _chunks=[]; _recording=true;
+      try{
+        _recorder=new MediaRecorder(_stream,{mimeType:'video/webm;codecs=vp8,opus'});
+      }catch(e){_recorder=new MediaRecorder(_stream);}
+      _recorder.ondataavailable=ev=>{if(ev.data.size>0)_chunks.push(ev.data);};
+      _recorder.onstop=()=>{
+        const b=new Blob(_chunks,{type:_recorder.mimeType||'video/webm'});
+        _blob=b; _showPreview(URL.createObjectURL(b),'video');
+      };
+      _recorder.start();
+      document.getElementById('_fcBtn').style.background='rgba(255,0,0,.7)';
+    },250);
+  };
+  window._fcStopRec=function(e){
+    e.preventDefault();
+    if(_recording){
+      clearTimeout(_recTimer); _recording=false;
+      document.getElementById('_fcBtn').style.background='rgba(255,255,255,.15)';
+      if(_recorder&&_recorder.state!=='inactive'){_recorder.stop();}
       return;
     }
+    clearTimeout(_recTimer);
+    // short press = photo
+    const vid=document.getElementById('_fcV');
+    if(!_stream){return;}
+    const canvas=document.getElementById('_fcC');
+    canvas.style.display='none';
+    canvas.width=vid.videoWidth||640; canvas.height=vid.videoHeight||480;
+    const ctx=canvas.getContext('2d'); ctx.filter=FILTERS[_fi].f==='none'?'':FILTERS[_fi].f;
+    ctx.drawImage(vid,0,0,canvas.width,canvas.height);
+    canvas.toBlob(b=>{ _blob=b; _blobType='image'; _showPreview(URL.createObjectURL(b),'image'); },'image/jpeg',0.92);
+  };
+  window._fcRetake=function(){
+    _blob=null; document.getElementById('_fcPrev').style.display='none';
+    document.getElementById('_fcPI').style.display='none'; document.getElementById('_fcPV').style.display='none';
+    document.getElementById('_fcCtrl').style.display='flex'; document.getElementById('_fcPost').style.display='none';
+    document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
+    _startCam();
+  };
+  window._fcUpload=async function(){
+    if(!_blob){toast('Nothing to share'); return;}
+    const postBtn=document.querySelector('#_fcPost button:last-child');
+    if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
+    const caption=document.getElementById('_fcCap').value.trim();
+    const u=window.user||(typeof user!=='undefined'?user:null);
+    if(!u){toast('Sign in first');if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}return;}
+    const ext=_blobType==='video'?'webm':'jpg';
+    const path=`stories/${u.id}/${Date.now()}.${ext}`;
+    try{
+      const up=await sb.storage.from('forte-media').upload(path,_blob,{upsert:true,contentType:_blob.type||(_blobType==='video'?'video/webm':'image/jpeg')});
+      let mediaUrl=null;
+      if(!up.error) mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+      const exp=new Date(Date.now()+24*3600*1000).toISOString();
+      await sb.from('stories').insert({user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,expires_at:exp,created_at:new Date().toISOString()});
+      _fcClose(); toast('Story posted! 🔥');
+      try{loadStories();}catch(e){}
+    }catch(err){
+      console.error(err); toast('Upload failed');
+      if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}
+    }
+  };
 
-    // Reset camera UI to capture mode
-    cam.style.display = 'block';
-    const preview = document.getElementById('cam-preview');
-    if(preview) preview.style.display = 'none';
-    const previewImg = document.getElementById('cam-preview-img');
-    if(previewImg) previewImg.style.display = 'none';
-    const previewVid = document.getElementById('cam-preview-vid');
-    if(previewVid){ previewVid.style.display = 'none'; previewVid.src = ''; }
-    const captionRow = document.getElementById('cam-caption-row');
-    if(captionRow) captionRow.style.display = 'none';
-    const ctrlRow = document.getElementById('cam-controls-row');
-    if(ctrlRow) ctrlRow.style.display = 'flex';
-    const captureBtn = document.getElementById('cam-capture-btn');
-    if(captureBtn) captureBtn.style.display = 'flex';
-    const stickersLayer = document.getElementById('cam-stickers-layer');
-    if(stickersLayer) stickersLayer.innerHTML = '';
-    const retakeBtn = document.getElementById('cam-retake-btn');
-    if(retakeBtn) retakeBtn.style.display = 'none';
-    const topRow = document.querySelector('#forte-story-camera > div[style*="top:calc(18px"]');
-    if(topRow) topRow.style.opacity = '1';
-    document.body.style.overflow = 'hidden';
-
-    if(fc) await fc.startCam();
+  window.openAddStory=async function(){
+    const old=document.getElementById('add-story-modal');
+    if(old) old.classList.remove('open');
+    buildCamera();
+    const fc=document.getElementById('_fc');
+    fc.style.display='block';
+    document.getElementById('_fcPrev').style.display='none';
+    document.getElementById('_fcPI').style.display='none';
+    document.getElementById('_fcPV').style.display='none';
+    document.getElementById('_fcCtrl').style.display='flex';
+    document.getElementById('_fcPost').style.display='none';
+    document.getElementById('_fcV').style.display='block';
+    document.getElementById('_fcSLayer').innerHTML='';
+    document.getElementById('_fcCap').value='';
+    _blob=null; _blobType='image'; _fi=0;
+    document.body.style.overflow='hidden';
+    await _startCam();
   };
 })();
 </script>
