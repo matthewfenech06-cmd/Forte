@@ -252,8 +252,11 @@ select.inp{appearance:none}
 .feed-quick-actions{padding:0 20px 12px}
 .feed-quick-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
 .feed-quick-tabs::-webkit-scrollbar{display:none}
-.feed-qtab{padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;white-space:nowrap;flex-shrink:0}
-.feed-qtab.active{background:#ff0090;color:#fff}
+.feed-qtab{padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;background:var(--bg2);color:var(--text2);border:1px solid var(--border);cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all .2s;display:flex;align-items:center;gap:5px}
+.feed-qtab.active{background:linear-gradient(135deg,rgba(255,0,144,.18),rgba(112,0,255,.12));color:var(--text);border-color:rgba(255,0,144,.4);box-shadow:0 2px 12px rgba(255,0,144,.2)}
+.feed-mode-tab{display:flex;align-items:center;gap:6px;padding:9px 18px;border-radius:22px;font-size:13px;font-weight:600;background:var(--bg3);color:var(--text2);border:none;cursor:pointer;transition:all .2s;letter-spacing:.1px}
+.feed-mode-tab.active{background:linear-gradient(135deg,#ff0090,#c4006e);color:#fff;box-shadow:0 4px 16px rgba(255,0,144,.35)}
+.feed-mode-tab svg{flex-shrink:0}
 #feed-panel-leagues,#feed-panel-recipes,#feed-panel-rotw,#feed-leagues,#feed-recipes-list,#feed-rotw-content{display:none!important}
 #feed-pull-refresh{position:fixed;left:50%;top:86px;transform:translateX(-50%);z-index:9999;width:34px;height:34px;border-radius:50%;background:rgba(20,20,20,.92);border:1px solid rgba(255,255,255,.16);color:#ff0090;display:none;align-items:center;justify-content:center;font-size:20px;pointer-events:none}
 #feed-pull-refresh.show{display:flex}
@@ -782,7 +785,16 @@ body.light .exercise-start-card.workout{color:#fff}
       <button class="feed-qtab" onclick="openExplore()">🗺️ Explore</button>
     </div>
   </div>
-  <div class="section-label">Friends activity</div>
+  <div id="feed-mode-tabs" style="display:flex;gap:8px;padding:12px 20px 0">
+    <button id="tab-friends" class="feed-mode-tab active" onclick="setFeedMode('friends')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Friends
+    </button>
+    <button id="tab-community" class="feed-mode-tab" onclick="setFeedMode('community')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Community
+    </button>
+  </div>
   <div id="feed-posts"></div>
 </div>
 
@@ -1714,7 +1726,7 @@ body.light .exercise-start-card.workout{color:#fff}
     <div style="position:absolute;right:0;top:0;width:35%;height:100%;cursor:pointer" onclick="nextStory()"></div>
   </div>
   <!-- Caption -->
-  <div id="story-caption" style="position:absolute;bottom:40px;left:0;right:0;padding:16px;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:15px;display:none"></div>
+  <div id="story-caption" style="position:absolute;bottom:88px;left:0;right:0;padding:16px;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:15px;display:none"></div>
 </div>
 
 <!-- ADD STORY MODAL -->
@@ -3099,22 +3111,65 @@ async function submitPost(){
 }
 
 // ─── LIVE FEED ────────────────────────────────────────────
-async function loadFeedPosts(){loadStories();
-  const{data:posts}=await sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)').order('created_at',{ascending:false}).limit(20);
-  if(!posts||!posts.length){return;}
-  document.getElementById('feed-posts').innerHTML=posts.map((p,i)=>{
-    const u=p.profiles||{};
-    const wTitle=p.workouts?.title||'Workout';
-    const timeAgo=getTimeAgo(p.created_at);
-    return `<div class="workout-post fade-up" style="animation-delay:${i*.05}s">
-      <div class="post-header" onclick="viewProfile('${u.id}')">
-        ${avatarEl(u,36)}
-        <div><div class="post-user">${u.full_name||u.username||'User'}</div><div class="post-time">${timeAgo}</div></div>
+let currentFeedMode = 'friends';
+
+function setFeedMode(mode){
+  currentFeedMode = mode;
+  document.querySelectorAll('.feed-mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + mode)?.classList.add('active');
+  loadFeedPosts();
+}
+
+async function loadFeedPosts(){
+  loadStories();
+  const container = document.getElementById('feed-posts');
+  if(!container) return;
+  container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3)"><div style="font-size:13px">Loading...</div></div>';
+
+  let followedIds = [];
+  if(user && currentFeedMode === 'friends'){
+    const {data:fr} = await sb.from('friendships').select('addressee_id').eq('requester_id', user.id).eq('status','accepted');
+    const {data:fw} = await sb.from('friendships').select('requester_id').eq('addressee_id', user.id).eq('status','accepted');
+    followedIds = [...new Set([...(fr||[]).map(f=>f.addressee_id), ...(fw||[]).map(f=>f.requester_id)])];
+    if(user) followedIds.push(user.id);
+  }
+
+  let query = sb.from('posts').select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(title)').order('created_at',{ascending:false}).limit(30);
+
+  if(currentFeedMode === 'friends' && followedIds.length > 0){
+    query = query.in('user_id', followedIds);
+  }
+
+  const {data:posts} = await query;
+
+  if(!posts || !posts.length){
+    container.innerHTML = currentFeedMode === 'friends'
+      ? '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">👥</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">No friend posts yet</div><div style="font-size:13px">Follow people to see their posts here, or check the Community tab</div></div>'
+      : '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">📸</div><div style="font-size:15px;font-weight:600">No posts yet</div></div>';
+    return;
+  }
+
+  container.innerHTML = posts.map((p,i) => {
+    const u = p.profiles || {};
+    const timeAgo = getTimeAgo(p.created_at);
+    const isOwnPost = user && p.user_id === user.id;
+    const isFollowing = typeof followingIds !== 'undefined' && followingIds.has && followingIds.has(p.user_id);
+    const showFollow = !isOwnPost && !isFollowing && p.user_id;
+    const workoutBadge = p.workout_id && p.workouts?.title
+      ? `<div style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,0,144,.1);border-radius:8px;padding:5px 10px;margin:4px 16px 8px;font-size:12px;font-weight:600;color:#ff0090">💪 Logged a workout!</div>`
+      : '';
+    return `<div class="workout-post fade-up" style="animation-delay:${i*.04}s">
+      <div class="post-header">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer" onclick="viewProfile('${u.id}')">
+          ${avatarEl(u,36)}
+          <div><div class="post-user">${u.full_name||u.username||'User'}</div><div class="post-time">${timeAgo}</div></div>
+        </div>
+        ${showFollow ? `<button onclick="event.stopPropagation();quickFollow('${p.user_id}',this)" style="background:rgba(255,0,144,.12);border:1.5px solid rgba(255,0,144,.35);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:#ff0090;cursor:pointer;flex-shrink:0;transition:all .15s" class="post-follow-btn">Follow</button>` : ''}
       </div>
-      ${p.media_url&&p.media_type==='image'?`<img src="${p.media_url}" style="width:100%;max-height:320px;object-fit:cover;cursor:pointer" onclick="openPost('${p.id}')">`:''}
+      ${p.media_url&&p.media_type==='image'?`<img src="${p.media_url}" style="width:100%;max-height:340px;object-fit:cover;cursor:pointer" onclick="openPost('${p.id}')">`:''}
       ${p.media_url&&p.media_type==='video'?`<video src="${p.media_url}" style="width:100%" controls playsinline></video>`:''}
-      <div class="post-workout-title">${wTitle}</div>
-      ${p.caption?`<div style="padding:0 16px 12px;font-size:14px;color:var(--text2)">${p.caption}</div>`:''}
+      ${workoutBadge}
+      ${p.caption?`<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);line-height:1.5">${p.caption}</div>`:''}
       <div class="post-actions">
         <div class="post-action" onclick="toggleLike('${p.id}',this)" id="like-btn-${p.id}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -3127,6 +3182,22 @@ async function loadFeedPosts(){loadStories();
       </div>
     </div>`;
   }).join('');
+}
+
+async function quickFollow(userId, btn){
+  if(!user) return;
+  btn.textContent = 'Following';
+  btn.style.opacity = '0.5';
+  btn.disabled = true;
+  try{
+    await sb.from('friendships').insert({requester_id:user.id, addressee_id:userId, status:'accepted'});
+    if(typeof followingIds !== 'undefined') followingIds.add(userId);
+    btn.style.display = 'none';
+  }catch(e){
+    btn.textContent = 'Follow';
+    btn.style.opacity = '1';
+    btn.disabled = false;
+  }
 }
 
 async function toggleLike(postId,el){
@@ -15157,6 +15228,7 @@ if('serviceWorker' in navigator){
   };
 
   function addStoryReplyBox(){
+    if(document.getElementById('story-bottom-bar')) return; // already has controls
     const modal = document.getElementById('story-viewer-modal') || document.getElementById('story-modal');
     if(!modal || document.getElementById('story-reply-box')) return;
 
@@ -16131,6 +16203,7 @@ if('serviceWorker' in navigator){
   };
 
   function addStoryControls(){
+    if(document.getElementById('story-bottom-bar')) return; // already has controls
     const viewer = document.getElementById('story-viewer');
     if(!viewer || viewer.style.display === 'none') return;
 
