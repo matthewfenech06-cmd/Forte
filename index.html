@@ -300,6 +300,71 @@ body.light .exercise-start-card.workout{color:#fff}
 .run-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.run-controls.three{grid-template-columns:1fr 1fr 1fr}.run-btn{border:0;border-radius:18px;padding:15px 10px;font-size:14px;font-weight:900;cursor:pointer}.run-btn.primary{background:#ff0090;color:#fff}.run-btn.secondary{background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.10)}.run-btn.danger{background:rgba(255,79,79,.14);color:#ff6b6b;border:1px solid rgba(255,79,79,.24)}
 .run-hint{font-size:12px;color:rgba(255,255,255,.48);line-height:1.45;margin-top:13px;text-align:center}.run-route-pin{width:18px;height:18px;border-radius:50%;background:#ff0090;border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.35)}.run-route-start{background:#26d07c}.run-route-line{stroke:#ff0090!important;stroke-width:5!important;filter:drop-shadow(0 0 5px rgba(255,0,144,.55))}
 
+/* ── FEED DESIGN ENHANCEMENTS ─────────────────────────── */
+/* Sticky feed header: frosted glass + gradient underline */
+#feed-screen > div[style*="sticky"] {
+  background: rgba(8,8,14,.82) !important;
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border-bottom: 1px solid transparent !important;
+  background-clip: padding-box;
+  box-shadow: 0 1px 0 0 rgba(255,0,144,.18), 0 8px 32px rgba(0,0,0,.28);
+}
+/* Forte wordmark glow */
+#feed-screen span[style*="forte"] { text-shadow: 0 0 20px rgba(255,0,144,.35); }
+/* Section labels: accent gradient */
+.section-label {
+  background: linear-gradient(90deg, #ff0090 0%, #7000ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+/* Feed post cards: glassmorphism + gradient border */
+.workout-post {
+  background: linear-gradient(135deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,.02) 100%) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  box-shadow: 0 2px 24px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.06) !important;
+  position: relative;
+  overflow: hidden;
+}
+.workout-post::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,0,144,.22) 0%, rgba(112,0,255,.14) 50%, transparent 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* Points badge: neon glow */
+.post-pts { box-shadow: 0 0 12px rgba(255,0,144,.2); }
+/* Exercise tags: subtle gradient */
+.exercise-tag {
+  background: linear-gradient(90deg, rgba(255,0,144,.1), rgba(112,0,255,.08)) !important;
+  border: 1px solid rgba(255,0,144,.15);
+  color: var(--text2) !important;
+}
+/* Story ring gradient (my story + friends with stories) */
+.story-ring { background: linear-gradient(135deg, #ff0090, #7000ff) !important; }
+/* Feed quick tabs active state */
+.feed-qtab.active { box-shadow: 0 0 14px rgba(255,0,144,.35); }
+/* Post action hover accent */
+.post-action:hover { color: #ff0090 !important; }
+/* Leaderboard items: gradient border accent */
+.lb-item { border-left: 2px solid transparent; background-image: linear-gradient(var(--bg2),var(--bg2)), linear-gradient(180deg,rgba(255,0,144,.3),transparent); background-origin: border-box; background-clip: padding-box, border-box; }
+.lb-item:first-child { border-left-color: #FFD700; }
+/* Search bar glass effect */
+#feed-screen div[onclick="showScreen('search')"] {
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.07);
+  backdrop-filter: blur(4px);
+}
+
 </style>
   <!-- PWA -->
   <meta name="application-name" content="Forte">
@@ -663,7 +728,7 @@ body.light .exercise-start-card.workout{color:#fff}
 <!-- FEED -->
 <div id="feed-screen" class="screen">
   <!-- COMPACT HEADER -->
-  <div style="position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)">
+  <div style="position:sticky;top:0;z-index:10;">
     <!-- Row 1: Logo + icons -->
     <div class="feed-header-row">
       <div style="display:flex;align-items:center;gap:8px">
@@ -8069,7 +8134,8 @@ syncProfile = async function(){
     stats.style.gridTemplateColumns = 'repeat(4,1fr)';
   }
 
-  try{ renderBodySection(); }catch(e){}
+  const _fpBsEl = document.getElementById('body-stats-section');
+  if(_fpBsEl && !_fpBsEl.dataset.rendered) try{ renderBodySection(); }catch(e){}
   try{ loadWkCount(); }catch(e){}
 };
 
@@ -11208,7 +11274,8 @@ syncProfile = function(){
   }
 
   try{
-    if(typeof renderBodySection === 'function') renderBodySection();
+    const _sb11El = document.getElementById('body-stats-section');
+    if(_sb11El && !_sb11El.dataset.rendered && typeof renderBodySection === 'function') renderBodySection();
   }catch(e){
     console.warn('renderBodySection skipped:', e);
   }
@@ -18606,9 +18673,12 @@ window.loadNotifications = async function(){
       return;
     }
 
-    // Batch-fetch actor avatars for notifications missing them
+    // Batch-fetch actor avatars — check both top-level actor_id column and data.actor_id
     const missingActorIds = [...new Set(
-      data.filter(n => n.data?.actor_id && !n.data?.actor_avatar).map(n => n.data.actor_id)
+      data
+        .filter(n => (n.actor_id || n.data?.actor_id) && !n.data?.actor_avatar)
+        .map(n => n.actor_id || n.data?.actor_id)
+        .filter(Boolean)
     )];
     const actorMap = {};
     if(missingActorIds.length){
@@ -18619,9 +18689,11 @@ window.loadNotifications = async function(){
     const typeIcon = {like:'❤️',comment:'💬',follow:'👤',follow_request:'👤',friend_request:'👤',league_invite:'🏆',message:'💬',story_like:'🔥',story_reply:'↩️',pr:'🏋️'};
 
     el.innerHTML = data.map(n => {
-      // Merge missing actor profile data into notification.data
-      if(n.data?.actor_id && actorMap[n.data.actor_id]){
-        const ap = actorMap[n.data.actor_id];
+      // Merge actor profile into n.data — use top-level actor_id as fallback
+      const actorId = n.data?.actor_id || n.actor_id;
+      if(actorId && actorMap[actorId]){
+        const ap = actorMap[actorId];
+        if(!n.data) n.data = {};
         n.data.actor_avatar = n.data.actor_avatar || ap.avatar_url;
         n.data.actor_name = n.data.actor_name || ap.full_name || ap.username;
       }
