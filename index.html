@@ -23,7 +23,7 @@
 :root{--bg:#0a0a0a;--bg2:#111111;--bg3:#1a1a1a;--bg4:#222222;--border:rgba(255,255,255,0.08);--text:#fff;--text2:rgba(255,255,255,0.72);--text3:rgba(255,255,255,0.5);--accent:#ff0090;--accent-dim:rgba(255,0,144,0.12);--red:#ff4f4f;--radius:16px;--radius-sm:10px;--nav-h:68px;--fd:'Inter',sans-serif;--fb:'Inter',sans-serif}
 .light{--bg:#f5f5f5;--bg2:#fff;--bg3:#ebebeb;--bg4:#e0e0e0;--border:rgba(0,0,0,0.08);--text:#0a0a0a;--text2:rgba(0,0,0,0.65);--text3:rgba(0,0,0,0.45);--accent:#5a8a00;--accent-dim:rgba(90,138,0,0.1)}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden}
+html,body{height:100%;background-color:var(--bg);background-image:radial-gradient(ellipse 90% 60% at 10% 15%,rgba(255,0,144,0.16) 0%,transparent 60%),radial-gradient(ellipse 70% 55% at 88% 85%,rgba(100,0,255,0.13) 0%,transparent 60%),radial-gradient(ellipse 55% 45% at 65% 20%,rgba(255,0,144,0.07) 0%,transparent 55%),radial-gradient(ellipse 45% 65% at 18% 78%,rgba(80,0,200,0.09) 0%,transparent 58%);background-attachment:fixed;color:var(--text);font-family:var(--fb);overflow:hidden}
 #app{height:100vh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;position:relative;background:transparent}
 .screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--nav-h)+60px);background:transparent}
 .screen.active{display:block;min-height:calc(100vh - var(--nav-h))}.screen::-webkit-scrollbar{display:none}
@@ -1329,7 +1329,7 @@ body.light .exercise-start-card.workout{color:#fff}
 <div class="modal-overlay" id="log-menu">
   <div class="modal" style="padding-bottom:20px">
     <div class="modal-handle"></div>
-    <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;font-weight:600">What do you want to log?</div>
+    <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;font-weight:600">What do you want to do?</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button onclick="closeModal('log-menu');openLogWorkout()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -1338,6 +1338,22 @@ body.light .exercise-start-card.workout{color:#fff}
         <div style="text-align:left">
           <div style="font-size:15px;font-weight:700;color:var(--text)">Log workout</div>
           <div style="font-size:12px;color:var(--text3);margin-top:2px">Track sets, reps & weight</div>
+        </div>
+      </button>
+      <button id="log-menu-quick-post-btn" onclick="closeModal('log-menu');openCreatePost()" style="background:linear-gradient(135deg,rgba(255,0,144,.12),rgba(112,0,255,.1));border:1.5px solid rgba(255,0,144,.3);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,0,144,.3)'">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px">✏️</div>
+        <div style="text-align:left">
+          <div style="font-size:15px;font-weight:700;color:var(--text)">Quick post</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">Share a thought, photo or video</div>
+        </div>
+      </button>
+      <button onclick="closeModal('log-menu');openAddStory()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;width:100%;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px">⭕</div>
+          <div style="text-align:left">
+            <div style="font-size:15px;font-weight:700;color:var(--text)">Add story</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Photo, video or 24h update</div>
+          </div>
         </div>
       </button>
       <button onclick="closeModal('log-menu');openAddFood()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
@@ -1359,7 +1375,7 @@ body.light .exercise-start-card.workout{color:#fff}
         </div>
       </button>
     </div>
-      <button onclick="closeModal('log-menu');showScreen('leagues')" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s">
+      <button onclick="closeModal('log-menu');showScreen('leagues')" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
         <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
         </div>
@@ -2109,7 +2125,6 @@ async function loadMyWorkouts(){
 }
 
 function renderBodySection(force){
-  const bsEl2 = document.getElementById('body-stats-section'); if(bsEl2) delete bsEl2.dataset.rendered;
   if(!profile||!profile.weight_kg)return;
   const goalProgress=profile.goal_weight_kg&&profile.weight_kg?`
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
@@ -3094,7 +3109,10 @@ async function submitComment(){
 }
 
 function getTimeAgo(ts){
-  const diff=Date.now()-new Date(ts);
+  if(!ts)return 'just now';
+  let s=String(ts);
+  if(!/z$/i.test(s)&&!/[+-]\d\d:\d\d$/.test(s))s+='Z';
+  const diff=Date.now()-new Date(s);
   const m=Math.floor(diff/60000);
   if(m<1)return 'just now';
   if(m<60)return m+'m ago';
@@ -5052,13 +5070,17 @@ async function checkUnreadNotifications(){
 const _origToggleLike = toggleLike;
 toggleLike = async function(postId, el){
   await _origToggleLike(postId, el);
-  // Send notification to post owner if liking
+  // Send notification to post owner if liking (delegate to forteCreateNotification for grouping + avatar)
   if(el.style.color === 'var(--accent)' || el.style.color === ''){
     try{
       const{data:post} = await sb.from('posts').select('user_id').eq('id',postId).single();
       if(post && post.user_id !== user?.id){
         const name = profile?.full_name||profile?.username||'Someone';
-        await sendNotification(post.user_id, 'like', name+' liked your post ❤️', null);
+        if(typeof forteCreateNotification === 'function'){
+          await forteCreateNotification(post.user_id, 'like', name+' liked your post ❤️', null, { post_id: postId });
+        } else {
+          await sendNotification(post.user_id, 'like', name+' liked your post ❤️', null);
+        }
       }
     }catch(e){}
   }
@@ -6920,7 +6942,9 @@ function fpAvatar(u, size){
 
 function fpTimeAgo(ts){
   if(!ts) return '';
-  const diff = Date.now() - new Date(ts).getTime();
+  let s = String(ts);
+  if(!/z$/i.test(s) && !/[+-]\d\d:\d\d$/.test(s)) s += 'Z';
+  const diff = Date.now() - new Date(s).getTime();
   if(diff < 60000) return 'just now';
   const m = Math.floor(diff / 60000);
   if(m < 60) return m + 'm ago';
@@ -6945,14 +6969,18 @@ async function fpCount(table, filters){
 
 async function fpNotify(targetUserId, type, title, body, data){
   if(!targetUserId || !user || targetUserId === user.id) return;
+  // Delegate to forteCreateNotification which handles grouping + actor avatar
+  if(typeof forteCreateNotification === 'function'){
+    return forteCreateNotification(targetUserId, type, title, body, data);
+  }
   try{
+    const actorData = { ...(data||{}), actor_id: user.id, actor_avatar: profile?.avatar_url || null, actor_name: profile?.full_name || profile?.username || null };
     await sb.from('notifications').insert({
       user_id: targetUserId,
-      actor_id: user.id,
       type,
       title,
       body: body || null,
-      data: data || {},
+      data: actorData,
       read: false,
       created_at: new Date().toISOString()
     });
@@ -8235,25 +8263,17 @@ showStory = function(groupIdx, storyIdx){
   storyTimer = setTimeout(() => nextStory(), duration);
 };
 
-/* ---------- plus menu: add create post + create recipe + story ---------- */
+/* ---------- plus menu: add create recipe if not present ---------- */
 openLogMenu = function(){
   const menu = document.getElementById('log-menu');
   const modal = menu?.querySelector('.modal');
-  if(modal && !document.getElementById('patch-create-post-btn')){
-    const cancel = modal.querySelector('button[onclick*="Cancel"], button:last-child');
+  if(modal && !document.getElementById('patch-create-recipe-btn')){
+    const cancel = modal.querySelector('button[onclick*="closeModal(\'log-menu\')"][style*="none"]');
     const extra = document.createElement('div');
     extra.innerHTML = `
-      <button id="patch-create-post-btn" onclick="closeModal('log-menu');openCreatePost()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
-        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">📸</div>
-        <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Create post</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Share a caption, photo or video</div></div>
-      </button>
-      <button onclick="closeModal('log-menu');openCreateRecipe()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
+      <button id="patch-create-recipe-btn" onclick="closeModal('log-menu');openCreateRecipe()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
         <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">🍽️</div>
         <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Create recipe</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Add a recipe to Forte</div></div>
-      </button>
-      <button onclick="closeModal('log-menu');openAddStory()" style="background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;width:100%;transition:all .15s;margin-top:10px">
-        <div style="width:40px;height:40px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">⭕</div>
-        <div style="text-align:left"><div style="font-size:15px;font-weight:800;color:var(--text)">Add story</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Post another story</div></div>
       </button>
     `;
     if(cancel) cancel.before(extra);
@@ -14483,7 +14503,8 @@ if('serviceWorker' in navigator){
     window.syncProfile = function(){
       oldSyncProfileForStats();
       try{ showWeeklyStatsPrompt(); }catch(e){}
-      try{ renderBodySection(); }catch(e){}
+      const _bsEl = document.getElementById('body-stats-section');
+      if(_bsEl && !_bsEl.dataset.rendered) try{ renderBodySection(); }catch(e){}
     };
   }
 
@@ -18365,13 +18386,42 @@ async function forteCreateNotification(userId, type, title, body, data = {}){
   if(!user || !userId || userId === user.id) return;
 
   try{
+    // Group like notifications: update existing unread like notif for same post
+    if(type === 'like' && data?.post_id){
+      const { data: existing } = await sb
+        .from('notifications')
+        .select('id,title,data')
+        .eq('user_id', userId)
+        .eq('type', 'like')
+        .eq('read', false)
+        .filter('data->>post_id', 'eq', String(data.post_id))
+        .order('created_at', { ascending:false })
+        .limit(1);
+
+      if(existing && existing.length){
+        const prev = existing[0];
+        const prevData = prev.data || {};
+        const likerCount = (prevData.liker_count || 1) + 1;
+        const myName = profile?.full_name || profile?.username || 'Someone';
+        const groupedTitle = likerCount === 2
+          ? `${myName} and 1 other liked your post ❤️`
+          : `${myName} and ${likerCount - 1} others liked your post ❤️`;
+        await sb.from('notifications').update({
+          title: groupedTitle,
+          data: { ...prevData, ...data, liker_count: likerCount, actor_id: user.id, actor_avatar: profile?.avatar_url || prevData.actor_avatar, actor_name: myName }
+        }).eq('id', prev.id);
+        return;
+      }
+    }
+
+    const actorData = { ...data, actor_id: user.id, actor_avatar: profile?.avatar_url || null, actor_name: profile?.full_name || profile?.username || null };
     await sb.from('notifications').insert({
       user_id: userId,
       actor_id: user.id,
       type,
       title,
       body: body || null,
-      data: data || {},
+      data: actorData,
       read: false
     });
   }catch(e){
@@ -18546,7 +18596,7 @@ window.loadNotifications = async function(){
   try{
     const { data } = await sb
       .from('notifications')
-      .select('*,profiles!notifications_actor_id_fkey(username,full_name,avatar_url)')
+      .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending:false })
       .limit(40);
@@ -18556,54 +18606,62 @@ window.loadNotifications = async function(){
       return;
     }
 
+    // Batch-fetch actor avatars for notifications missing them
+    const missingActorIds = [...new Set(
+      data.filter(n => n.data?.actor_id && !n.data?.actor_avatar).map(n => n.data.actor_id)
+    )];
+    const actorMap = {};
+    if(missingActorIds.length){
+      const { data: actors } = await sb.from('profiles').select('id,username,full_name,avatar_url').in('id', missingActorIds).catch(()=>({data:[]}));
+      (actors||[]).forEach(a => { actorMap[a.id] = a; });
+    }
+
+    const typeIcon = {like:'❤️',comment:'💬',follow:'👤',follow_request:'👤',friend_request:'👤',league_invite:'🏆',message:'💬',story_like:'🔥',story_reply:'↩️',pr:'🏋️'};
+
     el.innerHTML = data.map(n => {
-      const icon =
-        n.type === 'message' ? '💬' :
-        n.type === 'like' ? '❤️' :
-        n.type === 'comment' ? '💬' :
-        n.type === 'follow' ? '👤' :
-        n.type === 'league_invite' ? '🏆' :
-        '🔔';
+      // Merge missing actor profile data into notification.data
+      if(n.data?.actor_id && actorMap[n.data.actor_id]){
+        const ap = actorMap[n.data.actor_id];
+        n.data.actor_avatar = n.data.actor_avatar || ap.avatar_url;
+        n.data.actor_name = n.data.actor_name || ap.full_name || ap.username;
+      }
+      const d = n.data || {};
+      const icon = typeIcon[n.type] || '🔔';
+      const isUnread = !n.read;
+
+      const avatarHtml = d.actor_avatar
+        ? `<img src="${d.actor_avatar}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          + `<div style="display:none;width:44px;height:44px;border-radius:50%;background:${isUnread?'rgba(255,0,144,.15)':'var(--bg3)'};align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>`
+        : `<div style="width:44px;height:44px;border-radius:50%;background:${isUnread?'rgba(255,0,144,.15)':'var(--bg3)'};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>`;
+
+      const thumbHtml = d.post_image
+        ? `<div style="width:44px;height:44px;border-radius:6px;overflow:hidden;flex-shrink:0"><img src="${d.post_image}" style="width:100%;height:100%;object-fit:cover"></div>`
+        : '';
 
       const click =
-        n.type === 'message' && n.data?.conversation_id
-          ? `forteOpenNotifMessage('${n.id}','${n.data.conversation_id}','${n.actor_id || ''}')`
-          : n.type === 'post_like' || n.type === 'like' || n.type === 'comment'
-          ? `forteOpenNotifPost('${n.id}','${n.data?.post_id || ''}')`
-          : `markRead('${n.id}', this)`;
+        n.type === 'message' && d.conversation_id
+          ? `forteOpenNotifMessage('${n.id}','${d.conversation_id}','')`
+          : (n.type === 'like' || n.type === 'comment') && d.post_id
+          ? `forteOpenNotifPost('${n.id}','${d.post_id}')`
+          : `markNRead('${n.id}',this)`;
 
       return `
-        <div onclick="${click}" style="
-          display:flex;
-          gap:12px;
-          padding:14px 12px;
-          border-radius:12px;
-          cursor:pointer;
-          background:${n.read ? 'transparent' : 'rgba(255,0,144,.08)'};
-          border-bottom:1px solid var(--border);
-        ">
-          <div style="
-            width:38px;
-            height:38px;
-            border-radius:50%;
-            background:var(--bg3);
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            font-size:18px;
-            flex-shrink:0;
-          ">${icon}</div>
-
+        <div data-nid="${n.id}" onclick="${click}" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:${isUnread?'rgba(255,0,144,.04)':'transparent'};border-left:3px solid ${isUnread?'#ff0090':'transparent'};cursor:pointer;border-bottom:1px solid var(--border)">
+          ${avatarHtml}
           <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:${n.read ? '500' : '800'}">${n.title || 'Notification'}</div>
-            ${n.body ? `<div style="font-size:13px;color:var(--text2);margin-top:3px;line-height:1.35">${n.body}</div>` : ''}
-            <div style="font-size:11px;color:var(--text3);margin-top:5px">${getTimeAgo(n.created_at)}</div>
+            <div style="font-size:14px;font-weight:${isUnread?'600':'400'};line-height:1.4">${n.title || 'Notification'}</div>
+            ${n.body ? `<div style="font-size:13px;color:var(--text2);margin-top:2px;line-height:1.3">${n.body}</div>` : ''}
+            <div style="font-size:11px;color:${isUnread?'#ff0090':'var(--text3)'};margin-top:3px;font-weight:${isUnread?'600':'400'}">${getTimeAgo(n.created_at)}</div>
           </div>
-
-          ${!n.read ? '<div style="width:8px;height:8px;background:#ff0090;border-radius:50%;margin-top:6px"></div>' : ''}
+          ${thumbHtml}
+          ${isUnread && !thumbHtml ? '<div style="width:8px;height:8px;border-radius:50%;background:#ff0090;flex-shrink:0"></div>' : ''}
         </div>
       `;
     }).join('');
+
+    const unread = data.filter(n => !n.read).length;
+    const dot = document.getElementById('notif-dot');
+    if(dot) dot.style.display = unread > 0 ? 'block' : 'none';
 
   }catch(e){
     console.error('Could not load notifications', e);
