@@ -21774,23 +21774,61 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   window._fcUpload=async function(){
     if(!_blob){toast('Nothing to share'); return;}
     const postBtn=document.querySelector('#_fcPost button:last-child');
+    const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
     if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
     const caption=document.getElementById('_fcCap').value.trim();
     const u=window.user||(typeof user!=='undefined'?user:null);
-    if(!u){toast('Sign in first');if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}return;}
-    const ext=_blobType==='video'?'webm':'jpg';
-    const path=`stories/${u.id}/${Date.now()}.${ext}`;
+    if(!u){toast('Sign in first');resetBtn();return;}
+
+    /* bake stickers/text onto a canvas so they appear in the story */
+    let uploadBlob=_blob;
+    if(_blobType==='image'){
+      try{
+        const img=document.getElementById('_fcPI');
+        const layer=document.getElementById('_fcSLayer');
+        const W=img.naturalWidth||img.offsetWidth||720,H=img.naturalHeight||img.offsetHeight||1280;
+        const can=document.createElement('canvas'); can.width=W; can.height=H;
+        const ctx=can.getContext('2d');
+        ctx.drawImage(img,0,0,W,H);
+        // draw sticker divs onto canvas (best-effort)
+        const fRect=document.getElementById('_fc').getBoundingClientRect();
+        [...layer.children].forEach(el=>{
+          const r=el.getBoundingClientRect();
+          const x=(r.left-fRect.left)/fRect.width*W;
+          const y=(r.top-fRect.top)/fRect.height*H;
+          const fs=parseFloat(getComputedStyle(el).fontSize||'52')/fRect.height*H;
+          ctx.font=`900 ${fs}px sans-serif`;
+          ctx.fillText(el.textContent,x,y+fs);
+        });
+        uploadBlob=await new Promise(res=>can.toBlob(res,'image/jpeg',0.92));
+      }catch(e){/* use original blob */}
+    }
+
+    let mediaUrl=null;
     try{
-      const up=await sb.storage.from('forte-media').upload(path,_blob,{upsert:true,contentType:_blob.type||(_blobType==='video'?'video/webm':'image/jpeg')});
-      let mediaUrl=null;
-      if(!up.error) mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+      const ext=_blobType==='video'?'webm':'jpg';
+      const ct=uploadBlob.type||(ext==='webm'?'video/webm':'image/jpeg');
+      const path=`stories/${u.id}/${Date.now()}.${ext}`;
+      const {error:upErr}=await sb.storage.from('forte-media').upload(path,uploadBlob,{upsert:true,contentType:ct});
+      if(!upErr) mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+      else console.warn('Story media upload failed:',upErr.message,'— posting without media');
+    }catch(e){console.warn('Story upload threw:',e);}
+
+    try{
       const exp=new Date(Date.now()+24*3600*1000).toISOString();
-      await sb.from('stories').insert({user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,expires_at:exp,created_at:new Date().toISOString()});
+      const row={user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,expires_at:exp,created_at:new Date().toISOString()};
+      const {error}=await sb.from('stories').insert(row);
+      if(error){
+        // retry without media_url in case column has constraints
+        const {error:e2}=await sb.from('stories').insert({...row,media_url:null});
+        if(e2){console.error(e2);toast('Could not post story: '+e2.message);resetBtn();return;}
+      }
       _fcClose(); toast('Story posted! 🔥');
       try{loadStories();}catch(e){}
     }catch(err){
-      console.error(err); toast('Upload failed');
-      if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}
+      console.error('Story insert threw:',err);
+      toast('Something went wrong posting your story');
+      resetBtn();
     }
   };
 
