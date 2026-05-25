@@ -17737,11 +17737,14 @@ setTimeout(() => {
     capturedBlob = file;
     capturedType = file.type.startsWith('video') ? 'video' : 'image';
     const url = URL.createObjectURL(file);
-    // On iOS the camera UI may be hidden while the file picker was open — restore it first
+    // Restore camera UI (iOS hides the web view while the native picker is open)
     const camEl = document.getElementById('forte-story-camera');
     if(camEl) camEl.style.display = 'block';
     document.body.style.overflow = 'hidden';
-    setTimeout(()=>showPreview(url, capturedType), 80);
+    // Hide live video immediately so there's no camera flash before preview shows
+    const liveVid = document.getElementById('story-cam-video');
+    if(liveVid){ liveVid.style.display = 'none'; liveVid.srcObject = null; }
+    showPreview(url, capturedType);
   };
 
   function makeDrag(el){
