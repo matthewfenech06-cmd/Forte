@@ -20315,45 +20315,56 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   window.sendForteTap = async function(){
-    const u = await dmCurrentUser();
-    if(!u) return dmToast('Please sign in first');
-
-    const otherId = await getOtherUserIdForTap();
-    if(!otherId) return dmToast('Open a chat first');
-
-    const key = `forte_tap_cooldown_${u.id}_${otherId}`;
-    const last = Number(localStorage.getItem(key) || 0);
-    const left = TAP_COOLDOWN_MS - (Date.now() - last);
-
-    if(left > 0){
-      const mins = Math.ceil(left / 60000);
-      return dmToast(`You can tap them again in ${mins} min`);
-    }
-
-    const prof = dmProfile();
-    const name = prof.full_name || prof.username || 'Someone';
-
     try{
-      if(typeof sendNotification === 'function'){
-        await sendNotification(
-          otherId,
-          'tap',
-          `${name} tapped you! 👆`,
-          'Tap them back in messages',
-          { from_user_id:u.id, conversation_id:currentConvId }
-        );
-      }else{
-        await sb.from('notifications').insert({
-          user_id: otherId,
-          type: 'tap',
-          title: `${name} tapped you! 👆`,
-          body: 'Tap them back in messages',
-          data: { from_user_id:u.id, conversation_id:currentConvId }
-        });
+      const u = await dmCurrentUser();
+      if(!u) return dmToast('Please sign in first');
+
+      const otherId = await getOtherUserIdForTap();
+      if(!otherId) return dmToast('Open a chat first');
+
+      const key = `forte_tap_cooldown_${u.id}_${otherId}`;
+      const last = Number(localStorage.getItem(key) || 0);
+      const left = TAP_COOLDOWN_MS - (Date.now() - last);
+
+      if(left > 0){
+        const mins = Math.ceil(left / 60000);
+        return dmToast(`You can tap them again in ${mins} min`);
       }
 
-      localStorage.setItem(key, String(Date.now()));
-      dmToast('Tapped 👆');
+      const prof = dmProfile();
+      const name = prof.full_name || prof.username || 'Someone';
+      const title = `${name} tapped you! 👆`;
+      const convId = (typeof currentConvId !== 'undefined' ? currentConvId : null) || window.__forteTapConvId || null;
+
+      /* Try each notification path in order — first one that resolves wins */
+      let sent = false;
+      if(!sent && typeof forteCreateNotification === 'function'){
+        try{
+          await forteCreateNotification(otherId, 'tap', title, 'Tap them back in messages', { from_user_id:u.id, conversation_id:convId });
+          sent = true;
+        }catch(e){ console.warn('forteCreateNotification tap failed', e); }
+      }
+      if(!sent && typeof fpNotify === 'function'){
+        try{
+          await fpNotify(otherId, 'tap', title, 'Tap them back in messages', { from_user_id:u.id, conversation_id:convId });
+          sent = true;
+        }catch(e){ console.warn('fpNotify tap failed', e); }
+      }
+      if(!sent){
+        /* Direct insert as final fallback */
+        const { error } = await sb.from('notifications').insert({
+          user_id: otherId,
+          type: 'tap',
+          title,
+          body: 'Tap them back in messages',
+          data: JSON.stringify({ from_user_id:u.id, conversation_id:convId }),
+          read: false
+        });
+        if(!error) sent = true;
+      }
+
+      try{ localStorage.setItem(key, String(Date.now())); }catch(e){}
+      dmToast(sent ? 'Tapped 👆' : 'Could not send tap');
     }catch(err){
       console.error('TAP ERROR:', err);
       dmToast('Could not send tap');
@@ -20552,6 +20563,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   const previousOpenChat = window.openChat;
   window.openChat = async function(convId, otherUserId){
     window.__forteTapTargetId = otherUserId;
+    window.__forteTapConvId = convId;
     if(previousOpenChat) await previousOpenChat(convId, otherUserId);
     ensureTapButton();
     if(typeof ensureChatMediaControls === 'function') ensureChatMediaControls();
