@@ -20687,21 +20687,20 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   #run-screen{position:relative;background:#050509;color:#fff}
 </style>
 <style>
-/* ── Feed layout + header transparency fixes ── */
-/* Gap between Friends/Community tabs and first post */
+/* ── Seamless background: transparent headers so gradient flows through everything ── */
 #feed-mode-tabs{padding-bottom:12px!important}
-/* Feed sticky header: semi-transparent so the app gradient shows through */
 #feed-screen>div[style*="sticky"]{
-  background:rgba(10,10,14,0.5)!important;
-  backdrop-filter:blur(20px) saturate(1.4)!important;
-  -webkit-backdrop-filter:blur(20px) saturate(1.4)!important;
+  background:transparent!important;
   background-image:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  box-shadow:none!important;
+  border:none!important;
 }
-/* All other screen topbars: same semi-transparent glass look */
 .topbar{
-  background:rgba(10,10,14,0.5)!important;
-  backdrop-filter:blur(20px) saturate(1.4)!important;
-  -webkit-backdrop-filter:blur(20px) saturate(1.4)!important;
+  background:transparent!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
 }
 </style>
 
