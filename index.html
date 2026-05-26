@@ -20686,6 +20686,18 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   .forte-run-save-btn.primary{background:#ff0090;color:#fff}.forte-run-save-btn.secondary{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.14)}
   #run-screen{position:relative;background:#050509;color:#fff}
 </style>
+<style>
+/* ── Feed layout fixes ── */
+/* Gap between Friends/Community tabs and first post */
+#feed-mode-tabs{padding-bottom:12px!important}
+/* Prevent overscroll rubber-band revealing black area above sticky header */
+#feed-screen{overscroll-behavior-y:none}
+/* Sticky feed header: fully opaque so it always blends with the background */
+#feed-screen>div[style*="sticky"]{
+  background:var(--bg)!important;
+  background-image:radial-gradient(ellipse 120% 80% at 10% 0%,rgba(255,0,144,.11) 0%,transparent 60%)!important;
+}
+</style>
 
 <script id="forte-exercise-run-history-final-js">
 (function(){
@@ -21880,21 +21892,21 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       const u = typeof user !== 'undefined' ? user : null;
       if(u){
         try{
-          const {data:fr} = await sb.from('profiles')
-            .select('calorie_goal,protein_goal,carb_goal,fat_goal')
-            .eq('id', u.id).single();
+          /* select('*') to avoid error if any specific column doesn't exist */
+          const {data:fr} = await sb.from('profiles').select('*').eq('id', u.id).single();
           if(fr){
             const p = typeof profile !== 'undefined' ? profile : null;
             if(p) Object.assign(p, fr);
             const g = typeof goals !== 'undefined' ? goals : null;
             if(g){
-              if(fr.calorie_goal) g.cal = fr.calorie_goal;
-              if(fr.protein_goal) g.pro = fr.protein_goal;
-              if(fr.carb_goal)    g.carb = fr.carb_goal;
-              if(fr.fat_goal)     g.fat = fr.fat_goal;
+              /* handle both column name variants (calorie_goal / calorie_goal confirmed same) */
+              if(fr.calorie_goal)                      g.cal  = fr.calorie_goal;
+              if(fr.protein_goal)                      g.pro  = fr.protein_goal;
+              if(fr.carb_goal   || fr.carbs_goal)      g.carb = fr.carb_goal  || fr.carbs_goal;
+              if(fr.fat_goal    || fr.fats_goal)       g.fat  = fr.fat_goal   || fr.fats_goal;
             }
           }
-        }catch(e){}
+        }catch(e){ console.warn('Nutrition goals fetch failed:', e); }
       }
       return _orig.apply(this, arguments);
     };
