@@ -1828,7 +1828,7 @@ body.light .exercise-start-card.workout{color:#fff}
 
 <!-- DM SCREEN -->
 <div id="dm-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:300;flex-direction:column">
-  <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 12px;border-bottom:1px solid var(--border);background:var(--bg)">
+  <div style="display:flex;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 12px;border-bottom:1px solid var(--border);background:var(--bg)">
     <button onclick="closeDMs()" style="background:none;border:none;color:var(--text2);cursor:pointer;padding:4px">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
     </button>
@@ -1842,7 +1842,7 @@ body.light .exercise-start-card.workout{color:#fff}
 
 <!-- CHAT SCREEN -->
 <div id="chat-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:301;flex-direction:column">
-  <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 12px;border-bottom:1px solid var(--border);background:var(--bg)">
+  <div style="display:flex;align-items:center;gap:12px;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 12px;border-bottom:1px solid var(--border);background:var(--bg)">
     <button onclick="closeChat()" style="background:none;border:none;color:var(--text2);cursor:pointer;padding:4px">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
     </button>
@@ -20296,7 +20296,9 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   async function getOtherUserIdForTap(){
     if(currentConvUser?.id) return currentConvUser.id;
+    if(window.__forteTapTargetId) return window.__forteTapTargetId;
     if(window.forteCurrentChatOtherUserId) return window.forteCurrentChatOtherUserId;
+    try{ if(typeof forteCurrentChatOtherUserId !== 'undefined' && forteCurrentChatOtherUserId) return forteCurrentChatOtherUserId; }catch(e){}
     if(!currentConvId) return null;
 
     const u = await dmCurrentUser();
@@ -20549,6 +20551,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   const previousOpenChat = window.openChat;
   window.openChat = async function(convId, otherUserId){
+    window.__forteTapTargetId = otherUserId;
     if(previousOpenChat) await previousOpenChat(convId, otherUserId);
     ensureTapButton();
     if(typeof ensureChatMediaControls === 'function') ensureChatMediaControls();
