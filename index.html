@@ -20366,14 +20366,28 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       try{ localStorage.setItem(key, String(Date.now())); }catch(e){}
 
       if(sent){
-        /* Insert [[FORTE_TAP]] message into the conversation so both users see the animation */
+        /* Insert [[FORTE_TAP]] message and immediately render it locally */
         if(convId){
+          const tempTap = {
+            id: 'tap-local-' + Date.now(),
+            conversation_id: convId,
+            sender_id: u.id,
+            content: '[[FORTE_TAP]]',
+            created_at: new Date().toISOString(),
+            profiles: dmProfile()
+          };
+          if(typeof appendChatMessage === 'function') appendChatMessage(tempTap);
           try{
-            await sb.from('messages').insert({
+            const { data:inserted } = await sb.from('messages').insert({
               conversation_id: convId,
               sender_id: u.id,
               content: '[[FORTE_TAP]]'
-            });
+            }).select().single();
+            /* Replace temp id so realtime dedup works */
+            if(inserted?.id && window.forteRenderedMessageIds){
+              window.forteRenderedMessageIds.delete('tap-local-' + Date.now());
+              window.forteRenderedMessageIds.add(inserted.id);
+            }
           }catch(e){ console.warn('tap chat message insert failed', e); }
         }
         dmToast('Tapped 👆');
