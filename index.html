@@ -21921,26 +21921,43 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
               if(carb) g.carb = carb;
               if(fat)  g.fat  = fat;
 
-              /* Fallback: if calorie_goal is still null, recalculate from body stats */
-              if(!cal && fr.weight_kg && fr.height_cm && fr.age){
+              /* Fallback: recalculate from body stats when calorie_goal is missing or is the app default */
+              if((!cal || cal === 2000) && fr.weight_kg && fr.height_cm){
                 const w   = Number(fr.weight_kg);
                 const h   = Number(fr.height_cm);
-                const age = Number(fr.age);
+                const age = Number(fr.age) || 25;
                 const sex = String(fr.sex||'').toLowerCase();
-                const act = String(fr.activity_level||'').toLowerCase();
                 const gtype = String(fr.goal_type||'').toLowerCase();
+                const goalW = Number(fr.goal_weight_kg) || null;
+                const goalWeeks = Number(fr.goal_weeks) || null;
+                /* activity_level stored as numeric (1.55) or string ("moderate") */
+                let mult = 1.55;
+                const actRaw = fr.activity_level;
+                if(actRaw !== null && actRaw !== undefined){
+                  const actNum = parseFloat(actRaw);
+                  if(!isNaN(actNum)) mult = actNum;
+                  else {
+                    const actStr = String(actRaw).toLowerCase();
+                    if(actStr.includes('light'))    mult = 1.375;
+                    if(actStr.includes('moderate')) mult = 1.55;
+                    if(actStr.includes('very'))     mult = 1.725;
+                    if(actStr.includes('athlete')||actStr.includes('extra')) mult = 1.9;
+                  }
+                }
                 const bmr = sex.includes('female')
                   ? 10*w + 6.25*h - 5*age - 161
                   : 10*w + 6.25*h - 5*age + 5;
-                let mult = 1.2;
-                if(act.includes('light'))    mult = 1.375;
-                if(act.includes('moderate')) mult = 1.55;
-                if(act.includes('very'))     mult = 1.725;
-                if(act.includes('athlete')||act.includes('extra')) mult = 1.9;
-                let kcal = bmr * mult;
-                if(gtype.includes('lose'))  kcal -= 400;
-                if(gtype.includes('gain'))  kcal += 300;
-                kcal = Math.max(1200, Math.round(kcal));
+                const tdee = Math.round(bmr * mult);
+                let adjustment = 0;
+                if(goalW && goalWeeks && goalWeeks > 0){
+                  const kgDiff = goalW - w;
+                  adjustment = Math.round((kgDiff * 7700) / (goalWeeks * 7));
+                  adjustment = Math.max(-1000, Math.min(1000, adjustment));
+                } else {
+                  if(gtype.includes('lose')) adjustment = -400;
+                  if(gtype.includes('gain')) adjustment = 300;
+                }
+                const kcal = Math.max(1200, tdee + adjustment);
                 const calcPro  = Math.round(w * 2);
                 const calcFat  = Math.round((kcal * 0.25) / 9);
                 const calcCarb = Math.max(0, Math.round((kcal - calcPro*4 - calcFat*9) / 4));
@@ -21948,7 +21965,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
                 g.pro  = calcPro;
                 g.fat  = calcFat;
                 g.carb = calcCarb;
-                /* Save back so future loads don't need to recalculate */
+                /* Save back so future loads use the stored value */
                 sb.from('profiles').update({
                   calorie_goal: kcal, protein_goal: calcPro,
                   carb_goal: calcCarb, carbs_goal: calcCarb,
