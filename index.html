@@ -21853,4 +21853,220 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 </script>
 
+<script>
+/* ── Patch: Follow fix · Nutrition goals · Camera flash · Music · Preview filters ── */
+(function(){
+  if(window.__forteEnhB) return;
+  window.__forteEnhB = true;
+
+  /* 1 ── Follow button: refresh followingIds before each feed render */
+  (function(){
+    const _orig = typeof loadFeedPosts === 'function' ? loadFeedPosts : null;
+    if(!_orig) return;
+    loadFeedPosts = async function(){
+      const u = typeof user !== 'undefined' ? user : null;
+      if(u && typeof loadFollowingIds === 'function'){
+        try{ await loadFollowingIds(); }catch(e){}
+      }
+      return _orig.apply(this, arguments);
+    };
+  })();
+
+  /* 2 ── Nutrition: always pull fresh goals from DB before rendering */
+  (function(){
+    const _orig = typeof loadNutrition === 'function' ? loadNutrition : null;
+    if(!_orig) return;
+    loadNutrition = async function(){
+      const u = typeof user !== 'undefined' ? user : null;
+      if(u){
+        try{
+          const {data:fr} = await sb.from('profiles')
+            .select('calorie_goal,protein_goal,carb_goal,fat_goal')
+            .eq('id', u.id).single();
+          if(fr){
+            const p = typeof profile !== 'undefined' ? profile : null;
+            if(p) Object.assign(p, fr);
+            const g = typeof goals !== 'undefined' ? goals : null;
+            if(g){
+              if(fr.calorie_goal) g.cal = fr.calorie_goal;
+              if(fr.protein_goal) g.pro = fr.protein_goal;
+              if(fr.carb_goal)    g.carb = fr.carb_goal;
+              if(fr.fat_goal)     g.fat = fr.fat_goal;
+            }
+          }
+        }catch(e){}
+      }
+      return _orig.apply(this, arguments);
+    };
+  })();
+
+  /* 3 ── Custom exercise modal: dynamic subtitle */
+  (function(){
+    const tog = document.getElementById('ce-public-toggle');
+    const sub = document.querySelector('#custom-exercise-modal .modal > div:nth-child(3)');
+    if(tog && sub){
+      tog.addEventListener('change', function(){
+        sub.textContent = tog.checked
+          ? 'Shared with the entire Forte community'
+          : 'Saved privately to your account';
+      });
+    }
+  })();
+
+  /* 4-6 ── Story camera: flash · music · preview-filter swiping */
+  const FCFILT=[
+    {n:'Normal',f:'none'},{n:'B&W',f:'grayscale(100%)'},{n:'Vintage',f:'sepia(75%)'},
+    {n:'Vivid',f:'contrast(1.35) saturate(1.7)'},{n:'Warm',f:'brightness(1.12) saturate(1.35) hue-rotate(10deg)'},
+    {n:'Cool',f:'brightness(.95) contrast(1.15) hue-rotate(200deg)'},{n:'Drama',f:'contrast(1.55) brightness(.92) saturate(1.2)'}
+  ];
+  let _prevFi=0, _musicAudio=null, _psx=0;
+
+  function _stopMusic(){
+    if(_musicAudio){try{_musicAudio.pause();_musicAudio=null;}catch(e){}}
+  }
+  function _applyPrevFilter(){
+    const f=FCFILT[_prevFi];
+    const img=document.getElementById('_fcPI'), vid=document.getElementById('_fcPV');
+    if(img) img.style.filter=f.f==='none'?'':f.f;
+    if(vid) vid.style.filter=f.f==='none'?'':f.f;
+    const lbl=document.getElementById('_fcFilter');
+    if(lbl){lbl.textContent=f.n;lbl.style.opacity='1';clearTimeout(lbl._t);lbl._t=setTimeout(()=>lbl.style.opacity='0',900);}
+  }
+
+  window._fcPickMusic=function(){
+    let inp=document.getElementById('_fcMusInp');
+    if(!inp){
+      inp=document.createElement('input');
+      inp.id='_fcMusInp';inp.type='file';inp.accept='audio/*';inp.style.display='none';
+      inp.onchange=function(){
+        const file=inp.files[0];if(!file)return;
+        _stopMusic();
+        const name=file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ');
+        _musicAudio=new Audio(URL.createObjectURL(file));
+        _musicAudio.loop=true;
+        _musicAudio.play().catch(()=>{});
+        // Music sticker on the layer
+        const sl=document.getElementById('_fcSLayer');
+        if(sl){
+          let ms=document.getElementById('_fcMusSticker');
+          if(!ms){
+            ms=document.createElement('div');
+            ms.id='_fcMusSticker';
+            ms.style.cssText='position:absolute;bottom:110px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);backdrop-filter:blur(8px);border-radius:22px;padding:8px 16px;display:flex;align-items:center;gap:8px;color:#fff;font-size:13px;font-weight:700;cursor:move;pointer-events:auto;z-index:25;white-space:nowrap;max-width:82%;overflow:hidden;text-overflow:ellipsis';
+            ms.innerHTML='<span style="font-size:16px;animation:spin 2s linear infinite;display:inline-block">🎵</span><span id="_fcMusName"></span>';
+            ms.addEventListener('touchmove',ev=>{ev.preventDefault();const r=document.getElementById('_fc').getBoundingClientRect();ms.style.left=((ev.touches[0].clientX-r.left)/r.width*100)+'%';ms.style.top=((ev.touches[0].clientY-r.top)/r.height*100)+'%';ms.style.transform='translate(-50%,-50%)';},{passive:false});
+            sl.appendChild(ms);sl.style.pointerEvents='auto';
+          }
+          const nm=document.getElementById('_fcMusName');
+          if(nm) nm.textContent=name;
+        }
+        const btn=document.getElementById('_fcMusicBtn');
+        if(btn) btn.style.background='rgba(255,0,144,.6)';
+        inp.value='';
+      };
+      document.body.appendChild(inp);
+    }
+    inp.click();
+  };
+
+  const _origOAS=window.openAddStory;
+  window.openAddStory=async function(){
+    _stopMusic();_prevFi=0;
+    await _origOAS.apply(this,arguments);
+    const fc=document.getElementById('_fc');
+    if(!fc) return;
+
+    /* Flash button */
+    if(!document.getElementById('_fcFlashBtn')){
+      const grp=fc.querySelector('div[style*="gap:10px"]');
+      if(grp){
+        const fb=document.createElement('button');
+        fb.id='_fcFlashBtn';fb.title='Flash';
+        fb.innerHTML='⚡';
+        fb.style.cssText='width:42px;height:42px;border-radius:50%;border:none;background:rgba(0,0,0,.52);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)';
+        fb.onclick=async function(){
+          const v=document.getElementById('_fcV');
+          if(!v||!v.srcObject){try{(fpToast||showToast)('No active camera');}catch(e){}return;}
+          const vt=v.srcObject.getVideoTracks()[0];
+          if(!vt) return;
+          window._fcFlashOn=!window._fcFlashOn;
+          try{
+            await vt.applyConstraints({advanced:[{torch:!!window._fcFlashOn}]});
+            fb.style.background=window._fcFlashOn?'rgba(255,204,0,.7)':'rgba(0,0,0,.52)';
+          }catch(e){
+            window._fcFlashOn=false;
+            fb.style.background='rgba(0,0,0,.52)';
+            try{(fpToast||showToast)('Flash not supported on this device');}catch(e2){}
+          }
+        };
+        grp.insertBefore(fb,grp.firstChild);
+      }
+    }
+
+    /* Music button (in preview bar) */
+    if(!document.getElementById('_fcMusicBtn')){
+      const bar=document.getElementById('_fcPost');
+      if(bar){
+        const mb=document.createElement('button');
+        mb.id='_fcMusicBtn';mb.title='Add music';
+        mb.innerHTML='🎵';
+        mb.style.cssText='width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center';
+        mb.onclick=function(){_fcPickMusic();};
+        const retake=bar.querySelector('button:first-child');
+        if(retake) retake.after(mb);
+        else bar.insertBefore(mb,bar.firstChild);
+      }
+    }
+
+    /* Preview filter swiping (new touchend handler, separate from capture-mode one) */
+    if(!fc._prevFiltBound){
+      fc._prevFiltBound=true;
+      fc.addEventListener('touchstart',e=>{_psx=e.touches[0].clientX;},{passive:true});
+      fc.addEventListener('touchend',e=>{
+        const prev=document.getElementById('_fcPrev');
+        if(!prev||prev.style.display!=='block') return;
+        const dx=e.changedTouches[0].clientX-_psx;
+        if(Math.abs(dx)>50){
+          _prevFi=dx<0?(_prevFi+1)%FCFILT.length:(_prevFi-1+FCFILT.length)%FCFILT.length;
+          _applyPrevFilter();
+        }
+      },{passive:true});
+    }
+
+    /* Reset flash state */
+    window._fcFlashOn=false;
+  };
+
+  /* Stop music on close */
+  const _origClose=window._fcClose;
+  if(_origClose) window._fcClose=function(){_stopMusic();return _origClose.apply(this,arguments);};
+
+  /* Bake preview filter into upload */
+  const _origUpload=window._fcUpload;
+  if(_origUpload){
+    window._fcUpload=async function(){
+      if(_prevFi>0){
+        const img=document.getElementById('_fcPI');
+        if(img&&img.src&&img.style.display!=='none'){
+          try{
+            const can=document.createElement('canvas');
+            can.width=img.naturalWidth||640;can.height=img.naturalHeight||1280;
+            const ctx=can.getContext('2d');
+            ctx.filter=FCFILT[_prevFi].f==='none'?'':FCFILT[_prevFi].f;
+            ctx.drawImage(img,0,0,can.width,can.height);
+            const filtered=await new Promise(res=>can.toBlob(res,'image/jpeg',0.92));
+            if(filtered){
+              const newUrl=URL.createObjectURL(filtered);
+              img.src=newUrl;
+              await new Promise(res=>{img.onload=res;setTimeout(res,400);});
+            }
+          }catch(e){}
+        }
+      }
+      return _origUpload.apply(this,arguments);
+    };
+  }
+})();
+</script>
+
 </html>
