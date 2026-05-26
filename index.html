@@ -20364,7 +20364,22 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       }
 
       try{ localStorage.setItem(key, String(Date.now())); }catch(e){}
-      dmToast(sent ? 'Tapped 👆' : 'Could not send tap');
+
+      if(sent){
+        /* Insert [[FORTE_TAP]] message into the conversation so both users see the animation */
+        if(convId){
+          try{
+            await sb.from('messages').insert({
+              conversation_id: convId,
+              sender_id: u.id,
+              content: '[[FORTE_TAP]]'
+            });
+          }catch(e){ console.warn('tap chat message insert failed', e); }
+        }
+        dmToast('Tapped 👆');
+      } else {
+        dmToast('Could not send tap');
+      }
     }catch(err){
       console.error('TAP ERROR:', err);
       dmToast('Could not send tap');
@@ -22161,6 +22176,61 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       return _origUpload.apply(this,arguments);
     };
   }
+})();
+</script>
+
+<script>
+/* =========================================================
+   FORTE TAP MESSAGE — animated chat card + tap-back
+   ========================================================= */
+(function(){
+  if(window.__forteTapMsg) return;
+  window.__forteTapMsg = true;
+
+  /* Inject keyframe CSS once */
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes forte-tap-bounce{
+      0%,100%{transform:scale(1) rotate(-10deg)}
+      30%{transform:scale(1.35) rotate(10deg)}
+      60%{transform:scale(1.1) rotate(-5deg)}
+    }
+    @keyframes forte-tap-ring{
+      0%{box-shadow:0 0 0 0 rgba(255,0,144,.45)}
+      70%{box-shadow:0 0 0 18px rgba(255,0,144,0)}
+      100%{box-shadow:0 0 0 0 rgba(255,0,144,0)}
+    }
+    .forte-tap-card{animation:forte-tap-ring 1s ease-out 3}
+    .forte-tap-hand{display:inline-block;animation:forte-tap-bounce .55s ease-in-out 3;transform-origin:bottom center}
+  `;
+  document.head.appendChild(style);
+
+  /* Override chatMessageHtml to intercept [[FORTE_TAP]] messages */
+  const _origMsgHtml = window.chatMessageHtml;
+  window.chatMessageHtml = function(m){
+    if(m && m.content && m.content.trim() === '[[FORTE_TAP]]'){
+      const isMe = m.sender_id === (window.user?.id || (typeof user !== 'undefined' ? user?.id : null));
+      const p = m.profiles || {};
+      const senderName = p.full_name || p.username || (isMe ? 'You' : 'Them');
+      const time = typeof forteTime === 'function' ? forteTime(m.created_at) : '';
+      const tapBackBtn = !isMe
+        ? `<button onclick="window.sendForteTap()" style="margin-top:10px;background:#ff0090;color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%">Tap back 👆</button>`
+        : `<div style="font-size:11px;color:rgba(255,0,144,.7);margin-top:6px">Waiting for them to tap back…</div>`;
+      return `
+        <div style="display:flex;justify-content:center;margin:16px 8px">
+          <div class="forte-tap-card" style="background:rgba(255,0,144,.08);border:1.5px solid rgba(255,0,144,.35);border-radius:22px;padding:18px 24px;text-align:center;max-width:220px;width:100%">
+            <div class="forte-tap-hand" style="font-size:42px;line-height:1">👋</div>
+            <div style="font-size:13px;font-weight:700;color:#ff0090;margin:8px 0 2px">${isMe ? 'You tapped!' : senderName + ' tapped you!'}</div>
+            ${tapBackBtn}
+            <div style="font-size:10px;color:var(--text3);margin-top:8px">${time}</div>
+          </div>
+        </div>`;
+    }
+    if(typeof _origMsgHtml === 'function') return _origMsgHtml(m);
+    return '';
+  };
+
+  /* sendForteTap already handles the [[FORTE_TAP]] message insert internally */
 })();
 </script>
 
