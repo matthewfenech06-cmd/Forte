@@ -20687,16 +20687,18 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   #run-screen{position:relative;background:#050509;color:#fff}
 </style>
 <style>
-/* ── Feed layout fixes ── */
+/* ── Feed layout + seamless background fixes ── */
 /* Gap between Friends/Community tabs and first post */
 #feed-mode-tabs{padding-bottom:12px!important}
-/* Prevent overscroll rubber-band revealing black area above sticky header */
-#feed-screen{overscroll-behavior-y:none}
-/* Sticky feed header: fully opaque so it always blends with the background */
+/* Prevent overscroll rubber-band on every screen so no seam appears */
+.screen{overscroll-behavior-y:none!important}
+/* Sticky feed header: plain bg, no gradient — matches content seamlessly */
 #feed-screen>div[style*="sticky"]{
   background:var(--bg)!important;
-  background-image:radial-gradient(ellipse 120% 80% at 10% 0%,rgba(255,0,144,.11) 0%,transparent 60%)!important;
+  background-image:none!important;
 }
+/* Nutrition + all topbars: same plain bg, no visible seam on scroll */
+.topbar{background:var(--bg)!important}
 </style>
 
 <script id="forte-exercise-run-history-final-js">
@@ -21892,18 +21894,57 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       const u = typeof user !== 'undefined' ? user : null;
       if(u){
         try{
-          /* select('*') to avoid error if any specific column doesn't exist */
           const {data:fr} = await sb.from('profiles').select('*').eq('id', u.id).single();
           if(fr){
             const p = typeof profile !== 'undefined' ? profile : null;
             if(p) Object.assign(p, fr);
             const g = typeof goals !== 'undefined' ? goals : null;
             if(g){
-              /* handle both column name variants (calorie_goal / calorie_goal confirmed same) */
-              if(fr.calorie_goal)                      g.cal  = fr.calorie_goal;
-              if(fr.protein_goal)                      g.pro  = fr.protein_goal;
-              if(fr.carb_goal   || fr.carbs_goal)      g.carb = fr.carb_goal  || fr.carbs_goal;
-              if(fr.fat_goal    || fr.fats_goal)       g.fat  = fr.fat_goal   || fr.fats_goal;
+              /* try all known column name variants */
+              const cal  = fr.calorie_goal;
+              const pro  = fr.protein_goal;
+              const carb = fr.carb_goal  || fr.carbs_goal;
+              const fat  = fr.fat_goal   || fr.fats_goal;
+
+              if(cal)  g.cal  = cal;
+              if(pro)  g.pro  = pro;
+              if(carb) g.carb = carb;
+              if(fat)  g.fat  = fat;
+
+              /* Fallback: if calorie_goal is still null, recalculate from body stats */
+              if(!cal && fr.weight_kg && fr.height_cm && fr.age){
+                const w   = Number(fr.weight_kg);
+                const h   = Number(fr.height_cm);
+                const age = Number(fr.age);
+                const sex = String(fr.sex||'').toLowerCase();
+                const act = String(fr.activity_level||'').toLowerCase();
+                const gtype = String(fr.goal_type||'').toLowerCase();
+                const bmr = sex.includes('female')
+                  ? 10*w + 6.25*h - 5*age - 161
+                  : 10*w + 6.25*h - 5*age + 5;
+                let mult = 1.2;
+                if(act.includes('light'))    mult = 1.375;
+                if(act.includes('moderate')) mult = 1.55;
+                if(act.includes('very'))     mult = 1.725;
+                if(act.includes('athlete')||act.includes('extra')) mult = 1.9;
+                let kcal = bmr * mult;
+                if(gtype.includes('lose'))  kcal -= 400;
+                if(gtype.includes('gain'))  kcal += 300;
+                kcal = Math.max(1200, Math.round(kcal));
+                const calcPro  = Math.round(w * 2);
+                const calcFat  = Math.round((kcal * 0.25) / 9);
+                const calcCarb = Math.max(0, Math.round((kcal - calcPro*4 - calcFat*9) / 4));
+                g.cal  = kcal;
+                g.pro  = calcPro;
+                g.fat  = calcFat;
+                g.carb = calcCarb;
+                /* Save back so future loads don't need to recalculate */
+                sb.from('profiles').update({
+                  calorie_goal: kcal, protein_goal: calcPro,
+                  carb_goal: calcCarb, carbs_goal: calcCarb,
+                  fat_goal: calcFat, fats_goal: calcFat
+                }).eq('id', u.id).then(()=>{});
+              }
             }
           }
         }catch(e){ console.warn('Nutrition goals fetch failed:', e); }
