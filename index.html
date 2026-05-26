@@ -20687,18 +20687,22 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   #run-screen{position:relative;background:#050509;color:#fff}
 </style>
 <style>
-/* ── Feed layout + seamless background fixes ── */
+/* ── Feed layout + header transparency fixes ── */
 /* Gap between Friends/Community tabs and first post */
 #feed-mode-tabs{padding-bottom:12px!important}
-/* Prevent overscroll rubber-band on every screen so no seam appears */
-.screen{overscroll-behavior-y:none!important}
-/* Sticky feed header: plain bg, no gradient — matches content seamlessly */
+/* Feed sticky header: semi-transparent so the app gradient shows through */
 #feed-screen>div[style*="sticky"]{
-  background:var(--bg)!important;
+  background:rgba(10,10,14,0.5)!important;
+  backdrop-filter:blur(20px) saturate(1.4)!important;
+  -webkit-backdrop-filter:blur(20px) saturate(1.4)!important;
   background-image:none!important;
 }
-/* Nutrition + all topbars: same plain bg, no visible seam on scroll */
-.topbar{background:var(--bg)!important}
+/* All other screen topbars: same semi-transparent glass look */
+.topbar{
+  background:rgba(10,10,14,0.5)!important;
+  backdrop-filter:blur(20px) saturate(1.4)!important;
+  -webkit-backdrop-filter:blur(20px) saturate(1.4)!important;
+}
 </style>
 
 <script id="forte-exercise-run-history-final-js">
@@ -21873,14 +21877,21 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   if(window.__forteEnhB) return;
   window.__forteEnhB = true;
 
-  /* 1 ── Follow button: refresh followingIds before each feed render */
+  /* 1 ── Follow button: refresh followingIds (await only on first load, bg on refresh) */
   (function(){
     const _orig = typeof loadFeedPosts === 'function' ? loadFeedPosts : null;
     if(!_orig) return;
     loadFeedPosts = async function(){
       const u = typeof user !== 'undefined' ? user : null;
       if(u && typeof loadFollowingIds === 'function'){
-        try{ await loadFollowingIds(); }catch(e){}
+        const fids = typeof followingIds !== 'undefined' ? followingIds : null;
+        if(!fids || fids.size === 0){
+          /* First load: await so buttons render correctly immediately */
+          try{ await loadFollowingIds(); }catch(e){}
+        } else {
+          /* Subsequent loads: refresh in background so feed doesn't block */
+          loadFollowingIds().catch(()=>{});
+        }
       }
       return _orig.apply(this, arguments);
     };
