@@ -11806,6 +11806,8 @@ init();
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    /* Auto-reload when a new SW takes over so users always get fresh code */
+    navigator.serviceWorker.addEventListener('controllerchange',()=>window.location.reload());
   });
 }
 </script>
