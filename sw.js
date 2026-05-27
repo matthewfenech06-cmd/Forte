@@ -1,4 +1,4 @@
-const CACHE = 'forte-v11';
+const CACHE = 'forte-v12';
 const OFFLINE_URLS = ['/'];
 
 self.addEventListener('install', e=>{
@@ -7,7 +7,13 @@ self.addEventListener('install', e=>{
 });
 
 self.addEventListener('activate', e=>{
-  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>clients.claim()));
+  e.waitUntil(
+    caches.keys()
+      .then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      .then(()=>clients.claim())
+      .then(()=>clients.matchAll({type:'window'}))
+      .then(cs=>cs.forEach(c=>c.postMessage({type:'SW_UPDATED'})))
+  );
 });
 
 self.addEventListener('fetch', e=>{
