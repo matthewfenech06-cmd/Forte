@@ -4852,10 +4852,11 @@ async function loadStories(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
-  // Fetch all active stories (include null expires_at for backwards compat)
+  // Fetch stories from last 48h (avoids expires_at column dependency)
+  const _since=new Date(Date.now()-48*60*60*1000).toISOString();
   const{data} = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
+    .gte('created_at',_since)
     .order('created_at',{ascending:false});
 
   // Group by user
@@ -8413,9 +8414,10 @@ loadStories = async function(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
+  const _since2=new Date(Date.now()-48*60*60*1000).toISOString();
   const { data } = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
+    .gte('created_at',_since2)
     .order('created_at',{ascending:false});
 
   const groups = {};
@@ -20468,15 +20470,15 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
 
   window.loadConversations = async function(){
+    const el = document.getElementById('dm-list');
+    if(!el) return;
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
+
     const u = await dmCurrentUser();
     if(!u){
       el.innerHTML = '<div style="padding:40px 20px;text-align:center"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Sign in to view messages</div></div>';
       return;
     }
-
-    const el = document.getElementById('dm-list');
-    if(!el) return;
-    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
 
     try{
       const { data:memberships, error:memErr } = await sb
