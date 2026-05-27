@@ -2131,7 +2131,7 @@ body.light .exercise-start-card.workout{color:#fff}
 <div class="toast" id="toast"></div>
 
 <script>
-const sb=window.sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
+const sb=window.sb||(()=>{window.sb=supabase.createClient('https://hbdiridvkgxarsuimrtu.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk');return window.sb;})();let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
 const CATS=[{n:'Chest',i:'💪',k:'Chest'},{n:'Back',i:'🏋️',k:'Back'},{n:'Shoulders',i:'🔝',k:'Shoulders'},{n:'Biceps',i:'💪',k:'Biceps'},{n:'Triceps',i:'🦾',k:'Triceps'},{n:'Legs',i:'🦵',k:'Legs'},{n:'Core',i:'🎯',k:'Core'},{n:'Cardio',i:'🏃',k:'Cardio'}];
 
 async function init(){
@@ -2158,10 +2158,12 @@ async function handleLogin(){
   const email=document.getElementById('login-email').value.trim(),pass=document.getElementById('login-pass').value;
   if(!email||!pass)return showErr('Please fill in all fields');
   const btn=document.querySelector('#login-form .btn-primary');btn.textContent='Signing in...';btn.disabled=true;
-  const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
-  btn.textContent='Sign in';btn.disabled=false;
-  if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
-  user=data.user;await loadProfile();enterApp();
+  try{
+    const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
+    if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
+    user=data.user;await loadProfile();enterApp();
+  }catch(e){showErr('Could not sign in — reload the page and try again.');}
+  finally{btn.textContent='Sign in';btn.disabled=false;}
 }
 
 async function handleSignup(){
@@ -8433,19 +8435,24 @@ loadStories = async function(){
   row.innerHTML = storyGroups.map((g,i) => {
     const p = g.profile || {};
     const hasStory = g.stories.length > 0;
+    const isUploading = g.isMe && !!window._storyUploading;
     const unseen = hasStory && g.stories.some(st => !localStorage.getItem('viewed_story_'+st.id));
+    const ringBg = (isUploading || unseen) ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)';
+    const ringAnim = isUploading ? 'animation:forte-story-pulse 1.2s ease-in-out infinite;' : '';
+    const clickFn = isUploading ? '' : (hasStory ? `openStoryViewer(${i})` : 'openAddStory()');
+    const label = isUploading ? 'Uploading…' : (g.isMe ? 'Your story' : fpEsc(p.username || ''));
 
     return `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
-        <div style="position:relative" onclick="${hasStory ? `openStoryViewer(${i})` : 'openAddStory()'}">
-          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${unseen ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)'}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" ${clickFn?`onclick="${clickFn}"`:''}">
+        <div style="position:relative">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ringBg};${ringAnim}">
             <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
               ${p.avatar_url ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${fpEsc((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`}
             </div>
           </div>
-          ${g.isMe ? `<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>` : ''}
+          ${g.isMe&&!isUploading ? `<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>` : ''}
         </div>
-        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.isMe ? 'Your story' : fpEsc(p.username || '')}</div>
+        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
       </div>
     `;
   }).join('');
@@ -11814,8 +11821,7 @@ init();
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
-    /* Reload when SW sends update message (more reliable than controllerchange on iOS) */
-    navigator.serviceWorker.addEventListener('controllerchange',()=>window.location.reload());
+    /* Reload once when SW sends update message — single mechanism avoids double-reload */
     navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='SW_UPDATED')window.location.reload();});
   });
 }
@@ -22005,6 +22011,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   window._fcUpload=function(){
     if(!_blob){toast('Nothing to share'); return;}
+    if(window._storyUploading){toast('Upload already in progress…'); return;}
     const u=window.user||(typeof user!=='undefined'?user:null);
     if(!u){toast('Sign in first'); return;}
 
@@ -22025,12 +22032,15 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       try{
         let mediaUrl=null;
         if(mediaType==='video'){
-          mediaUrl=await new Promise(res=>{
-            const fr=new FileReader();
-            fr.onerror=()=>res(null);
-            fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-            fr.readAsDataURL(blobSnap);
-          });
+          mediaUrl=await Promise.race([
+            new Promise(res=>{
+              const fr=new FileReader();
+              fr.onerror=()=>res(null);
+              fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
+              fr.readAsDataURL(blobSnap);
+            }),
+            new Promise(res=>setTimeout(()=>res(null),25000))
+          ]);
           if(!mediaUrl){toast('Could not read video');return;}
         }else{
           mediaUrl=await _blobToDataURL(blobSnap);
