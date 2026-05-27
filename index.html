@@ -22651,4 +22651,111 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 </script>
 
+<script>
+/* ── CLEAN FEED LOADER: replaces entire chain, handles cold-start ── */
+(function(){
+  if(window.__forteFeedLoaderV2) return;
+  window.__forteFeedLoaderV2 = true;
+
+  function _esc2(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function _ago2(ts){
+    const d=Math.floor((Date.now()-new Date(ts))/1000);
+    if(d<60)return 'just now';
+    if(d<3600)return Math.floor(d/60)+'m ago';
+    if(d<86400)return Math.floor(d/3600)+'h ago';
+    return Math.floor(d/86400)+'d ago';
+  }
+
+  async function doFeedQuery(wrap){
+    const ctrl = new AbortController();
+    const tId = setTimeout(()=>ctrl.abort(), 25000);
+    try{
+      const res = await window.sb.from('posts')
+        .select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(id,title)')
+        .order('created_at',{ascending:false})
+        .limit(40)
+        .abortSignal(ctrl.signal);
+      clearTimeout(tId);
+      return res;
+    }catch(e){
+      clearTimeout(tId);
+      throw e;
+    }
+  }
+
+  function renderWarmUp(wrap){
+    wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px">Server starting up...</div><div style="font-size:13px;margin-bottom:18px">This usually takes under a minute</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Reload feed</button></div>';
+  }
+
+  function renderPosts(wrap, posts){
+    const wu = window.user;
+    const fIds = (window.followingIds instanceof Set) ? window.followingIds : new Set();
+    if(!posts||!posts.length){
+      wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">📸</div><div style="font-size:15px;font-weight:600">No posts yet</div></div>';
+      return;
+    }
+    wrap.innerHTML = posts.map((p,i)=>{
+      const u = p.profiles||{};
+      const isOwn = wu && p.user_id===wu.id;
+      const isFollowing = fIds.has(p.user_id);
+      const showFollow = !isOwn && !isFollowing && p.user_id;
+      const hasW = !!p.workout_id;
+      const wTitle = p.workouts?.title||'';
+      const avt = (typeof fpAvatar==='function') ? fpAvatar(u,36) : (typeof avatarEl==='function' ? avatarEl(u,36) : `<div style="width:36px;height:36px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700">${(_esc2(u.full_name||u.username||'U')[0]||'U')}</div>`);
+      return `<div class="workout-post fade-up" style="animation-delay:${i*.03}s">
+        <div class="post-header">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer" onclick="viewProfile('${u.id||p.user_id}')">
+            ${avt}
+            <div><div class="post-user">${_esc2(u.full_name||u.username||'User')}</div><div class="post-time">${_ago2(p.created_at)}</div></div>
+          </div>
+          ${isOwn?`<button onclick="event.stopPropagation();deletePost('${p.id}')" style="background:rgba(255,79,79,.12);border:1px solid rgba(255,79,79,.25);border-radius:8px;padding:6px 10px;color:var(--red);font-size:12px;font-weight:700">Delete</button>`:''}
+          ${showFollow?`<button onclick="event.stopPropagation();quickFollow('${p.user_id}',this)" style="background:rgba(255,0,144,.12);border:1.5px solid rgba(255,0,144,.35);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:#ff0090;cursor:pointer">Follow</button>`:''}
+        </div>
+        ${p.media_url&&p.media_type==='image'?`<img src="${_esc2(p.media_url)}" style="width:100%;height:auto;object-fit:cover;display:block;cursor:pointer" onclick="openPost('${p.id}')">` :''}
+        ${p.media_url&&p.media_type==='video'?`<video src="${_esc2(p.media_url)}#t=0.001" style="width:100%;height:auto;display:block;background:#000" controls playsinline preload="metadata" webkit-playsinline></video>`:''}
+        ${hasW?`<div style="display:flex;align-items:center;gap:8px;padding:10px 16px 4px"><div style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,0,144,.1);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ff0090">💪 Logged a workout!</div></div>${wTitle?`<div class="post-workout-title" style="padding:2px 16px 8px;font-size:15px;font-weight:700">${_esc2(wTitle)}</div>`:''}` :''}
+        ${p.caption?`<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);white-space:pre-wrap">${_esc2(p.caption)}</div>`:''}
+        ${hasW?`<div style="padding:0 16px 12px"><button onclick="openWorkoutFromPost('${p.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;width:100%;text-align:left">💪 View workout →</button></div>`:''}
+        <div class="post-actions">
+          <div class="post-action" onclick="toggleLike('${p.id}',this)" id="like-btn-${p.id}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l7.78-7.78a5.5 5.5 0 0 0 1.06-8.84z"/></svg>
+            <span id="like-count-${p.id}">${p.likes_count||0}</span>
+          </div>
+          <div class="post-action" onclick="openPost('${p.id}')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+            <span>${p.comments_count||0} comment${(p.comments_count||0)===1?'':'s'}</span>
+          </div>
+          <div class="post-action" onclick="navigator.share&&navigator.share({title:'Forte',text:'${_esc2(p.caption||wTitle||'Check this out!')}',url:location.href})">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <span>Share</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window.loadFeedPosts = async function(){
+    /* fire stories + followingIds in background */
+    try{ if(typeof loadStories==='function') loadStories(); }catch(e){}
+    if(window.user && typeof loadFollowingIds==='function') loadFollowingIds().catch(()=>{});
+
+    const wrap = document.getElementById('feed-posts');
+    if(!wrap) return;
+    wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
+
+    try{
+      const {data:posts, error} = await doFeedQuery(wrap);
+      if(error) throw error;
+      renderPosts(wrap, posts);
+    }catch(e){
+      if(e && (e.name==='AbortError' || e.message==='AbortError' || String(e).includes('abort') || String(e).includes('cancel'))){
+        renderWarmUp(wrap);
+      } else {
+        wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">😕</div><div style="font-size:15px;font-weight:600;margin-bottom:16px">Could not load feed</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Try again</button></div>';
+      }
+    }
+  };
+})();
+</script>
+
 </html>
