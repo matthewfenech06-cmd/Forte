@@ -2140,7 +2140,7 @@ async function init(){
     history.replaceState(null,'',window.location.pathname);
   }
   const{data:{session}}=await sb.auth.getSession();
-  if(session){user=session.user;await loadProfile();enterApp();}
+  if(session){user=session.user;window.user=user;await loadProfile();enterApp();}
   loadFeedPosts();renderLB('weekly');
   const{data:ex}=await sb.from('exercises').select('*').order('name');
   if(ex&&ex.length)exercises=ex;
@@ -2161,7 +2161,7 @@ async function handleLogin(){
   try{
     const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
     if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
-    user=data.user;
+    user=data.user;window.user=user;
     try{await loadProfile();}catch(e){}
     enterApp();
     loadFeedPosts().catch(()=>{});
@@ -2198,7 +2198,7 @@ async function handleSignup(){
     document.getElementById('login-email').value=email;
     return;
   }
-  user=data.user;
+  user=data.user;window.user=user;
   await sb.from('profiles').insert({id:user.id,username:uname,full_name:name,points:0,streak:0});
   await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');loadFeedPosts().catch(()=>{});loadFeedLeagues();
 }
@@ -8414,6 +8414,26 @@ loadStories = async function(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
+  const _u = window.user || (typeof user !== 'undefined' ? user : null);
+  const _p = window.profile || (typeof profile !== 'undefined' ? profile : null);
+
+  /* Show "Your story" bubble immediately before the network round-trip */
+  if(_u && row.children.length === 0){
+    const _pp = _p || {};
+    const _ringBg = 'var(--bg3)';
+    row.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" onclick="openAddStory()">
+      <div style="position:relative">
+        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${_ringBg}">
+          <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
+            ${_pp.avatar_url ? `<img src="${_pp.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${(_pp.full_name || _pp.username || '?')[0].toUpperCase()}</div>`}
+          </div>
+        </div>
+        <button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your story</div>
+    </div>`;
+  }
+
   const _since2=new Date(Date.now()-48*60*60*1000).toISOString();
   const { data } = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
@@ -8423,14 +8443,14 @@ loadStories = async function(){
   const groups = {};
   const order = [];
 
-  if(user){
-    groups[user.id] = { profile, stories:[], isMe:true };
-    order.push(user.id);
+  if(_u){
+    groups[_u.id] = { profile:_p, stories:[], isMe:true };
+    order.push(_u.id);
   }
 
   (data || []).forEach(s => {
     if(!groups[s.user_id]){
-      groups[s.user_id] = { profile:s.profiles, stories:[], isMe:s.user_id === user?.id };
+      groups[s.user_id] = { profile:s.profiles, stories:[], isMe:s.user_id === _u?.id };
       order.push(s.user_id);
     }
     groups[s.user_id].stories.push(s);
