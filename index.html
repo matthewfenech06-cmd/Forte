@@ -188,8 +188,8 @@ select.inp{appearance:none}
 .streak-badge span{font-size:13px;font-weight:600;color:#f0a500}
 .empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
 .empty-state p{font-size:15px}
-.toast{position:fixed;top:calc(16px + env(safe-area-inset-top,20px));left:50%;transform:translateX(-50%) translateY(-80px);background:var(--text);color:var(--bg);padding:12px 20px;border-radius:100px;font-size:14px;font-weight:600;z-index:999;transition:transform .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;max-width:90vw;text-align:center}
-.toast.show{transform:translateX(-50%) translateY(0)}
+.toast{position:fixed;top:calc(16px + env(safe-area-inset-top,20px));left:50%;transform:translateX(-50%) translateY(-200px);background:var(--text);color:var(--bg);padding:12px 20px;border-radius:100px;font-size:14px;font-weight:600;z-index:99999;transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .3s ease;opacity:0;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 .fade-up{animation:fadeUp .4s ease forwards}
 .fade-up-2{animation:fadeUp .4s ease .1s both}
@@ -7092,7 +7092,7 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 })();
 function toggleTheme(){document.body.classList.toggle('light');}
 let toastT;
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2500);}
+function showToast(msg){const t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2000);}
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o){o.classList.remove('open');stopBarcode();}}));
 
 // Also need to add calorie_goal etc columns — run SQL if needed
@@ -21825,8 +21825,9 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
   window._fcGallery=function(input){
     const file=input.files[0]; if(!file) return;
-    _blob=file; _blobType=file.type.startsWith('video')?'video':'image';
+    _blobType=file.type.startsWith('video')?'video':'image';
     _showPreview(URL.createObjectURL(file),_blobType);
+    _blob=file; // set AFTER _showPreview which resets _blob to null
     input.value='';
   };
   window._fcStartRec=function(e){
@@ -21913,8 +21914,8 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     let mediaUrl=null;
     try{
-      const ext=_blobType==='video'?'webm':'jpg';
-      const ct=uploadBlob.type||(ext==='webm'?'video/webm':'image/jpeg');
+      const ct=uploadBlob.type||(_blobType==='video'?'video/mp4':'image/jpeg');
+      const ext=ct.includes('mp4')?'mp4':ct.includes('quicktime')?'mov':ct.includes('webm')?'webm':_blobType==='video'?'mp4':'jpg';
       const path=`stories/${u.id}/${Date.now()}.${ext}`;
       const {error:upErr}=await sb.storage.from('forte-media').upload(path,uploadBlob,{upsert:true,contentType:ct});
       if(!upErr) mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
