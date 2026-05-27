@@ -61,6 +61,12 @@
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "063a0e6448123cd359ad0044cc46b0e490cc7964d45ef4bb9fd842bd2ffbca67"
     },
+    "gstack": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "cf4f145fd1a82990dc24cc7701f41ce75e28ccc95193ea99c302be9ada94b0a8"
+    },
     "receiving-code-review": {
       "source": "obra/superpowers",
       "sourceType": "github",
