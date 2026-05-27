@@ -21881,24 +21881,26 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
   function _withTimeout(promise, ms){ return Promise.race([promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out after '+ms+'ms')),ms))]); }
 
-  /* Direct fetch upload — bypasses Supabase SDK which can hang on mobile */
+  /* XHR upload — XMLHttpRequest.timeout is guaranteed to fire on iOS */
   async function _storageUpload(path, blob, ct){
-    const ctrl = new AbortController();
-    const tid = setTimeout(()=>ctrl.abort(), 20000);
-    try{
-      const sess = await sb.auth.getSession();
-      const tok = sess?.data?.session?.access_token || SKEY;
-      const url = `${SURL}/storage/v1/object/forte-media/${path}`;
-      const res = await fetch(url, {
-        method:'POST',
-        headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':ct, 'x-upsert':'true' },
-        body: blob,
-        signal: ctrl.signal
-      });
-      clearTimeout(tid);
-      if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error(res.status+' '+t); }
-      return `${SURL}/storage/v1/object/public/forte-media/${path}`;
-    }catch(e){ clearTimeout(tid); throw e; }
+    const sess = await sb.auth.getSession().catch(()=>null);
+    const tok = sess?.data?.session?.access_token || SKEY;
+    const url = `${SURL}/storage/v1/object/forte-media/${path}`;
+    return new Promise((resolve, reject)=>{
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = 20000;
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Authorization','Bearer '+tok);
+      xhr.setRequestHeader('Content-Type', ct);
+      xhr.setRequestHeader('x-upsert','true');
+      xhr.onload = ()=>{
+        if(xhr.status>=200&&xhr.status<300) resolve(`${SURL}/storage/v1/object/public/forte-media/${path}`);
+        else reject(new Error('HTTP '+xhr.status+': '+xhr.responseText.slice(0,120)));
+      };
+      xhr.onerror   = ()=>reject(new Error('Network error'));
+      xhr.ontimeout = ()=>reject(new Error('Upload timed out (20s)'));
+      xhr.send(blob);
+    });
   }
 
   window._fcUpload=async function(){
@@ -21906,6 +21908,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const postBtn=document.querySelector('#_fcPost button:last-child');
     const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
     if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
+    toast('v7 uploading…');
     const caption=document.getElementById('_fcCap').value.trim();
     const u=window.user||(typeof user!=='undefined'?user:null);
     if(!u){toast('Sign in first');resetBtn();return;}
@@ -22246,7 +22249,11 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
             const ctx=can.getContext('2d');
             ctx.filter=FCFILT[_prevFi].f==='none'?'':FCFILT[_prevFi].f;
             ctx.drawImage(img,0,0,can.width,can.height);
-            const filtered=await new Promise(res=>can.toBlob(res,'image/jpeg',0.92));
+            /* toBlob with 8s timeout — was previously able to hang forever */
+            const filtered=await Promise.race([
+              new Promise(res=>can.toBlob(res,'image/jpeg',0.85)),
+              new Promise(res=>setTimeout(()=>res(null),8000))
+            ]);
             if(filtered){
               const newUrl=URL.createObjectURL(filtered);
               img.src=newUrl;
