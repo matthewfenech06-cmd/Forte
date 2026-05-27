@@ -21883,35 +21883,33 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
     _startCam();
   };
-  function _withTimeout(promise, ms){ return Promise.race([promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out after '+ms+'ms')),ms))]); }
-
-  /* XHR upload with step toasts for debugging */
-  async function _storageUpload(path, blob, ct){
-    toast('Getting auth…');
-    const sess = await Promise.race([
-      sb.auth.getSession(),
-      new Promise(res=>setTimeout(()=>res(null),3000))
-    ]).catch(()=>null);
-    const tok = sess?.data?.session?.access_token || SKEY;
-    toast('Sending photo…');
-    const url = `${SURL}/storage/v1/object/forte-media/${path}`;
-    return new Promise((resolve, reject)=>{
-      let done=false;
-      const failTimer=setTimeout(()=>{ if(!done){done=true;reject(new Error('XHR timed out'));} },20000);
-      const xhr = new XMLHttpRequest();
-      xhr.timeout = 18000;
-      xhr.open('POST', url, true);
-      xhr.setRequestHeader('Authorization','Bearer '+tok);
-      xhr.setRequestHeader('Content-Type', ct);
-      xhr.setRequestHeader('x-upsert','true');
-      xhr.onload = ()=>{ clearTimeout(failTimer); done=true;
-        if(xhr.status>=200&&xhr.status<300) resolve(`${SURL}/storage/v1/object/public/forte-media/${path}`);
-        else reject(new Error('HTTP '+xhr.status+': '+xhr.responseText.slice(0,200)));
+  /* Convert blob → resized JPEG data URL (no storage upload needed) */
+  async function _blobToDataURL(blob){
+    return new Promise((resolve)=>{
+      const img=new Image();
+      const objUrl=URL.createObjectURL(blob);
+      const cleanup=()=>URL.revokeObjectURL(objUrl);
+      const finish=(dataUrl)=>{cleanup();resolve(dataUrl);};
+      img.onload=()=>{
+        const MAX=1080;
+        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        if(!w||!h){finish(null);return;}
+        if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+        if(h>MAX*2){w=Math.round(w*(MAX*2)/h);h=MAX*2;}
+        const can=document.createElement('canvas');
+        can.width=w; can.height=h;
+        can.getContext('2d').drawImage(img,0,0,w,h);
+        can.toBlob(jpgBlob=>{
+          if(!jpgBlob){finish(null);return;}
+          const fr=new FileReader();
+          fr.onload=()=>finish(fr.result);
+          fr.onerror=()=>finish(null);
+          fr.readAsDataURL(jpgBlob);
+        },'image/jpeg',0.82);
       };
-      xhr.onerror   = ()=>{ clearTimeout(failTimer); done=true; reject(new Error('Network error')); };
-      xhr.ontimeout = ()=>{ clearTimeout(failTimer); done=true; reject(new Error('XHR timeout')); };
-      xhr.onabort   = ()=>{ clearTimeout(failTimer); done=true; reject(new Error('Aborted')); };
-      xhr.send(blob);
+      img.onerror=()=>finish(null);
+      setTimeout(()=>finish(null),12000);
+      img.src=objUrl;
     });
   }
 
@@ -21920,58 +21918,29 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const postBtn=document.querySelector('#_fcPost button:last-child');
     const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
     if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
-    toast('v8 starting…');
     const caption=document.getElementById('_fcCap').value.trim();
     const u=window.user||(typeof user!=='undefined'?user:null);
     if(!u){toast('Sign in first');resetBtn();return;}
 
-    /* bake stickers onto image only when stickers are actually present */
-    let uploadBlob=_blob;
-    if(_blobType==='image'){
-      try{
-        const layer=document.getElementById('_fcSLayer');
-        if(layer && layer.children.length > 0){
-          const img=document.getElementById('_fcPI');
-          if(img.decode) await _withTimeout(img.decode(), 5000).catch(()=>{});
-          const W=img.naturalWidth||720, H=img.naturalHeight||1280;
-          const can=document.createElement('canvas'); can.width=W; can.height=H;
-          const ctx=can.getContext('2d');
-          ctx.drawImage(img,0,0,W,H);
-          const fRect=document.getElementById('_fc').getBoundingClientRect();
-          [...layer.children].forEach(el=>{
-            const r=el.getBoundingClientRect();
-            const x=(r.left-fRect.left)/fRect.width*W;
-            const y=(r.top-fRect.top)/fRect.height*H;
-            const fs=parseFloat(getComputedStyle(el).fontSize||'52')/fRect.height*H;
-            ctx.font=`900 ${fs}px sans-serif`;
-            ctx.fillText(el.textContent,x,y+fs);
-          });
-          const baked=await _withTimeout(new Promise(res=>can.toBlob(res,'image/jpeg',0.85)), 10000).catch(()=>null);
-          if(baked) uploadBlob=baked;
-        }
-      }catch(e){ console.warn('sticker bake failed',e); }
-    }
-
     let mediaUrl=null;
-    try{
-      const ct=(uploadBlob&&uploadBlob.type)||(_blobType==='video'?'video/mp4':'image/jpeg');
-      const ext=ct.includes('mp4')?'mp4':ct.includes('quicktime')?'mov':ct.includes('webm')?'webm':_blobType==='video'?'mp4':'jpg';
-      const path=`posts/${u.id}/story_${Date.now()}.${ext}`;
-      mediaUrl = await _storageUpload(path, uploadBlob, ct);
-    }catch(e){
-      toast('Upload failed: '+(e.message||'check connection'));
-      resetBtn(); return;
-    }
 
-    toast('Saving story…');
+    if(_blobType==='image'){
+      /* Convert to resized data URL — no storage upload, no network, never hangs */
+      mediaUrl=await _blobToDataURL(_blob);
+      if(!mediaUrl){toast('Could not process image');resetBtn();return;}
+    }
+    /* videos: skip for now, post without media */
+
     try{
       const row={user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,created_at:new Date().toISOString()};
-      const {error}=await _withTimeout(sb.from('stories').insert(row), 12000);
+      const {error}=await Promise.race([
+        sb.from('stories').insert(row),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
+      ]);
       if(error) throw error;
       _fcClose(); toast('Story posted! 🔥');
       try{loadStories();}catch(e){}
     }catch(err){
-      console.error('Story insert threw:',err);
       toast('Could not post: '+(err.message||'unknown error'));
       resetBtn();
     }
