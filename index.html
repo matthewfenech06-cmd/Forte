@@ -2161,7 +2161,11 @@ async function handleLogin(){
   try{
     const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
     if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
-    user=data.user;await loadProfile();enterApp();try{loadFeedPosts();}catch(e){}
+    user=data.user;
+    try{await loadProfile();}catch(e){}
+    enterApp();
+    loadFeedPosts().catch(()=>{});
+    loadFeedLeagues();
   }catch(e){showErr('Could not sign in — reload the page and try again.');}
   finally{btn.textContent='Sign in';btn.disabled=false;}
 }
@@ -2196,7 +2200,7 @@ async function handleSignup(){
   }
   user=data.user;
   await sb.from('profiles').insert({id:user.id,username:uname,full_name:name,points:0,streak:0});
-  await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');
+  await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');loadFeedPosts().catch(()=>{});loadFeedLeagues();
 }
 
 async function handleLogout(){
@@ -11819,10 +11823,12 @@ init();
 
 <script>
 if('serviceWorker' in navigator){
+  const _swHadController=!!navigator.serviceWorker.controller;
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
-    /* Reload once when SW sends update message — single mechanism avoids double-reload */
-    navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='SW_UPDATED')window.location.reload();});
+    /* Only reload when a SW *update* fires — skip if this is the first install to avoid
+       an unnecessary reload on the user's first ever visit */
+    navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='SW_UPDATED'&&_swHadController)window.location.reload();});
   });
 }
 </script>
