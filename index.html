@@ -21883,10 +21883,43 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
     _startCam();
   };
+  /* Capture first frame of a video/quicktime blob (Live Photo) as a JPEG data URL */
+  function _videoFrameToDataURL(blob){
+    return new Promise((resolve)=>{
+      const vid=document.createElement('video');
+      vid.muted=true; vid.playsInline=true;
+      const objUrl=URL.createObjectURL(blob);
+      const cleanup=()=>{ try{URL.revokeObjectURL(objUrl);}catch(e){} };
+      const done=setTimeout(()=>{ cleanup(); resolve(null); },10000);
+      vid.onloadeddata=()=>{
+        clearTimeout(done);
+        try{
+          const MAX=1080;
+          let w=vid.videoWidth||720, h=vid.videoHeight||1280;
+          if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+          if(h>MAX*2){w=Math.round(w*(MAX*2)/h);h=MAX*2;}
+          const can=document.createElement('canvas');
+          can.width=w; can.height=h;
+          can.getContext('2d').drawImage(vid,0,0,w,h);
+          const frame=can.toDataURL('image/jpeg',0.82);
+          cleanup();
+          resolve(frame&&frame.length>100?frame:null);
+        }catch(e){ cleanup(); resolve(null); }
+      };
+      vid.onerror=()=>{ cleanup(); resolve(null); };
+      vid.src=objUrl;
+    });
+  }
+
   /* Convert blob → resized JPEG data URL.
      Uses FileReader.readAsDataURL (most reliable on iOS — no ObjectURL timing issues).
+     For video/quicktime (iOS Live Photos), captures first video frame instead.
      Canvas resize is attempted; raw data URL is the guaranteed fallback. */
   async function _blobToDataURL(blob){
+    /* iOS Live Photos come back as video/quicktime — capture a frame */
+    if(blob.type&&blob.type.startsWith('video/')){
+      return _videoFrameToDataURL(blob);
+    }
     return new Promise((resolve)=>{
       const fr=new FileReader();
       fr.onerror=()=>resolve(null);
@@ -21928,17 +21961,12 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     let mediaUrl=null;
 
-    if(_blobType!=='video'){
-      /* Treat any non-video blob as an image — covers 'image', unexpected types, etc. */
-      mediaUrl=await _blobToDataURL(_blob);
-      if(!mediaUrl){toast('Could not process image ('+_blobType+')');resetBtn();return;}
-    }
-
-    /* Safety net: never insert a null media_url */
-    if(!mediaUrl){toast('Cannot post video yet ('+_blobType+')');resetBtn();return;}
+    /* Always try to convert to image data URL — handles images, Live Photos (video/quicktime), etc. */
+    mediaUrl=await _blobToDataURL(_blob);
+    if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
 
     try{
-      const row={user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,created_at:new Date().toISOString()};
+      const row={user_id:u.id,media_url:mediaUrl,media_type:'image',caption,created_at:new Date().toISOString()};
       const {error}=await Promise.race([
         sb.from('stories').insert(row),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
