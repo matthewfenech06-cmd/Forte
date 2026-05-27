@@ -1,4 +1,4 @@
-const CACHE = 'forte-v10';
+const CACHE = 'forte-v11';
 const OFFLINE_URLS = ['/'];
 
 self.addEventListener('install', e=>{

@@ -21788,6 +21788,9 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   function _showPreview(url,type){
     _blob=null; _blobType=type;
     _stopCam();
+    /* Always reset Post button so stale text from a previous attempt is cleared */
+    const postBtn=document.querySelector('#_fcPost button:last-child');
+    if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}
     document.getElementById('_fcV').style.display='none';
     const prev=document.getElementById('_fcPrev'); prev.style.display='block';
     const img=document.getElementById('_fcPI'), vid=document.getElementById('_fcPV');
@@ -22006,23 +22009,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const isVideo=_blob.type&&_blob.type.startsWith('video/');
 
     if(isVideo){
-      /* Transcode video at 700kbps to shrink it to a data URL (storage uploads hang on this device) */
-      if(postBtn) postBtn.textContent='Compressing…';
-      const transcoded=await _transcodeVideo(_blob);
-      const videoBlob=transcoded||_blob; /* fall back to original if transcode fails */
-      if(postBtn) postBtn.textContent='Posting…';
+      /* Read video directly as data URL — fast, no transcoding needed */
       mediaUrl=await new Promise(res=>{
         const fr=new FileReader();
         fr.onerror=()=>res(null);
         fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-        fr.readAsDataURL(videoBlob);
+        fr.readAsDataURL(_blob);
       });
-      if(!mediaUrl){toast('Could not process video');resetBtn();return;}
-      /* Reject if still too large for Supabase row (~10 MB base64 cap) */
-      if(mediaUrl.length>10*1024*1024){
-        toast('Video too large even after compression. Try a clip under 30s.');
-        resetBtn(); return;
-      }
+      if(!mediaUrl){toast('Could not read video');resetBtn();return;}
       mediaType='video';
     } else {
       /* Convert image to data URL */
