@@ -459,6 +459,11 @@ body.light .exercise-start-card.workout{color:#fff}
     45% { transform: scaleY(1.1); opacity: 1; }
   }
 
+  @keyframes forte-story-pulse {
+    0%,100%{opacity:1}
+    50%{opacity:0.35}
+  }
+
   .forte-instant-word {
     color: #fff;
     font-size: 34px;
@@ -4873,17 +4878,22 @@ async function loadStories(){
     const p = g.profile||{};
     const hasStory = g.stories.length > 0;
     const isMe = g.isMe;
+    const isUploading = isMe && !!window._storyUploading;
     const viewed = hasStory && localStorage.getItem('viewed_story_'+g.stories[0]?.id);
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" onclick="${isMe&&!hasStory?'openAddStory()':'openStoryViewer('+i+')'}">
+    const ringBg = (isUploading || (hasStory&&!viewed)) ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)';
+    const ringAnim = isUploading ? 'animation:forte-story-pulse 1.2s ease-in-out infinite;' : '';
+    const clickFn = isUploading ? '' : (isMe&&!hasStory ? 'openAddStory()' : 'openStoryViewer('+i+')');
+    const label = isUploading ? 'Uploading…' : (isMe ? 'Your story' : (p.username||''));
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" onclick="${clickFn}">
       <div style="position:relative">
-        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${hasStory&&!viewed?'linear-gradient(135deg,var(--accent),#ff9500)':'var(--bg3)'}">
+        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ringBg};${ringAnim}">
           <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
             ${p.avatar_url?`<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:`<div style="font-family:'Inter',sans-serif;font-size:17px;font-weight:600;color:var(--accent)">${(p.full_name||p.username||'?')[0].toUpperCase()}</div>`}
           </div>
         </div>
-        ${isMe?`<div style="position:absolute;bottom:0;right:0;width:20px;height:20px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#0a0a0a;line-height:1">+</div>`:''}
+        ${isMe&&!isUploading?`<div style="position:absolute;bottom:0;right:0;width:20px;height:20px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#0a0a0a;line-height:1">+</div>`:''}
       </div>
-      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${isMe?'Your story':(p.username||'')}</div>
+      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
     </div>`;
   }).join('');
 
@@ -21995,50 +22005,53 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     });
   }
 
-  window._fcUpload=async function(){
+  window._fcUpload=function(){
     if(!_blob){toast('Nothing to share'); return;}
-    const postBtn=document.querySelector('#_fcPost button:last-child');
-    const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
-    if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
-    const caption=document.getElementById('_fcCap').value.trim();
     const u=window.user||(typeof user!=='undefined'?user:null);
-    if(!u){toast('Sign in first');resetBtn();return;}
+    if(!u){toast('Sign in first'); return;}
 
-    let mediaUrl=null;
-    let mediaType='image';
+    /* Snapshot everything before _fcClose() resets them */
+    const blobSnap=_blob;
+    const mediaType=blobSnap.type&&blobSnap.type.startsWith('video/')?'video':'image';
+    const caption=document.getElementById('_fcCap').value.trim();
 
-    const isVideo=_blob.type&&_blob.type.startsWith('video/');
+    /* Close overlay immediately — Instagram style */
+    _fcClose();
 
-    if(isVideo){
-      /* Read video directly as data URL — fast, no transcoding needed */
-      mediaUrl=await new Promise(res=>{
-        const fr=new FileReader();
-        fr.onerror=()=>res(null);
-        fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-        fr.readAsDataURL(_blob);
-      });
-      if(!mediaUrl){toast('Could not read video');resetBtn();return;}
-      mediaType='video';
-    } else {
-      /* Convert image to data URL */
-      mediaUrl=await _blobToDataURL(_blob);
-      if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
-      mediaType='image';
-    }
+    /* Show pulsing "Uploading…" ring on the user's story bubble */
+    window._storyUploading=true;
+    try{loadStories();}catch(e){}
 
-    try{
-      const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
-      const {error}=await Promise.race([
-        sb.from('stories').insert(row),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
-      ]);
-      if(error) throw error;
-      _fcClose(); toast('Story posted! 🔥');
-      try{loadStories();}catch(e){}
-    }catch(err){
-      toast('Could not post: '+(err.message||'unknown error'));
-      resetBtn();
-    }
+    /* Background upload */
+    (async()=>{
+      try{
+        let mediaUrl=null;
+        if(mediaType==='video'){
+          mediaUrl=await new Promise(res=>{
+            const fr=new FileReader();
+            fr.onerror=()=>res(null);
+            fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
+            fr.readAsDataURL(blobSnap);
+          });
+          if(!mediaUrl){toast('Could not read video');return;}
+        }else{
+          mediaUrl=await _blobToDataURL(blobSnap);
+          if(!mediaUrl){toast('Could not process photo');return;}
+        }
+        const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
+        const{error}=await Promise.race([
+          sb.from('stories').insert(row),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),30000))
+        ]);
+        if(error) throw error;
+        toast('Story posted! 🔥');
+      }catch(err){
+        toast('Could not post: '+(err.message||'unknown error'));
+      }finally{
+        window._storyUploading=false;
+        try{loadStories();}catch(e){}
+      }
+    })();
   };
 
   window.openAddStory=async function(){
