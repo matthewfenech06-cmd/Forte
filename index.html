@@ -21883,32 +21883,28 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
     _startCam();
   };
-  /* Convert blob → resized JPEG data URL (no storage upload needed) */
+  /* Convert blob → resized JPEG data URL using toDataURL (synchronous, never hangs) */
   async function _blobToDataURL(blob){
     return new Promise((resolve)=>{
       const img=new Image();
       const objUrl=URL.createObjectURL(blob);
-      const cleanup=()=>URL.revokeObjectURL(objUrl);
-      const finish=(dataUrl)=>{cleanup();resolve(dataUrl);};
       img.onload=()=>{
-        const MAX=1080;
-        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
-        if(!w||!h){finish(null);return;}
-        if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
-        if(h>MAX*2){w=Math.round(w*(MAX*2)/h);h=MAX*2;}
-        const can=document.createElement('canvas');
-        can.width=w; can.height=h;
-        can.getContext('2d').drawImage(img,0,0,w,h);
-        can.toBlob(jpgBlob=>{
-          if(!jpgBlob){finish(null);return;}
-          const fr=new FileReader();
-          fr.onload=()=>finish(fr.result);
-          fr.onerror=()=>finish(null);
-          fr.readAsDataURL(jpgBlob);
-        },'image/jpeg',0.82);
+        URL.revokeObjectURL(objUrl);
+        try{
+          const MAX=1080;
+          let w=img.naturalWidth||img.width||720, h=img.naturalHeight||img.height||1280;
+          if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+          if(h>MAX*2){w=Math.round(w*(MAX*2)/h);h=MAX*2;}
+          const can=document.createElement('canvas');
+          can.width=w; can.height=h;
+          can.getContext('2d').drawImage(img,0,0,w,h);
+          /* toDataURL is synchronous — no callback, cannot hang on iOS */
+          const dataUrl=can.toDataURL('image/jpeg',0.82);
+          resolve(dataUrl&&dataUrl.length>100?dataUrl:null);
+        }catch(e){ resolve(null); }
       };
-      img.onerror=()=>finish(null);
-      setTimeout(()=>finish(null),12000);
+      img.onerror=()=>{ URL.revokeObjectURL(objUrl); resolve(null); };
+      setTimeout(()=>{ URL.revokeObjectURL(objUrl); resolve(null); },10000);
       img.src=objUrl;
     });
   }
