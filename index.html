@@ -21928,13 +21928,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     let mediaUrl=null;
 
-    if(_blobType==='image'){
+    if(_blobType!=='video'){
+      /* Treat any non-video blob as an image — covers 'image', unexpected types, etc. */
       mediaUrl=await _blobToDataURL(_blob);
-      if(!mediaUrl){toast('Could not process image');resetBtn();return;}
+      if(!mediaUrl){toast('Could not process image ('+_blobType+')');resetBtn();return;}
     }
 
     /* Safety net: never insert a null media_url */
-    if(!mediaUrl){toast('Nothing to post');resetBtn();return;}
+    if(!mediaUrl){toast('Cannot post video yet ('+_blobType+')');resetBtn();return;}
 
     try{
       const row={user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,created_at:new Date().toISOString()};
