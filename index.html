@@ -12493,7 +12493,7 @@ if('serviceWorker' in navigator){
 
   setupAuthChangeFix();
 
-  setTimeout(forceReloadCurrentAccount, 1000);
+  setTimeout(forceReloadCurrentAccount, 8000);
 
   function getInviteIdFromButton(btn) {
     if (!btn) return null;
@@ -22121,17 +22121,26 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   if(window.__forteEnhB) return;
   window.__forteEnhB = true;
 
-  /* 1 ── Follow button: refresh followingIds (await only on first load, bg on refresh) */
+  /* 1 ── Follow button + timeout/retry wrapper */
   (function(){
     const _orig = typeof loadFeedPosts === 'function' ? loadFeedPosts : null;
     if(!_orig) return;
     loadFeedPosts = async function(){
       const u = typeof user !== 'undefined' ? user : null;
       if(u && typeof loadFollowingIds === 'function'){
-        /* Always run in background — never block feed render */
         loadFollowingIds().catch(()=>{});
       }
-      return _orig.apply(this, arguments);
+      const wrap = document.getElementById('feed-posts');
+      let timedOut = false;
+      const timer = wrap ? setTimeout(()=>{
+        timedOut = true;
+        wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;margin-bottom:8px">Taking a while...</div><div style="font-size:13px;margin-bottom:16px">The server is warming up</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 24px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Try again</button></div>';
+      }, 20000) : null;
+      try{
+        await _orig.apply(this, arguments);
+      }finally{
+        if(timer) clearTimeout(timer);
+      }
     };
   })();
 
