@@ -22273,13 +22273,12 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       ticking = true;
       requestAnimationFrame(function(){
         const y = feed.scrollTop;
-        const goingDown = y > lastY;
-        if(goingDown && y > 60 && !hidden){
+        if(y > 60 && !hidden){
           header.style.transform = 'translateY(-100%)';
           header.style.opacity = '0';
           header.style.pointerEvents = 'none';
           hidden = true;
-        } else if((!goingDown || y <= 10) && hidden){
+        } else if(y <= 10 && hidden){
           header.style.transform = '';
           header.style.opacity = '';
           header.style.pointerEvents = '';
