@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "apple-search-ads": {
+      "source": "eronred/aso-skills",
+      "sourceType": "github",
+      "skillPath": "skills/apple-search-ads/SKILL.md",
+      "computedHash": "735639c0470adc80af02040d9f87b7331f2d38e7af2527f8ffcbfb9c19bd0451"
+    },
     "aso-audit": {
       "source": "eronred/aso-skills",
       "sourceType": "github",
