@@ -19,7 +19,6 @@
 <title>Forte</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/src/supabase.js"></script>
 <style>
 :root{--bg:#0a0a0a;--bg2:#111111;--bg3:#1a1a1a;--bg4:#222222;--border:rgba(255,255,255,0.08);--text:#fff;--text2:rgba(255,255,255,0.72);--text3:rgba(255,255,255,0.5);--accent:#ff0090;--accent-dim:rgba(255,0,144,0.12);--red:#ff4f4f;--radius:16px;--radius-sm:10px;--nav-h:68px;--fd:'Inter',sans-serif;--fb:'Inter',sans-serif}
 .light{--bg:#f5f5f5;--bg2:#fff;--bg3:#ebebeb;--bg4:#e0e0e0;--border:rgba(0,0,0,0.08);--text:#0a0a0a;--text2:rgba(0,0,0,0.65);--text3:rgba(0,0,0,0.45);--accent:#5a8a00;--accent-dim:rgba(90,138,0,0.1)}
@@ -458,11 +457,6 @@ body.light .exercise-start-card.workout{color:#fff}
   @keyframes forteInstantBar {
     0%, 100% { transform: scaleY(.55); opacity: .55; }
     45% { transform: scaleY(1.1); opacity: 1; }
-  }
-
-  @keyframes forte-story-pulse {
-    0%,100%{opacity:1}
-    50%{opacity:0.35}
   }
 
   .forte-instant-word {
@@ -2131,7 +2125,10 @@ body.light .exercise-start-card.workout{color:#fff}
 <div class="toast" id="toast"></div>
 
 <script>
-const sb=window.sb||(()=>{window.sb=supabase.createClient('https://hbdiridvkgxarsuimrtu.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk');return window.sb;})();let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
+const SURL='https://hbdiridvkgxarsuimrtu.supabase.co';
+const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk';
+const sb=supabase.createClient(SURL,SKEY);
+window.sb = sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
 const CATS=[{n:'Chest',i:'💪',k:'Chest'},{n:'Back',i:'🏋️',k:'Back'},{n:'Shoulders',i:'🔝',k:'Shoulders'},{n:'Biceps',i:'💪',k:'Biceps'},{n:'Triceps',i:'🦾',k:'Triceps'},{n:'Legs',i:'🦵',k:'Legs'},{n:'Core',i:'🎯',k:'Core'},{n:'Cardio',i:'🏃',k:'Cardio'}];
 
 async function init(){
@@ -2140,7 +2137,7 @@ async function init(){
     history.replaceState(null,'',window.location.pathname);
   }
   const{data:{session}}=await sb.auth.getSession();
-  if(session){user=session.user;window.user=user;await loadProfile();enterApp();}
+  if(session){user=session.user;await loadProfile();enterApp();}
   loadFeedPosts();renderLB('weekly');
   const{data:ex}=await sb.from('exercises').select('*').order('name');
   if(ex&&ex.length)exercises=ex;
@@ -2158,16 +2155,10 @@ async function handleLogin(){
   const email=document.getElementById('login-email').value.trim(),pass=document.getElementById('login-pass').value;
   if(!email||!pass)return showErr('Please fill in all fields');
   const btn=document.querySelector('#login-form .btn-primary');btn.textContent='Signing in...';btn.disabled=true;
-  try{
-    const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
-    if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
-    user=data.user;window.user=user;
-    try{await loadProfile();}catch(e){}
-    enterApp();
-    loadFeedPosts().catch(()=>{});
-    loadFeedLeagues();
-  }catch(e){showErr('Could not sign in — reload the page and try again.');}
-  finally{btn.textContent='Sign in';btn.disabled=false;}
+  const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
+  btn.textContent='Sign in';btn.disabled=false;
+  if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
+  user=data.user;await loadProfile();enterApp();
 }
 
 async function handleSignup(){
@@ -2198,9 +2189,9 @@ async function handleSignup(){
     document.getElementById('login-email').value=email;
     return;
   }
-  user=data.user;window.user=user;
+  user=data.user;
   await sb.from('profiles').insert({id:user.id,username:uname,full_name:name,points:0,streak:0});
-  await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');loadFeedPosts().catch(()=>{});loadFeedLeagues();
+  await loadProfile();enterApp();showToast('Welcome to Forte! 🎉');
 }
 
 async function handleLogout(){
@@ -4852,11 +4843,10 @@ async function loadStories(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
-  // Fetch stories from last 48h (avoids expires_at column dependency)
-  const _since=new Date(Date.now()-48*60*60*1000).toISOString();
+  // Fetch all active stories
   const{data} = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .gte('created_at',_since)
+    .gt('expires_at', new Date().toISOString())
     .order('created_at',{ascending:false});
 
   // Group by user
@@ -4883,22 +4873,17 @@ async function loadStories(){
     const p = g.profile||{};
     const hasStory = g.stories.length > 0;
     const isMe = g.isMe;
-    const isUploading = isMe && !!window._storyUploading;
     const viewed = hasStory && localStorage.getItem('viewed_story_'+g.stories[0]?.id);
-    const ringBg = (isUploading || (hasStory&&!viewed)) ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)';
-    const ringAnim = isUploading ? 'animation:forte-story-pulse 1.2s ease-in-out infinite;' : '';
-    const clickFn = isUploading ? '' : (isMe&&!hasStory ? 'openAddStory()' : 'openStoryViewer('+i+')');
-    const label = isUploading ? 'Uploading…' : (isMe ? 'Your story' : (p.username||''));
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" onclick="${clickFn}">
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" onclick="${isMe&&!hasStory?'openAddStory()':'openStoryViewer('+i+')'}">
       <div style="position:relative">
-        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ringBg};${ringAnim}">
+        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${hasStory&&!viewed?'linear-gradient(135deg,var(--accent),#ff9500)':'var(--bg3)'}">
           <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
             ${p.avatar_url?`<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`:`<div style="font-family:'Inter',sans-serif;font-size:17px;font-weight:600;color:var(--accent)">${(p.full_name||p.username||'?')[0].toUpperCase()}</div>`}
           </div>
         </div>
-        ${isMe&&!isUploading?`<div style="position:absolute;bottom:0;right:0;width:20px;height:20px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#0a0a0a;line-height:1">+</div>`:''}
+        ${isMe?`<div style="position:absolute;bottom:0;right:0;width:20px;height:20px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#0a0a0a;line-height:1">+</div>`:''}
       </div>
-      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${isMe?'Your story':(p.username||'')}</div>
     </div>`;
   }).join('');
 
@@ -8414,43 +8399,22 @@ loadStories = async function(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
-  const _u = window.user || (typeof user !== 'undefined' ? user : null);
-  const _p = window.profile || (typeof profile !== 'undefined' ? profile : null);
-
-  /* Show "Your story" bubble immediately before the network round-trip */
-  if(_u && row.children.length === 0){
-    const _pp = _p || {};
-    const _ringBg = 'var(--bg3)';
-    row.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" onclick="openAddStory()">
-      <div style="position:relative">
-        <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${_ringBg}">
-          <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
-            ${_pp.avatar_url ? `<img src="${_pp.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${(_pp.full_name || _pp.username || '?')[0].toUpperCase()}</div>`}
-          </div>
-        </div>
-        <button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>
-      </div>
-      <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your story</div>
-    </div>`;
-  }
-
-  const _since2=new Date(Date.now()-48*60*60*1000).toISOString();
   const { data } = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .gte('created_at',_since2)
+    .gt('expires_at', new Date().toISOString())
     .order('created_at',{ascending:false});
 
   const groups = {};
   const order = [];
 
-  if(_u){
-    groups[_u.id] = { profile:_p, stories:[], isMe:true };
-    order.push(_u.id);
+  if(user){
+    groups[user.id] = { profile, stories:[], isMe:true };
+    order.push(user.id);
   }
 
   (data || []).forEach(s => {
     if(!groups[s.user_id]){
-      groups[s.user_id] = { profile:s.profiles, stories:[], isMe:s.user_id === _u?.id };
+      groups[s.user_id] = { profile:s.profiles, stories:[], isMe:s.user_id === user?.id };
       order.push(s.user_id);
     }
     groups[s.user_id].stories.push(s);
@@ -8461,24 +8425,19 @@ loadStories = async function(){
   row.innerHTML = storyGroups.map((g,i) => {
     const p = g.profile || {};
     const hasStory = g.stories.length > 0;
-    const isUploading = g.isMe && !!window._storyUploading;
     const unseen = hasStory && g.stories.some(st => !localStorage.getItem('viewed_story_'+st.id));
-    const ringBg = (isUploading || unseen) ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)';
-    const ringAnim = isUploading ? 'animation:forte-story-pulse 1.2s ease-in-out infinite;' : '';
-    const clickFn = isUploading ? '' : (hasStory ? `openStoryViewer(${i})` : 'openAddStory()');
-    const label = isUploading ? 'Uploading…' : (g.isMe ? 'Your story' : fpEsc(p.username || ''));
 
     return `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" ${clickFn?`onclick="${clickFn}"`:''}>
-        <div style="position:relative">
-          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ringBg};${ringAnim}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+        <div style="position:relative" onclick="${hasStory ? `openStoryViewer(${i})` : 'openAddStory()'}">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${unseen ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)'}">
             <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
               ${p.avatar_url ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${fpEsc((p.full_name || p.username || '?')[0]).toUpperCase()}</div>`}
             </div>
           </div>
-          ${g.isMe&&!isUploading ? `<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>` : ''}
+          ${g.isMe ? `<button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>` : ''}
         </div>
-        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.isMe ? 'Your story' : fpEsc(p.username || '')}</div>
       </div>
     `;
   }).join('');
@@ -11845,12 +11804,10 @@ init();
 
 <script>
 if('serviceWorker' in navigator){
-  const _swHadController=!!navigator.serviceWorker.controller;
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js').catch(()=>{});
-    /* Only reload when a SW *update* fires — skip if this is the first install to avoid
-       an unnecessary reload on the user's first ever visit */
-    navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='SW_UPDATED'&&_swHadController)window.location.reload();});
+    /* Auto-reload when a new SW takes over so users always get fresh code */
+    navigator.serviceWorker.addEventListener('controllerchange',()=>window.location.reload());
   });
 }
 </script>
@@ -12493,7 +12450,7 @@ if('serviceWorker' in navigator){
 
   setupAuthChangeFix();
 
-  setTimeout(forceReloadCurrentAccount, 8000);
+  setTimeout(forceReloadCurrentAccount, 1000);
 
   function getInviteIdFromButton(btn) {
     if (!btn) return null;
@@ -20490,15 +20447,12 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
 
   window.loadConversations = async function(){
+    const u = await dmCurrentUser();
+    if(!u) return;
+
     const el = document.getElementById('dm-list');
     if(!el) return;
     el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
-
-    const u = await dmCurrentUser();
-    if(!u){
-      el.innerHTML = '<div style="padding:40px 20px;text-align:center"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Sign in to view messages</div></div>';
-      return;
-    }
 
     try{
       const { data:memberships, error:memErr } = await sb
@@ -21562,19 +21516,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     if(followedIds) q = q.in('user_id', followedIds);
 
-    /* Timeout: abort after 25s and show retry UI */
-    const _ctrl = new AbortController();
-    const _tId = setTimeout(()=>_ctrl.abort(), 25000);
-    let posts, error;
-    try{
-      const res = await q.abortSignal(_ctrl.signal);
-      clearTimeout(_tId);
-      posts = res.data; error = res.error;
-    }catch(e){
-      clearTimeout(_tId);
-      wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px">Server is starting up...</div><div style="font-size:13px;margin-bottom:18px">This usually takes under a minute</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Reload feed</button></div>';
-      return;
-    }
+    const { data:posts, error } = await q;
 
     if(error){
       wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Could not load feed.</div>';
@@ -22052,58 +21994,50 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     });
   }
 
-  window._fcUpload=function(){
+  window._fcUpload=async function(){
     if(!_blob){toast('Nothing to share'); return;}
-    if(window._storyUploading){toast('Upload already in progress…'); return;}
-    const u=window.user||(typeof user!=='undefined'?user:null);
-    if(!u){toast('Sign in first'); return;}
-
-    /* Snapshot everything before _fcClose() resets them */
-    const blobSnap=_blob;
-    const mediaType=blobSnap.type&&blobSnap.type.startsWith('video/')?'video':'image';
+    const postBtn=document.querySelector('#_fcPost button:last-child');
+    const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
+    if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
     const caption=document.getElementById('_fcCap').value.trim();
+    const u=window.user||(typeof user!=='undefined'?user:null);
+    if(!u){toast('Sign in first');resetBtn();return;}
 
-    /* Close overlay immediately — Instagram style */
-    _fcClose();
+    let mediaUrl=null;
+    let mediaType='image';
 
-    /* Show pulsing "Uploading…" ring on the user's story bubble */
-    window._storyUploading=true;
-    try{loadStories();}catch(e){}
+    const isVideo=_blob.type&&_blob.type.startsWith('video/');
 
-    /* Background upload */
-    (async()=>{
-      try{
-        let mediaUrl=null;
-        if(mediaType==='video'){
-          mediaUrl=await Promise.race([
-            new Promise(res=>{
-              const fr=new FileReader();
-              fr.onerror=()=>res(null);
-              fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-              fr.readAsDataURL(blobSnap);
-            }),
-            new Promise(res=>setTimeout(()=>res(null),25000))
-          ]);
-          if(!mediaUrl){toast('Could not read video');return;}
-        }else{
-          mediaUrl=await _blobToDataURL(blobSnap);
-          if(!mediaUrl){toast('Could not process photo');return;}
-        }
-        const _exp=new Date(Date.now()+24*60*60*1000).toISOString();
-        const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString(),expires_at:_exp};
-        const{error}=await Promise.race([
-          sb.from('stories').insert(row),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),30000))
-        ]);
-        if(error) throw error;
-        toast('Story posted! 🔥');
-      }catch(err){
-        toast('Could not post: '+(err.message||'unknown error'));
-      }finally{
-        window._storyUploading=false;
-        try{loadStories();}catch(e){}
-      }
-    })();
+    if(isVideo){
+      /* Read video directly as data URL — fast, no transcoding needed */
+      mediaUrl=await new Promise(res=>{
+        const fr=new FileReader();
+        fr.onerror=()=>res(null);
+        fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
+        fr.readAsDataURL(_blob);
+      });
+      if(!mediaUrl){toast('Could not read video');resetBtn();return;}
+      mediaType='video';
+    } else {
+      /* Convert image to data URL */
+      mediaUrl=await _blobToDataURL(_blob);
+      if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
+      mediaType='image';
+    }
+
+    try{
+      const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
+      const {error}=await Promise.race([
+        sb.from('stories').insert(row),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
+      ]);
+      if(error) throw error;
+      _fcClose(); toast('Story posted! 🔥');
+      try{loadStories();}catch(e){}
+    }catch(err){
+      toast('Could not post: '+(err.message||'unknown error'));
+      resetBtn();
+    }
   };
 
   window.openAddStory=async function(){
@@ -22133,26 +22067,23 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   if(window.__forteEnhB) return;
   window.__forteEnhB = true;
 
-  /* 1 ── Follow button + timeout/retry wrapper */
+  /* 1 ── Follow button: refresh followingIds (await only on first load, bg on refresh) */
   (function(){
     const _orig = typeof loadFeedPosts === 'function' ? loadFeedPosts : null;
     if(!_orig) return;
     loadFeedPosts = async function(){
       const u = typeof user !== 'undefined' ? user : null;
       if(u && typeof loadFollowingIds === 'function'){
-        loadFollowingIds().catch(()=>{});
+        const fids = typeof followingIds !== 'undefined' ? followingIds : null;
+        if(!fids || fids.size === 0){
+          /* First load: await so buttons render correctly immediately */
+          try{ await loadFollowingIds(); }catch(e){}
+        } else {
+          /* Subsequent loads: refresh in background so feed doesn't block */
+          loadFollowingIds().catch(()=>{});
+        }
       }
-      const wrap = document.getElementById('feed-posts');
-      let timedOut = false;
-      const timer = wrap ? setTimeout(()=>{
-        timedOut = true;
-        wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;margin-bottom:8px">Taking a while...</div><div style="font-size:13px;margin-bottom:16px">The server is warming up</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 24px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Try again</button></div>';
-      }, 20000) : null;
-      try{
-        await _orig.apply(this, arguments);
-      }finally{
-        if(timer) clearTimeout(timer);
-      }
+      return _orig.apply(this, arguments);
     };
   })();
 
@@ -22660,121 +22591,6 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       /* sticky note is loaded in renderExBlocks via localStorage — nothing extra needed */
     };
   }
-})();
-</script>
-
-<script>
-/* ── CLEAN FEED LOADER: replaces entire chain, handles cold-start ── */
-(function(){
-  if(window.__forteFeedLoaderV2) return;
-  window.__forteFeedLoaderV2 = true;
-
-  /* Rescue stuck Loading... state 2.5s after init() fires */
-  setTimeout(function(){
-    const wrap = document.getElementById('feed-posts');
-    if(wrap && wrap.textContent.trim() === 'Loading...'){
-      window.loadFeedPosts();
-    }
-  }, 2500);
-
-  function _esc2(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function _ago2(ts){
-    const d=Math.floor((Date.now()-new Date(ts))/1000);
-    if(d<60)return 'just now';
-    if(d<3600)return Math.floor(d/60)+'m ago';
-    if(d<86400)return Math.floor(d/3600)+'h ago';
-    return Math.floor(d/86400)+'d ago';
-  }
-
-  async function doFeedQuery(wrap){
-    const ctrl = new AbortController();
-    const tId = setTimeout(()=>ctrl.abort(), 25000);
-    try{
-      const res = await window.sb.from('posts')
-        .select('*,profiles!posts_user_id_fkey(id,username,full_name,avatar_url),workouts(id,title)')
-        .order('created_at',{ascending:false})
-        .limit(40)
-        .abortSignal(ctrl.signal);
-      clearTimeout(tId);
-      return res;
-    }catch(e){
-      clearTimeout(tId);
-      throw e;
-    }
-  }
-
-  function renderWarmUp(wrap){
-    wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px">Server starting up...</div><div style="font-size:13px;margin-bottom:18px">This usually takes under a minute</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Reload feed</button></div>';
-  }
-
-  function renderPosts(wrap, posts){
-    const wu = window.user;
-    const fIds = (window.followingIds instanceof Set) ? window.followingIds : new Set();
-    if(!posts||!posts.length){
-      wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">📸</div><div style="font-size:15px;font-weight:600">No posts yet</div></div>';
-      return;
-    }
-    wrap.innerHTML = posts.map((p,i)=>{
-      const u = p.profiles||{};
-      const isOwn = wu && p.user_id===wu.id;
-      const isFollowing = fIds.has(p.user_id);
-      const showFollow = !isOwn && !isFollowing && p.user_id;
-      const hasW = !!p.workout_id;
-      const wTitle = p.workouts?.title||'';
-      const avt = (typeof fpAvatar==='function') ? fpAvatar(u,36) : (typeof avatarEl==='function' ? avatarEl(u,36) : `<div style="width:36px;height:36px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700">${(_esc2(u.full_name||u.username||'U')[0]||'U')}</div>`);
-      return `<div class="workout-post fade-up" style="animation-delay:${i*.03}s">
-        <div class="post-header">
-          <div style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer" onclick="viewProfile('${u.id||p.user_id}')">
-            ${avt}
-            <div><div class="post-user">${_esc2(u.full_name||u.username||'User')}</div><div class="post-time">${_ago2(p.created_at)}</div></div>
-          </div>
-          ${isOwn?`<button onclick="event.stopPropagation();deletePost('${p.id}')" style="background:rgba(255,79,79,.12);border:1px solid rgba(255,79,79,.25);border-radius:8px;padding:6px 10px;color:var(--red);font-size:12px;font-weight:700">Delete</button>`:''}
-          ${showFollow?`<button onclick="event.stopPropagation();quickFollow('${p.user_id}',this)" style="background:rgba(255,0,144,.12);border:1.5px solid rgba(255,0,144,.35);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:#ff0090;cursor:pointer">Follow</button>`:''}
-        </div>
-        ${p.media_url&&p.media_type==='image'?`<img src="${_esc2(p.media_url)}" style="width:100%;height:auto;object-fit:cover;display:block;cursor:pointer" onclick="openPost('${p.id}')">` :''}
-        ${p.media_url&&p.media_type==='video'?`<video src="${_esc2(p.media_url)}#t=0.001" style="width:100%;height:auto;display:block;background:#000" controls playsinline preload="metadata" webkit-playsinline></video>`:''}
-        ${hasW?`<div style="display:flex;align-items:center;gap:8px;padding:10px 16px 4px"><div style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,0,144,.1);border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ff0090">💪 Logged a workout!</div></div>${wTitle?`<div class="post-workout-title" style="padding:2px 16px 8px;font-size:15px;font-weight:700">${_esc2(wTitle)}</div>`:''}` :''}
-        ${p.caption?`<div style="padding:0 16px 12px;font-size:14px;color:var(--text2);white-space:pre-wrap">${_esc2(p.caption)}</div>`:''}
-        ${hasW?`<div style="padding:0 16px 12px"><button onclick="openWorkoutFromPost('${p.id}')" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;width:100%;text-align:left">💪 View workout →</button></div>`:''}
-        <div class="post-actions">
-          <div class="post-action" onclick="toggleLike('${p.id}',this)" id="like-btn-${p.id}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l7.78-7.78a5.5 5.5 0 0 0 1.06-8.84z"/></svg>
-            <span id="like-count-${p.id}">${p.likes_count||0}</span>
-          </div>
-          <div class="post-action" onclick="openPost('${p.id}')">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
-            <span>${p.comments_count||0} comment${(p.comments_count||0)===1?'':'s'}</span>
-          </div>
-          <div class="post-action" onclick="navigator.share&&navigator.share({title:'Forte',text:'${_esc2(p.caption||wTitle||'Check this out!')}',url:location.href})">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <span>Share</span>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  window.loadFeedPosts = async function(){
-    /* fire stories + followingIds in background */
-    try{ if(typeof loadStories==='function') loadStories(); }catch(e){}
-    if(window.user && typeof loadFollowingIds==='function') loadFollowingIds().catch(()=>{});
-
-    const wrap = document.getElementById('feed-posts');
-    if(!wrap) return;
-    wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
-
-    try{
-      const {data:posts, error} = await doFeedQuery(wrap);
-      if(error) throw error;
-      renderPosts(wrap, posts);
-    }catch(e){
-      if(e && (e.name==='AbortError' || e.message==='AbortError' || String(e).includes('abort') || String(e).includes('cancel'))){
-        renderWarmUp(wrap);
-      } else {
-        wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">😕</div><div style="font-size:15px;font-weight:600;margin-bottom:16px">Could not load feed</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Try again</button></div>';
-      }
-    }
-  };
 })();
 </script>
 
