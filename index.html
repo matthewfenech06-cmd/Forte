@@ -22108,14 +22108,8 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     loadFeedPosts = async function(){
       const u = typeof user !== 'undefined' ? user : null;
       if(u && typeof loadFollowingIds === 'function'){
-        const fids = typeof followingIds !== 'undefined' ? followingIds : null;
-        if(!fids || fids.size === 0){
-          /* First load: await so buttons render correctly immediately */
-          try{ await loadFollowingIds(); }catch(e){}
-        } else {
-          /* Subsequent loads: refresh in background so feed doesn't block */
-          loadFollowingIds().catch(()=>{});
-        }
+        /* Always run in background — never block feed render */
+        loadFollowingIds().catch(()=>{});
       }
       return _orig.apply(this, arguments);
     };
