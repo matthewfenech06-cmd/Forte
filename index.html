@@ -21983,21 +21983,35 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const isVideo=_blob.type&&_blob.type.startsWith('video/');
 
     if(isVideo){
-      /* Store video as data URL (works for Live Photos / short clips up to ~8MB).
-         Supabase Storage uploads hang on this device so we skip them. */
-      const MAX_VIDEO_BYTES=8*1024*1024;
-      if(_blob.size>MAX_VIDEO_BYTES){
-        toast('Video is too large (max 8 MB). Try a shorter clip.');
-        resetBtn(); return;
+      /* Upload video to Supabase Storage using SDK (handles user JWT automatically) */
+      if(postBtn) postBtn.textContent='Uploading…';
+      const ext=_blob.type.includes('mp4')?'mp4':_blob.type.includes('webm')?'webm':'mov';
+      const path='stories/'+u.id+'/'+Date.now()+'.'+ext;
+      try{
+        const up=await Promise.race([
+          sb.storage.from('forte-media').upload(path,_blob,{contentType:_blob.type||'video/mp4',cacheControl:'3600',upsert:false}),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('Upload timed out')),120000))
+        ]);
+        if(up.error) throw up.error;
+        mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
+        mediaType='video';
+      }catch(err){
+        /* Storage upload failed — fall back to data URL for small videos (≤15 MB) */
+        if(_blob.size<=15*1024*1024){
+          if(postBtn) postBtn.textContent='Posting…';
+          mediaUrl=await new Promise(res=>{
+            const fr=new FileReader();
+            fr.onerror=()=>res(null);
+            fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
+            fr.readAsDataURL(_blob);
+          });
+          if(!mediaUrl){toast('Could not process video');resetBtn();return;}
+          mediaType='video';
+        } else {
+          toast('Video too large — try a clip under 15 MB');
+          resetBtn(); return;
+        }
       }
-      mediaUrl=await new Promise(res=>{
-        const fr=new FileReader();
-        fr.onerror=()=>res(null);
-        fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-        fr.readAsDataURL(_blob);
-      });
-      if(!mediaUrl){toast('Could not read video');resetBtn();return;}
-      mediaType='video';
     } else {
       /* Convert image to data URL */
       mediaUrl=await _blobToDataURL(_blob);
