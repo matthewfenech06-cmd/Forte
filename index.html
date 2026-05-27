@@ -4852,10 +4852,10 @@ async function loadStories(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
-  // Fetch all active stories
+  // Fetch all active stories (include null expires_at for backwards compat)
   const{data} = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .gt('expires_at', new Date().toISOString())
+    .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
     .order('created_at',{ascending:false});
 
   // Group by user
@@ -8415,7 +8415,7 @@ loadStories = async function(){
 
   const { data } = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .gt('expires_at', new Date().toISOString())
+    .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
     .order('created_at',{ascending:false});
 
   const groups = {};
@@ -20469,7 +20469,10 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   window.loadConversations = async function(){
     const u = await dmCurrentUser();
-    if(!u) return;
+    if(!u){
+      el.innerHTML = '<div style="padding:40px 20px;text-align:center"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">Sign in to view messages</div></div>';
+      return;
+    }
 
     const el = document.getElementById('dm-list');
     if(!el) return;
@@ -22052,7 +22055,8 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
           mediaUrl=await _blobToDataURL(blobSnap);
           if(!mediaUrl){toast('Could not process photo');return;}
         }
-        const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
+        const _exp=new Date(Date.now()+24*60*60*1000).toISOString();
+        const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString(),expires_at:_exp};
         const{error}=await Promise.race([
           sb.from('stories').insert(row),
           new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),30000))
