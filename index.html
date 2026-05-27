@@ -2161,7 +2161,7 @@ async function handleLogin(){
   try{
     const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
     if(error){if(error.message.includes('Invalid login'))return showErr('Wrong email or password.');return showErr('Could not sign in. Try again.');}
-    user=data.user;await loadProfile();enterApp();
+    user=data.user;await loadProfile();enterApp();try{loadFeedPosts();}catch(e){}
   }catch(e){showErr('Could not sign in — reload the page and try again.');}
   finally{btn.textContent='Sign in';btn.disabled=false;}
 }
@@ -8443,7 +8443,7 @@ loadStories = async function(){
     const label = isUploading ? 'Uploading…' : (g.isMe ? 'Your story' : fpEsc(p.username || ''));
 
     return `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" ${clickFn?`onclick="${clickFn}"`:''}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:${isUploading?'default':'pointer'};flex-shrink:0" ${clickFn?`onclick="${clickFn}"`:''}>
         <div style="position:relative">
           <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${ringBg};${ringAnim}">
             <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">
