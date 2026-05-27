@@ -21885,27 +21885,50 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
     _startCam();
   };
-  /* Upload video blob to Supabase Storage via XHR (has native timeout, more reliable than fetch SDK) */
-  function _uploadVideo(blob){
+  /* Transcode video using MediaRecorder + canvas at low bitrate to make it small enough for a data URL */
+  function _transcodeVideo(blob){
     return new Promise((resolve)=>{
-      const ext=blob.type.includes('mp4')?'mp4':blob.type.includes('webm')?'webm':'mov';
-      const path='stories/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
-      const url=SURL+'/storage/v1/object/forte-media/'+path;
-      const xhr=new XMLHttpRequest();
-      xhr.open('POST',url,true);
-      /* Use the anon key — RLS on the bucket allows authenticated inserts */
-      xhr.setRequestHeader('Authorization','Bearer '+SKEY);
-      xhr.setRequestHeader('Content-Type',blob.type||'video/mp4');
-      xhr.setRequestHeader('x-upsert','false');
-      xhr.timeout=90000; /* 90 seconds for video */
-      xhr.onload=()=>{
-        if(xhr.status>=200&&xhr.status<300){
-          resolve(SURL+'/storage/v1/object/public/forte-media/'+path);
-        } else { resolve(null); }
+      if(typeof MediaRecorder==='undefined'||!HTMLCanvasElement.prototype.captureStream){resolve(null);return;}
+      const vid=document.createElement('video');
+      vid.muted=true; vid.playsInline=true;
+      const objUrl=URL.createObjectURL(blob);
+      const cleanup=()=>{try{URL.revokeObjectURL(objUrl);}catch(e){}};
+      const fail=()=>{cleanup();resolve(null);};
+      const safetyTimeout=setTimeout(fail,90000);
+      vid.onloadedmetadata=()=>{
+        try{
+          const dur=vid.duration;
+          if(!dur||dur===Infinity){clearTimeout(safetyTimeout);fail();return;}
+          const MAX=720;
+          let w=vid.videoWidth||720, h=vid.videoHeight||1280;
+          if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+          const can=document.createElement('canvas');
+          can.width=w; can.height=h;
+          const ctx=can.getContext('2d');
+          const mimeType=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm']
+            .find(t=>{try{return MediaRecorder.isTypeSupported(t);}catch(e){return false;}});
+          if(!mimeType||!can.captureStream){clearTimeout(safetyTimeout);fail();return;}
+          const stream=can.captureStream(24);
+          const recorder=new MediaRecorder(stream,{mimeType:mimeType.split(';')[0],videoBitsPerSecond:700000});
+          const chunks=[];
+          recorder.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
+          recorder.onstop=()=>{
+            clearTimeout(safetyTimeout);cleanup();
+            if(!chunks.length){resolve(null);return;}
+            resolve(new Blob(chunks,{type:mimeType.split(';')[0]}));
+          };
+          let raf;
+          const draw=()=>{
+            ctx.drawImage(vid,0,0,w,h);
+            if(!vid.ended&&!vid.paused)raf=requestAnimationFrame(draw);
+          };
+          recorder.start(500);
+          vid.play().then(()=>{raf=requestAnimationFrame(draw);}).catch(fail);
+          vid.onended=()=>{cancelAnimationFrame(raf);recorder.stop();};
+        }catch(e){clearTimeout(safetyTimeout);fail();}
       };
-      xhr.onerror=()=>resolve(null);
-      xhr.ontimeout=()=>resolve(null);
-      xhr.send(blob);
+      vid.onerror=()=>{clearTimeout(safetyTimeout);fail();};
+      vid.src=objUrl;
     });
   }
 
@@ -21983,35 +22006,24 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const isVideo=_blob.type&&_blob.type.startsWith('video/');
 
     if(isVideo){
-      /* Upload video to Supabase Storage using SDK (handles user JWT automatically) */
-      if(postBtn) postBtn.textContent='Uploading…';
-      const ext=_blob.type.includes('mp4')?'mp4':_blob.type.includes('webm')?'webm':'mov';
-      const path='stories/'+u.id+'/'+Date.now()+'.'+ext;
-      try{
-        const up=await Promise.race([
-          sb.storage.from('forte-media').upload(path,_blob,{contentType:_blob.type||'video/mp4',cacheControl:'3600',upsert:false}),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('Upload timed out')),120000))
-        ]);
-        if(up.error) throw up.error;
-        mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
-        mediaType='video';
-      }catch(err){
-        /* Storage upload failed — fall back to data URL for small videos (≤15 MB) */
-        if(_blob.size<=15*1024*1024){
-          if(postBtn) postBtn.textContent='Posting…';
-          mediaUrl=await new Promise(res=>{
-            const fr=new FileReader();
-            fr.onerror=()=>res(null);
-            fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-            fr.readAsDataURL(_blob);
-          });
-          if(!mediaUrl){toast('Could not process video');resetBtn();return;}
-          mediaType='video';
-        } else {
-          toast('Video too large — try a clip under 15 MB');
-          resetBtn(); return;
-        }
+      /* Transcode video at 700kbps to shrink it to a data URL (storage uploads hang on this device) */
+      if(postBtn) postBtn.textContent='Compressing…';
+      const transcoded=await _transcodeVideo(_blob);
+      const videoBlob=transcoded||_blob; /* fall back to original if transcode fails */
+      if(postBtn) postBtn.textContent='Posting…';
+      mediaUrl=await new Promise(res=>{
+        const fr=new FileReader();
+        fr.onerror=()=>res(null);
+        fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
+        fr.readAsDataURL(videoBlob);
+      });
+      if(!mediaUrl){toast('Could not process video');resetBtn();return;}
+      /* Reject if still too large for Supabase row (~10 MB base64 cap) */
+      if(mediaUrl.length>10*1024*1024){
+        toast('Video too large even after compression. Try a clip under 30s.');
+        resetBtn(); return;
       }
+      mediaType='video';
     } else {
       /* Convert image to data URL */
       mediaUrl=await _blobToDataURL(_blob);
