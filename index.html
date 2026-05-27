@@ -20740,6 +20740,8 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   -webkit-backdrop-filter:none!important;
   box-shadow:none!important;
   border:none!important;
+  transition:transform .26s cubic-bezier(.4,0,.2,1), opacity .26s ease;
+  will-change:transform,opacity;
 }
 .topbar{
   background:transparent!important;
@@ -22245,6 +22247,56 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
 
   /* sendForteTap already handles the [[FORTE_TAP]] message insert internally */
+})();
+</script>
+
+<script>
+/* =========================================================
+   FEED HEADER — hide on scroll down, reveal on scroll up
+   ========================================================= */
+(function(){
+  if(window.__forteHeaderScroll) return;
+  window.__forteHeaderScroll = true;
+
+  function init(){
+    const feed = document.getElementById('feed-screen');
+    if(!feed) return;
+    const header = feed.querySelector('div[style*="sticky"]');
+    if(!header) return;
+
+    let lastY = 0;
+    let ticking = false;
+    let hidden = false;
+
+    feed.addEventListener('scroll', function(){
+      if(ticking) return;
+      ticking = true;
+      requestAnimationFrame(function(){
+        const y = feed.scrollTop;
+        const goingDown = y > lastY;
+        if(goingDown && y > 60 && !hidden){
+          header.style.transform = 'translateY(-100%)';
+          header.style.opacity = '0';
+          header.style.pointerEvents = 'none';
+          hidden = true;
+        } else if((!goingDown || y <= 10) && hidden){
+          header.style.transform = '';
+          header.style.opacity = '';
+          header.style.pointerEvents = '';
+          hidden = false;
+        }
+        lastY = y;
+        ticking = false;
+      });
+    }, {passive:true});
+  }
+
+  /* Wait for DOM if needed */
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 
