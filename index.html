@@ -21881,6 +21881,26 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
   function _withTimeout(promise, ms){ return Promise.race([promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out after '+ms+'ms')),ms))]); }
 
+  /* Direct fetch upload — bypasses Supabase SDK which can hang on mobile */
+  async function _storageUpload(path, blob, ct){
+    const ctrl = new AbortController();
+    const tid = setTimeout(()=>ctrl.abort(), 20000);
+    try{
+      const sess = await sb.auth.getSession();
+      const tok = sess?.data?.session?.access_token || SKEY;
+      const url = `${SURL}/storage/v1/object/forte-media/${path}`;
+      const res = await fetch(url, {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':ct, 'x-upsert':'true' },
+        body: blob,
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+      if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error(res.status+' '+t); }
+      return `${SURL}/storage/v1/object/public/forte-media/${path}`;
+    }catch(e){ clearTimeout(tid); throw e; }
+  }
+
   window._fcUpload=async function(){
     if(!_blob){toast('Nothing to share'); return;}
     const postBtn=document.querySelector('#_fcPost button:last-child');
@@ -21922,15 +21942,11 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       const ct=(uploadBlob&&uploadBlob.type)||(_blobType==='video'?'video/mp4':'image/jpeg');
       const ext=ct.includes('mp4')?'mp4':ct.includes('quicktime')?'mov':ct.includes('webm')?'webm':_blobType==='video'?'mp4':'jpg';
       const path=`posts/${u.id}/story_${Date.now()}.${ext}`;
-      const {error:upErr}=await _withTimeout(
-        sb.storage.from('forte-media').upload(path,uploadBlob,{upsert:true,contentType:ct}),
-        25000
-      );
-      if(!upErr) mediaUrl=sb.storage.from('forte-media').getPublicUrl(path).data.publicUrl;
-      else toast('Photo upload failed ('+upErr.message+') — try again');
-    }catch(e){ toast('Upload error: '+(e.message||'check connection')); resetBtn(); return; }
-
-    if(!mediaUrl){ resetBtn(); return; }
+      mediaUrl = await _storageUpload(path, uploadBlob, ct);
+    }catch(e){
+      toast('Upload failed: '+(e.message||'check connection'));
+      resetBtn(); return;
+    }
 
     try{
       const row={user_id:u.id,media_url:mediaUrl,media_type:_blobType,caption,created_at:new Date().toISOString()};
