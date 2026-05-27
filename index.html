@@ -19,6 +19,7 @@
 <title>Forte</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/src/supabase.js"></script>
 <style>
 :root{--bg:#0a0a0a;--bg2:#111111;--bg3:#1a1a1a;--bg4:#222222;--border:rgba(255,255,255,0.08);--text:#fff;--text2:rgba(255,255,255,0.72);--text3:rgba(255,255,255,0.5);--accent:#ff0090;--accent-dim:rgba(255,0,144,0.12);--red:#ff4f4f;--radius:16px;--radius-sm:10px;--nav-h:68px;--fd:'Inter',sans-serif;--fb:'Inter',sans-serif}
 .light{--bg:#f5f5f5;--bg2:#fff;--bg3:#ebebeb;--bg4:#e0e0e0;--border:rgba(0,0,0,0.08);--text:#0a0a0a;--text2:rgba(0,0,0,0.65);--text3:rgba(0,0,0,0.45);--accent:#5a8a00;--accent-dim:rgba(90,138,0,0.1)}
@@ -2130,10 +2131,7 @@ body.light .exercise-start-card.workout{color:#fff}
 <div class="toast" id="toast"></div>
 
 <script>
-const SURL='https://hbdiridvkgxarsuimrtu.supabase.co';
-const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhiZGlyaWR2a2d4YXJzdWltcnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNzcxOTYsImV4cCI6MjA5NDc1MzE5Nn0.vQU7_NoFw02pEEyhSN8ZPLm69JdeV0zgwc6K10hHjdk';
-const sb=supabase.createClient(SURL,SKEY);
-window.sb = sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
+const sb=window.sb;let user=null,profile=null,nutLogs=[],exercises=[],wkExs=[],wkTimer=null,wkSecs=0,restTimer=null,restSecs=0,bcStream=null,goals={cal:2000,pro:150,carb:250,fat:65};
 const CATS=[{n:'Chest',i:'💪',k:'Chest'},{n:'Back',i:'🏋️',k:'Back'},{n:'Shoulders',i:'🔝',k:'Shoulders'},{n:'Biceps',i:'💪',k:'Biceps'},{n:'Triceps',i:'🦾',k:'Triceps'},{n:'Legs',i:'🦵',k:'Legs'},{n:'Core',i:'🎯',k:'Core'},{n:'Cardio',i:'🏃',k:'Cardio'}];
 
 async function init(){
