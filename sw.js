@@ -1,4 +1,4 @@
-const CACHE = 'forte-v1';
+const CACHE = 'forte-v2';
 const OFFLINE_URLS = ['/'];
 
 self.addEventListener('install', e=>{
@@ -7,7 +7,7 @@ self.addEventListener('install', e=>{
 });
 
 self.addEventListener('activate', e=>{
-  e.waitUntil(clients.claim());
+  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>clients.claim()));
 });
 
 self.addEventListener('fetch', e=>{
