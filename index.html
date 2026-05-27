@@ -21562,7 +21562,19 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     if(followedIds) q = q.in('user_id', followedIds);
 
-    const { data:posts, error } = await q;
+    /* Timeout: abort after 25s and show retry UI */
+    const _ctrl = new AbortController();
+    const _tId = setTimeout(()=>_ctrl.abort(), 25000);
+    let posts, error;
+    try{
+      const res = await q.abortSignal(_ctrl.signal);
+      clearTimeout(_tId);
+      posts = res.data; error = res.error;
+    }catch(e){
+      clearTimeout(_tId);
+      wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:30px;margin-bottom:12px">⏳</div><div style="font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px">Server is starting up...</div><div style="font-size:13px;margin-bottom:18px">This usually takes under a minute</div><button onclick="loadFeedPosts()" style="background:#ff0090;border:none;border-radius:20px;padding:10px 28px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Reload feed</button></div>';
+      return;
+    }
 
     if(error){
       wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Could not load feed.</div>';
@@ -22656,6 +22668,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 (function(){
   if(window.__forteFeedLoaderV2) return;
   window.__forteFeedLoaderV2 = true;
+
+  /* Rescue stuck Loading... state 2.5s after init() fires */
+  setTimeout(function(){
+    const wrap = document.getElementById('feed-posts');
+    if(wrap && wrap.textContent.trim() === 'Loading...'){
+      window.loadFeedPosts();
+    }
+  }, 2500);
 
   function _esc2(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function _ago2(ts){
