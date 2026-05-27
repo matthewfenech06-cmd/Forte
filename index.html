@@ -21885,7 +21885,31 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('_fcV').style.display='block'; document.getElementById('_fcSLayer').innerHTML='';
     _startCam();
   };
-  /* Capture first frame of a video/quicktime blob (Live Photo) as a JPEG data URL */
+  /* Upload video blob to Supabase Storage via XHR (has native timeout, more reliable than fetch SDK) */
+  function _uploadVideo(blob){
+    return new Promise((resolve)=>{
+      const ext=blob.type.includes('mp4')?'mp4':blob.type.includes('webm')?'webm':'mov';
+      const path='stories/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+      const url=SURL+'/storage/v1/object/forte-media/'+path;
+      const xhr=new XMLHttpRequest();
+      xhr.open('POST',url,true);
+      /* Use the anon key — RLS on the bucket allows authenticated inserts */
+      xhr.setRequestHeader('Authorization','Bearer '+SKEY);
+      xhr.setRequestHeader('Content-Type',blob.type||'video/mp4');
+      xhr.setRequestHeader('x-upsert','false');
+      xhr.timeout=90000; /* 90 seconds for video */
+      xhr.onload=()=>{
+        if(xhr.status>=200&&xhr.status<300){
+          resolve(SURL+'/storage/v1/object/public/forte-media/'+path);
+        } else { resolve(null); }
+      };
+      xhr.onerror=()=>resolve(null);
+      xhr.ontimeout=()=>resolve(null);
+      xhr.send(blob);
+    });
+  }
+
+  /* Capture first frame of a video blob as a JPEG data URL (thumbnail fallback) */
   function _videoFrameToDataURL(blob){
     return new Promise((resolve)=>{
       const vid=document.createElement('video');
@@ -21913,22 +21937,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     });
   }
 
-  /* Convert blob → resized JPEG data URL.
-     Uses FileReader.readAsDataURL (most reliable on iOS — no ObjectURL timing issues).
-     For video/quicktime (iOS Live Photos), captures first video frame instead.
-     Canvas resize is attempted; raw data URL is the guaranteed fallback. */
+  /* Convert image blob → resized JPEG data URL via FileReader + canvas */
   async function _blobToDataURL(blob){
-    /* iOS Live Photos come back as video/quicktime — capture a frame */
-    if(blob.type&&blob.type.startsWith('video/')){
-      return _videoFrameToDataURL(blob);
-    }
     return new Promise((resolve)=>{
       const fr=new FileReader();
       fr.onerror=()=>resolve(null);
       fr.onload=()=>{
         const raw=fr.result;
         if(!raw||typeof raw!=='string'||raw.length<100){resolve(null);return;}
-        /* Try to resize via canvas; fall back to raw on any failure */
         const img=new Image();
         img.onerror=()=>resolve(raw);
         const fallback=setTimeout(()=>resolve(raw),5000);
@@ -21962,13 +21978,25 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     if(!u){toast('Sign in first');resetBtn();return;}
 
     let mediaUrl=null;
+    let mediaType='image';
 
-    /* Always try to convert to image data URL — handles images, Live Photos (video/quicktime), etc. */
-    mediaUrl=await _blobToDataURL(_blob);
-    if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
+    const isVideo=_blob.type&&_blob.type.startsWith('video/');
+
+    if(isVideo){
+      /* Upload video to storage */
+      if(postBtn) postBtn.textContent='Uploading…';
+      mediaUrl=await _uploadVideo(_blob);
+      if(!mediaUrl){toast('Video upload failed — check connection');resetBtn();return;}
+      mediaType='video';
+    } else {
+      /* Convert image to data URL */
+      mediaUrl=await _blobToDataURL(_blob);
+      if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
+      mediaType='image';
+    }
 
     try{
-      const row={user_id:u.id,media_url:mediaUrl,media_type:'image',caption,created_at:new Date().toISOString()};
+      const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
       const {error}=await Promise.race([
         sb.from('stories').insert(row),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
