@@ -2138,7 +2138,7 @@ async function init(){
   }
   const{data:{session}}=await sb.auth.getSession();
   if(session){user=session.user;await loadProfile();enterApp();}
-  loadFeedPosts();renderLB('weekly');
+  loadFeedPosts();loadStories();renderLB('weekly');
   const{data:ex}=await sb.from('exercises').select('*').order('name');
   if(ex&&ex.length)exercises=ex;
   if(session)loadFeedLeagues();
@@ -19994,8 +19994,10 @@ window.obFinish = async function(){
     sp.classList.add('show','spin');
 
     try{
-      if(typeof loadStories === 'function') await loadStories();
-      if(typeof loadFeedPosts === 'function') await loadFeedPosts();
+      await Promise.all([
+        typeof loadStories === 'function' ? loadStories() : Promise.resolve(),
+        typeof loadFeedPosts === 'function' ? loadFeedPosts() : Promise.resolve()
+      ]);
     }catch(e){
       console.error('Feed refresh failed:', e);
       if(typeof showToast === 'function') showToast('Could not refresh feed');
@@ -21489,8 +21491,6 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   loadFeedPosts = async function(){
-    try{ loadStories(); }catch(e){}
-
     const wrap = document.getElementById('feed-posts');
     if(!wrap) return;
     wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
