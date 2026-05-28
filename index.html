@@ -22588,4 +22588,40 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 </script>
 
+<script>
+/* ── Instant stories: show user bubble immediately, load others from server ── */
+(function(){
+  if(window.__forteInstantStories) return;
+  window.__forteInstantStories = true;
+
+  const _orig = loadStories;
+
+  loadStories = async function(){
+    const row = document.getElementById('stories-row');
+    if(!row) return;
+
+    /* Render user's own bubble right now — no network needed */
+    const u = (typeof user !== 'undefined' ? user : null);
+    const p = (typeof profile !== 'undefined' ? profile : null);
+    if(u && p && !row.children.length){
+      const avHtml = p.avatar_url
+        ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`
+        : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${((p.full_name||p.username||'?')[0]||'?').toUpperCase()}</div>`;
+      row.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+        <div style="position:relative" onclick="openAddStory()">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:var(--bg3)">
+            <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">${avHtml}</div>
+          </div>
+          <button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);max-width:58px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your story</div>
+      </div>`;
+    }
+
+    /* Then load full list from server (re-renders with everyone's stories) */
+    if(typeof _orig === 'function') await _orig();
+  };
+})();
+</script>
+
 </html>
