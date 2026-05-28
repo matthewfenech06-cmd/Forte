@@ -2139,6 +2139,7 @@ async function init(){
   const{data:{session}}=await sb.auth.getSession();
   if(session){user=session.user;await loadProfile();enterApp();}
   loadFeedPosts();loadStories();renderLB('weekly');
+  setTimeout(function(){ const r=document.getElementById('stories-row'); if(r&&!r.children.length) try{loadStories();}catch(e){} }, 3000);
   const{data:ex}=await sb.from('exercises').select('*').order('name');
   if(ex&&ex.length)exercises=ex;
   if(session)loadFeedLeagues();
@@ -21491,8 +21492,11 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   loadFeedPosts = async function(){
+    if(window.__forteFeedPostsLoading) return;
+    window.__forteFeedPostsLoading = true;
+    setTimeout(()=>{ window.__forteFeedPostsLoading = false; }, 8000);
     const wrap = document.getElementById('feed-posts');
-    if(!wrap) return;
+    if(!wrap){ window.__forteFeedPostsLoading = false; return; }
     wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
 
     /* ── friends filter ── */
@@ -21520,6 +21524,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
     if(error){
       wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Could not load feed.</div>';
+      window.__forteFeedPostsLoading = false;
       return;
     }
     if(!posts || !posts.length){
@@ -21527,21 +21532,9 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       wrap.innerHTML = mode === 'friends'
         ? '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">👥</div><div style="font-size:15px;font-weight:600;margin-bottom:6px">No friend posts yet</div><div style="font-size:13px">Follow people or check the Community tab</div></div>'
         : '<div style="padding:40px 20px;text-align:center;color:var(--text3)"><div style="font-size:36px;margin-bottom:12px">📸</div><div style="font-size:15px;font-weight:600">No posts yet</div></div>';
+      window.__forteFeedPostsLoading = false;
       return;
     }
-
-    /* ── sync like/comment counts in background ── */
-    posts.forEach(async p => {
-      try{
-        const lk = await (typeof fpCount==='function' ? fpCount('post_likes',[{col:'post_id',val:p.id}]) : Promise.resolve(p.likes_count||0));
-        const cm = await (typeof fpCount==='function' ? fpCount('comments',[{col:'post_id',val:p.id}]) : Promise.resolve(p.comments_count||0));
-        if((p.likes_count||0)!==lk||(p.comments_count||0)!==cm){
-          sb.from('posts').update({likes_count:lk,comments_count:cm}).eq('id',p.id).then(()=>{});
-          const lEl=document.getElementById('like-count-'+p.id);
-          if(lEl) lEl.textContent=lk;
-        }
-      }catch(e){}
-    });
 
     const followingSet = (typeof followingIds !== 'undefined' && followingIds instanceof Set) ? followingIds : new Set();
 
@@ -21600,6 +21593,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
           </div>
         </div>`;
     }).join('');
+    window.__forteFeedPostsLoading = false;
   };
 
   /* ── Fix openWorkoutFromPost to load from DB if snapshot empty ── */
