@@ -1822,13 +1822,18 @@ body.light .exercise-start-card.workout{color:#fff}
 
 <!-- NOTIFICATIONS PANEL -->
 <div class="modal-overlay" id="notif-panel">
-  <div class="modal" style="max-height:80vh">
-    <div class="modal-handle"></div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:17px;font-weight:600">Notifications</div>
-      <button onclick="markAllRead()" style="background:none;border:none;color:#ff0090;font-size:13px;font-weight:600;cursor:pointer">Mark all read</button>
+  <div class="modal" style="max-height:80vh;padding:0;overflow:hidden;display:flex;flex-direction:column">
+    <div class="modal-handle" style="flex-shrink:0;margin:16px auto 0"></div>
+    <!-- Sticky header -->
+    <div style="padding:12px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:20px;font-weight:800;letter-spacing:-.4px">Notifications</div>
+        <span id="notif-unread-badge" style="display:none;background:#ff0090;color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:.2px;line-height:1.4"></span>
+      </div>
+      <button onclick="markAllRead()" style="background:var(--bg3);border:1px solid var(--border);border-radius:999px;color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;padding:6px 14px;font-family:var(--fb)">Clear all</button>
     </div>
-    <div id="notif-list" style="display:flex;flex-direction:column;gap:2px"></div>
+    <!-- Scrollable list -->
+    <div id="notif-list" style="display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding-bottom:32px"></div>
   </div>
 </div>
 
@@ -22883,6 +22888,91 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     }
   };
   try{ showStory = window.showStory; }catch(e){}
+})();
+</script>
+
+<script>
+/* ── NOTIFICATIONS REDESIGN ─────────────────────────────────────────── */
+(function(){
+  const _ntConf = {
+    like:           {emoji:'❤️', bg:'rgba(255,79,79,.2)',    dot:'#ff4f4f'},
+    comment:        {emoji:'💬', bg:'rgba(255,0,144,.18)',   dot:'#ff0090'},
+    follow:         {emoji:'👤', bg:'rgba(255,0,144,.14)',   dot:'#ff0090'},
+    friend_request: {emoji:'🤝', bg:'rgba(255,0,144,.14)',   dot:'#ff0090'},
+    daily_reminder: {emoji:'🌅', bg:'rgba(255,160,0,.2)',    dot:'#f0a500'},
+    message:        {emoji:'💬', bg:'rgba(79,159,255,.18)',  dot:'#4f9fff'},
+    league:         {emoji:'🏆', bg:'rgba(255,160,0,.18)',   dot:'#f0a500'},
+  };
+  const _gc = t => _ntConf[t] || {emoji:'🔔', bg:'rgba(255,255,255,.08)', dot:'var(--text3)'};
+
+  loadNotifications = async function(){
+    if(typeof user === 'undefined' || !user) return;
+    const el = document.getElementById('notif-list');
+    if(!el) return;
+    el.innerHTML = '<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:13px">Loading...</div>';
+
+    let data = null;
+    try{
+      const res = await sb.from('notifications').select('*').eq('user_id', user.id).order('created_at',{ascending:false}).limit(30);
+      data = res.data;
+    }catch(e){}
+
+    /* Update bell dot + header badge */
+    const unread = (data||[]).filter(n=>!n.read).length;
+    const bellDot = document.getElementById('notif-dot');
+    if(bellDot) bellDot.style.display = unread > 0 ? 'block' : 'none';
+    const badge = document.getElementById('notif-unread-badge');
+    if(badge){ badge.textContent = unread; badge.style.display = unread > 0 ? 'inline-flex' : 'none'; }
+
+    if(!data || !data.length){
+      el.innerHTML = `<div style="padding:56px 20px;text-align:center">
+        <div style="font-size:44px;margin-bottom:16px;opacity:.5">🔔</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">All quiet</div>
+        <div style="font-size:14px;color:var(--text3);line-height:1.5;max-width:240px;margin:0 auto">Likes, comments and friend activity will show up here</div>
+      </div>`;
+      return;
+    }
+
+    /* Group by date */
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const yesterStart = new Date(todayStart); yesterStart.setDate(yesterStart.getDate()-1);
+    const groups = [['Today',[]], ['Yesterday',[]], ['Earlier',[]]];
+    data.forEach(n=>{
+      const d = new Date(n.created_at); d.setHours(0,0,0,0);
+      if(d >= todayStart)      groups[0][1].push(n);
+      else if(d >= yesterStart) groups[1][1].push(n);
+      else                      groups[2][1].push(n);
+    });
+
+    let html = '';
+    groups.forEach(([label, items])=>{
+      if(!items.length) return;
+      html += `<div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text3);padding:16px 20px 8px">${label}</div>`;
+      items.forEach(n=>{
+        const c = _gc(n.type);
+        const borderCol = n.read ? 'transparent' : '#ff0090';
+        const bgCol     = n.read ? 'transparent' : 'rgba(255,0,144,.05)';
+        const fw        = n.read ? '500' : '700';
+        html += `<div style="display:flex;gap:12px;align-items:flex-start;padding:13px 20px 13px 17px;border-left:3px solid ${borderCol};background:${bgCol};transition:background .2s,border-left-color .2s;cursor:pointer" onclick="forteMarkNotifRead('${n.id}',this)">
+          <div style="width:44px;height:44px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0">${c.emoji}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:${fw};line-height:1.35;margin-bottom:3px">${n.title||''}</div>
+            ${n.body?`<div style="font-size:13px;color:var(--text2);line-height:1.4;margin-bottom:4px">${n.body}</div>`:''}
+            <div style="font-size:11px;color:var(--text3);font-weight:500">${typeof getTimeAgo==='function'?getTimeAgo(n.created_at):''}</div>
+          </div>
+          ${!n.read?`<div style="width:8px;height:8px;border-radius:50%;background:${c.dot};flex-shrink:0;margin-top:6px"></div>`:''}
+        </div>`;
+      });
+    });
+
+    el.innerHTML = html;
+  };
+
+  window.forteMarkNotifRead = async function(id, row){
+    if(!id) return;
+    try{ await sb.from('notifications').update({read:true}).eq('id', id); }catch(e){}
+    loadNotifications();
+  };
 })();
 </script>
 
