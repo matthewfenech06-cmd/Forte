@@ -1130,10 +1130,12 @@ body.light .exercise-start-card.workout{color:#fff}
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Share to feed</div>
-    <div id="share-workout-preview" style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">
+    <div id="share-workout-preview" style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700" id="share-workout-name"></div>
       <div style="font-size:12px;color:var(--text3);margin-top:4px" id="share-workout-stats"></div>
     </div>
+    <!-- synthesis card: today's macros + PRs, populated by JS -->
+    <div id="share-synthesis-card" style="display:none;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border);padding:12px 14px;margin-bottom:12px"></div>
     <div class="input-group" style="margin-bottom:14px">
       <label>Caption</label>
       <textarea class="inp" id="share-caption" placeholder="How was the session? Add a caption..." rows="3" style="resize:none;line-height:1.5"></textarea>
@@ -23155,6 +23157,142 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       }, i * 50);
     });
   };
+})();
+
+/* ── SYNTHESIS + STREAKS (council build) ───────────────────────────── */
+(function(){
+  'use strict';
+  if(typeof saveWorkout !== 'function') return;
+
+  const _origSW = saveWorkout;
+  saveWorkout = async function(){
+    await _origSW.apply(this, arguments);
+    if(!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    /* today's macro totals */
+    const { data: logs } = await sb.from('nutrition_logs')
+      .select('calories,protein').eq('user_id',user.id).eq('log_date',today)
+      .catch(()=>({data:null}));
+    const mac = (logs||[]).reduce((a,l)=>({cal:a.cal+(l.calories||0),pro:a.pro+(l.protein||0)}),{cal:0,pro:0});
+
+    /* PRs set in this workout (read-only check — real writes done by original) */
+    const snap = window.pendingWorkoutSnapshot || [];
+    let prCount = 0; const prNames = [];
+    for (const ex of snap) {
+      let hit = false;
+      for (const s of (ex.sets||[])) {
+        if (!s.reps || !s.weight) continue;
+        const vol = parseFloat(s.weight) * parseInt(s.reps);
+        const { data:rec } = await sb.from('personal_records')
+          .select('best_volume').eq('user_id',user.id).eq('exercise_name',ex.name)
+          .maybeSingle().catch(()=>({data:null}));
+        if (!rec || vol > (rec.best_volume||0)) { hit = true; break; }
+      }
+      if (hit) { prCount++; prNames.push(ex.name); }
+    }
+
+    /* streak update (silent if columns missing) */
+    (async()=>{
+      const {data:p} = await sb.from('profiles')
+        .select('current_streak,longest_streak,last_activity_date')
+        .eq('id',user.id).single().catch(()=>({data:null}));
+      if (!p) return;
+      const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
+      let streak = 1;
+      if (p.last_activity_date === today)     streak = p.current_streak || 1;
+      else if (p.last_activity_date === yesterday) streak = (p.current_streak||0)+1;
+      const longest = Math.max(streak, p.longest_streak||0);
+      await sb.from('profiles')
+        .update({current_streak:streak,longest_streak:longest,last_activity_date:today})
+        .eq('id',user.id).catch(()=>{});
+      if(profile){profile.current_streak=streak;profile.longest_streak=longest;}
+      if(streak>1 && [3,7,14,21,30,50,100].includes(streak))
+        setTimeout(()=>(typeof fpToast==='function'?fpToast:showToast)(`🔥 ${streak}-day streak!`),1400);
+    })();
+
+    /* synthesis card */
+    const card = document.getElementById('share-synthesis-card');
+    const hasMac = mac.cal > 0, hasPR = prCount > 0;
+    if (card) {
+      if (hasMac || hasPR) {
+        card.style.display = 'block';
+        card.innerHTML = `
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);font-weight:600;margin-bottom:8px">Today&rsquo;s stats</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${hasMac?`
+              <div style="background:rgba(255,0,144,.1);border:1px solid rgba(255,0,144,.2);border-radius:8px;padding:6px 11px;display:flex;align-items:center;gap:5px">
+                <span style="font-size:13px;font-weight:800;color:var(--text)">${Math.round(mac.cal).toLocaleString()}</span>
+                <span style="font-size:11px;color:var(--text3)">kcal</span>
+              </div>
+              <div style="background:rgba(79,159,255,.1);border:1px solid rgba(79,159,255,.2);border-radius:8px;padding:6px 11px;display:flex;align-items:center;gap:5px">
+                <span style="font-size:13px;font-weight:800;color:#4f9fff">${Math.round(mac.pro)}g</span>
+                <span style="font-size:11px;color:var(--text3)">protein</span>
+              </div>`:''}
+            ${hasPR?`
+              <div style="background:rgba(255,202,0,.1);border:1px solid rgba(255,202,0,.2);border-radius:8px;padding:6px 11px;display:flex;align-items:center;gap:5px">
+                <span style="font-size:14px">🏆</span>
+                <span style="font-size:13px;font-weight:800;color:#ffca00">${prCount}&nbsp;PR${prCount>1?'s':''}</span>
+              </div>`:''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px">Shown in your post</div>
+        `;
+      } else {
+        card.style.display = 'none';
+      }
+    }
+
+    /* auto-fill caption if blank */
+    const capEl = document.getElementById('share-caption');
+    if (capEl && !capEl.value) {
+      const wTitle = (document.getElementById('share-workout-name')?.textContent||'').trim()||'my workout';
+      const totalSets = snap.reduce((s,ex)=>s+(ex.sets||[]).length,0);
+      const lines = [];
+      if (hasPR) {
+        const ns = prNames.slice(0,2).join(', ')+(prNames.length>2?` +${prNames.length-2} more`:'');
+        lines.push(`🏆 ${prCount} new PR${prCount>1?'s':''} — ${ns}`);
+      }
+      lines.push(`Finished ${wTitle} — ${snap.length} exercise${snap.length!==1?'s':''},  ${totalSets} set${totalSets!==1?'s':''}`);
+      if (hasMac) lines.push(`📊 ${Math.round(mac.cal).toLocaleString()} kcal · ${Math.round(mac.pro)}g protein today`);
+      capEl.value = lines.join('\n');
+    }
+  };
+
+  /* feed: upgrade 📊/🏆 caption lines to styled chips */
+  function upgradeCaption(capDiv){
+    if (capDiv.__forte_up) return;
+    const text = capDiv.textContent||'';
+    if (!text.includes('📊') && !text.includes('🏆')) return;
+    capDiv.__forte_up = true;
+    const lines = text.split('\n');
+    const chips = lines.filter(l=>l.startsWith('📊')||l.startsWith('🏆'));
+    const rest  = lines.filter(l=>!l.startsWith('📊')&&!l.startsWith('🏆')).join('\n').trim();
+    let html = '';
+    if (chips.length){
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:'+(rest?'8':'0')+'px">';
+      chips.forEach(line=>{
+        const isPR = line.startsWith('🏆');
+        const bg  = isPR?'rgba(255,202,0,.12)':'rgba(255,255,255,.06)';
+        const bdr = isPR?'rgba(255,202,0,.22)':'var(--border)';
+        const col = isPR?'#ffca00':'var(--text2)';
+        html += `<span style="background:${bg};border:1px solid ${bdr};border-radius:6px;padding:4px 9px;font-size:12px;font-weight:700;color:${col}">${line.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+      });
+      html += '</div>';
+    }
+    if (rest) html += `<div style="white-space:pre-wrap;font-size:14px;color:var(--text2)">${rest.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+    capDiv.innerHTML = html;
+  }
+
+  const feedEl = document.getElementById('feed-posts');
+  if (feedEl) {
+    new MutationObserver(()=>{
+      feedEl.querySelectorAll('.workout-post').forEach(card=>{
+        const cap = Array.from(card.querySelectorAll('div')).find(d=>d.style.whiteSpace==='pre-wrap'&&!d.__forte_up);
+        if (cap) upgradeCaption(cap);
+      });
+    }).observe(feedEl,{childList:true});
+  }
 })();
 
 /* ── DRAWER SLIDE-OUT (closes with same curve as slide-in) ──────────── */
