@@ -23650,6 +23650,93 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     }, 265);
   };
 })();
+
+/* ── RICH PUSH NOTIFICATIONS: icon, badge, actions ──────────────────── */
+(function(){
+  'use strict';
+
+  const ICON  = '/forte-icon.svg';
+  const BADGE = '/forte-badge.svg';
+
+  /* Notification type → emoji + category tag */
+  const _nType = {
+    like:        {tag:'social',  sound:true},
+    comment:     {tag:'social',  sound:true},
+    follow:      {tag:'social',  sound:true},
+    mention:     {tag:'social',  sound:true},
+    message:     {tag:'message', sound:true},
+    league:      {tag:'compete', sound:false},
+    workout:     {tag:'fitness', sound:false},
+    pr:          {tag:'fitness', sound:false},
+    streak:      {tag:'fitness', sound:false},
+    follow_post: {tag:'social',  sound:false},
+    daily_reminder:{tag:'reminder',sound:false},
+  };
+
+  /* Shared rich options injected into every Notification */
+  function richOpts(overrides){
+    return Object.assign({
+      icon:    ICON,
+      badge:   BADGE,
+      vibrate: [80, 40, 80],
+      actions: [
+        { action: 'open', title: 'Open Forte' }
+      ],
+      renotify: false,
+      silent:   false,
+    }, overrides);
+  }
+
+  /* ── Override forteBrowserNotify ────────────────────────────────── */
+  forteBrowserNotify = function(title, body, type){
+    try{
+      if(!('Notification' in window)) return;
+      if(Notification.permission !== 'granted') return;
+      const nt = _nType[type] || {};
+      new Notification(title || 'Forte', richOpts({
+        body:  body || '',
+        tag:   nt.tag  || 'forte',
+        silent: nt.sound === false,
+      }));
+    }catch(e){}
+  };
+
+  /* ── Override showDailyMotivation to use rich options ───────────── */
+  const _origSDM = typeof showDailyMotivation === 'function' ? showDailyMotivation : null;
+  showDailyMotivation = function(){
+    /* still save to DB via original */
+    if(_origSDM) _origSDM();
+
+    if(Notification.permission !== 'granted') return;
+    const quotes = typeof MOTIVATIONAL_QUOTES !== 'undefined' ? MOTIVATIONAL_QUOTES : [];
+    const quote  = quotes.length ? quotes[Math.floor(Math.random()*quotes.length)] : 'Time to get moving.';
+    try{
+      new Notification('Good morning, lets get moving 💪', richOpts({
+        body:   quote,
+        tag:    'forte-daily',
+        silent: false,
+        actions:[
+          { action:'open',    title:'Start workout' },
+          { action:'dismiss', title:'Later'          },
+        ],
+      }));
+    }catch(e){}
+  };
+
+  /* ── Update OneSignal init icon (applies to background pushes) ───── */
+  if(window.OneSignalDeferred){
+    window.OneSignalDeferred.push(function(OneSignal){
+      /* Set default notification icon at runtime via OneSignal's API */
+      try{
+        if(typeof OneSignal.Notifications !== 'undefined' &&
+           typeof OneSignal.Notifications.setDefaultUrl === 'function'){
+          OneSignal.Notifications.setDefaultUrl('/');
+        }
+      }catch(e){}
+    });
+  }
+
+})();
 </script>
 
 </html>
