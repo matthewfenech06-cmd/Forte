@@ -21756,7 +21756,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     // swipe left/right for filters
     d.addEventListener('touchstart',e=>{_swipeX=e.touches[0].clientX;},{passive:true});
     d.addEventListener('touchend',e=>{
-      if(document.getElementById('_fcPrev')?.style.display==='block') return;
+      /* Allow filter swipe in BOTH live-camera and preview modes */
       const dx=e.changedTouches[0].clientX-_swipeX;
       if(Math.abs(dx)>50){ _fi=dx<0?(_fi+1)%FILTERS.length:(_fi-1+FILTERS.length)%FILTERS.length; _applyFilter(); }
     },{passive:true});
@@ -21774,8 +21774,12 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
   function _stopCam(){if(_stream){_stream.getTracks().forEach(t=>t.stop());_stream=null;}}
   function _applyFilter(){
-    const v=document.getElementById('_fcV'),f=FILTERS[_fi];
-    if(v) v.style.filter=f.f==='none'?'':f.f;
+    const f=FILTERS[_fi]; const fVal=f.f==='none'?'':f.f;
+    /* Live camera view */
+    const v=document.getElementById('_fcV'); if(v) v.style.filter=fVal;
+    /* Preview image/video — so gallery picks show the filter too */
+    const pi=document.getElementById('_fcPI'); if(pi) pi.style.filter=fVal;
+    const pv=document.getElementById('_fcPV'); if(pv) pv.style.filter=fVal;
     const n=document.getElementById('_fcFilter');
     if(n){n.textContent=f.n;n.style.opacity='1';clearTimeout(n._t);n._t=setTimeout(()=>n.style.opacity='0',900);}
   }
@@ -22119,8 +22123,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
         xhr.send(finalBlob);
       });
 
-      setProgress(100);
-
+      // File is in storage — save the DB record (keep ring at 95% while we wait)
       const {data:{publicUrl}}=sb.storage.from('forte-media').getPublicUrl(storagePath);
       const expires=new Date(Date.now()+24*60*60*1000).toISOString();
       const {error}=await sb.from('stories').insert({
@@ -22133,8 +22136,38 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       });
       if(error) throw error;
 
-      // Track story expiry locally — instant bubble can show gradient ring immediately on next load
       try{localStorage.setItem('forte_my_story_expires',expires);}catch(e){}
+
+      // Optimistically push the new story into storyGroups so the viewer works instantly
+      try{
+        if(typeof storyGroups!=='undefined'){
+          const newS={id:'new_'+Date.now(),user_id:u.id,media_url:publicUrl,media_type:isVideo?'video':'image',caption:captionField,created_at:new Date().toISOString(),expires_at:expires};
+          if(!storyGroups.length||!storyGroups[0].isMe){
+            const prof=typeof profile!=='undefined'?profile:{};
+            storyGroups.unshift({profile:prof,stories:[newS],isMe:true});
+          }else{
+            if(!storyGroups[0].stories) storyGroups[0].stories=[];
+            storyGroups[0].stories.unshift(newS);
+          }
+        }
+      }catch(e){}
+
+      // Replace progress ring with story bubble immediately — no spinner lingering
+      const p2=typeof profile!=='undefined'?profile:null;
+      const avHtml2=p2&&p2.avatar_url
+        ?`<img src="${p2.avatar_url}" style="width:100%;height:100%;object-fit:cover">`
+        :`<div style="font-size:17px;font-weight:700;color:var(--accent)">${((p2&&(p2.full_name||p2.username)||'?')[0]||'?').toUpperCase()}</div>`;
+      if(row){
+        row.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+          <div style="position:relative" onclick="openStoryViewer(0)">
+            <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:linear-gradient(135deg,var(--accent),#ff9500)">
+              <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">${avHtml2}</div>
+            </div>
+            <button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>
+          </div>
+          <div style="font-size:11px;color:var(--text2)">Your story</div>
+        </div>`;
+      }
 
       toast('Story posted! 🔥');
       try{loadStories();}catch(e){}
@@ -22807,6 +22840,40 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       el.textContent = ov.text || '';
       overlayWrap.appendChild(el);
     });
+
+    /* Force the viewers eye-button visible for own stories (belt-and-suspenders over updateStoryControls) */
+    const grp = (typeof storyGroups !== 'undefined' ? storyGroups : null)?.[groupIdx];
+    if(grp && grp.isMe){
+      setTimeout(function(){
+        /* Create bottom bar if it doesn't exist yet */
+        if(!document.getElementById('story-bottom-bar')){
+          const viewer = document.getElementById('story-viewer');
+          if(viewer){
+            const bar = document.createElement('div');
+            bar.id = 'story-bottom-bar';
+            bar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;z-index:18;padding:12px 14px calc(28px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:10px;background:linear-gradient(transparent,rgba(0,0,0,.62))';
+            bar.innerHTML = `<div id="story-reply-wrap" style="display:none"></div>
+              <button id="story-viewers-btn" onclick="event.stopPropagation();openStoryViewers()" style="display:flex;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:9px 18px;color:#fff;font-size:14px;font-weight:900;align-items:center;gap:8px">
+                👁 <span id="story-view-count">0</span> viewers
+              </button>`;
+            viewer.appendChild(bar);
+          }
+        }
+        const vBtn = document.getElementById('story-viewers-btn');
+        if(vBtn) vBtn.style.display = 'flex';
+        const rep = document.getElementById('story-reply-wrap');
+        if(rep) rep.style.display = 'none';
+        const likeBtn = document.getElementById('story-like-btn');
+        if(likeBtn) likeBtn.style.display = 'none';
+        /* Load view count */
+        const st2 = grp.stories?.[storyIdx];
+        if(st2 && typeof sb !== 'undefined'){
+          sb.from('story_views').select('*',{count:'exact',head:true}).eq('story_id',st2.id)
+            .then(({count})=>{ const vc=document.getElementById('story-view-count'); if(vc) vc.textContent=count||0; })
+            .catch(()=>{});
+        }
+      }, 120);
+    }
   };
   try{ showStory = window.showStory; }catch(e){}
 })();
