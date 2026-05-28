@@ -21994,7 +21994,11 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     if(!u){toast('Sign in first');return;}
 
     const caption=document.getElementById('_fcCap').value.trim();
-    const isVideo=_blob.type&&_blob.type.startsWith('video/');
+
+    // Capture everything from _blob BEFORE _fcClose() nullifies it
+    const blobToUpload=_blob;
+    const isVideo=blobToUpload.type&&blobToUpload.type.startsWith('video/');
+    const mimeType=blobToUpload.type||(isVideo?'video/mp4':'image/jpeg');
 
     // 1. Close camera immediately — go back to feed
     _fcClose();
@@ -22032,8 +22036,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       const {data:{session}}=await sb.auth.getSession();
       const token=(session&&session.access_token)||SKEY;
 
-      // Determine mime type and file extension
-      const mimeType=_blob.type||(isVideo?'video/mp4':'image/jpeg');
+      // Determine file extension from mime type
       const ext=isVideo
         ?(mimeType.includes('mp4')||mimeType.includes('quicktime')?'mp4':mimeType.includes('webm')?'webm':'mp4')
         :'jpg';
@@ -22051,7 +22054,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
         xhr.setRequestHeader('Authorization','Bearer '+token);
         xhr.setRequestHeader('Content-Type',mimeType);
         xhr.setRequestHeader('x-upsert','true');
-        xhr.send(_blob);
+        xhr.send(blobToUpload);
       });
 
       setProgress(100);
