@@ -8400,9 +8400,10 @@ loadStories = async function(){
   const row = document.getElementById('stories-row');
   if(!row) return;
 
+  const _now = new Date().toISOString();
   const { data } = await sb.from('stories')
     .select('*,profiles!stories_user_id_fkey(id,username,full_name,avatar_url)')
-    .gt('expires_at', new Date().toISOString())
+    .or(`expires_at.gt.${_now},expires_at.is.null`)
     .order('created_at',{ascending:false});
 
   const groups = {};
@@ -21780,7 +21781,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   function _showPreview(url,type){
-    _blob=null; _blobType=type;
+    _blobType=type; /* _blob intentionally NOT cleared — gallery sets it async, camera sets it before calling here */
     _stopCam();
     /* Always reset Post button so stale text from a previous attempt is cleared */
     const postBtn=document.querySelector('#_fcPost button:last-child');
@@ -21993,12 +21994,76 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     const u=window.user||(typeof user!=='undefined'?user:null);
     if(!u){toast('Sign in first');return;}
 
-    const caption=document.getElementById('_fcCap').value.trim();
+    const captionText=document.getElementById('_fcCap').value.trim();
 
-    // Capture everything from _blob BEFORE _fcClose() nullifies it
+    // Capture blob + meta BEFORE _fcClose() clears things
     const blobToUpload=_blob;
     const isVideo=blobToUpload.type&&blobToUpload.type.startsWith('video/');
     const mimeType=blobToUpload.type||(isVideo?'video/mp4':'image/jpeg');
+    const filterStr=FILTERS[_fi].f==='none'?null:FILTERS[_fi].f;
+
+    // Serialise sticker/text overlays from the live sticker layer
+    const sLayer=document.getElementById('_fcSLayer');
+    const fcEl=document.getElementById('_fc');
+    const fcW=fcEl?fcEl.clientWidth:(window.innerWidth||390);
+    const overlays=[];
+    if(sLayer){
+      Array.from(sLayer.children).forEach(el=>{
+        const left=parseFloat(el.style.left)||50;
+        const top=parseFloat(el.style.top)||40;
+        const size=parseFloat(el.style.fontSize)||28;
+        overlays.push({text:el.textContent,x:left,y:top,size,fcW});
+      });
+    }
+
+    // For IMAGES: bake filter + overlays into a new blob using canvas
+    let finalBlob=blobToUpload;
+    if(!isVideo&&(filterStr||overlays.length)){
+      try{
+        finalBlob=await new Promise(resolve=>{
+          const img=new Image();
+          const objUrl=URL.createObjectURL(blobToUpload);
+          img.onload=()=>{
+            const can=document.createElement('canvas');
+            can.width=img.naturalWidth||img.width||1080;
+            can.height=img.naturalHeight||img.height||1920;
+            const ctx=can.getContext('2d');
+            if(filterStr) ctx.filter=filterStr;
+            ctx.drawImage(img,0,0,can.width,can.height);
+            ctx.filter='none';
+            URL.revokeObjectURL(objUrl);
+            overlays.forEach(ov=>{
+              const cx=ov.x/100*can.width;
+              const cy=ov.y/100*can.height;
+              const scale=can.width/(ov.fcW||390);
+              const sz=Math.max(12,Math.round(ov.size*scale));
+              ctx.textAlign='center';ctx.textBaseline='middle';
+              if(ov.size>=48){
+                // emoji sticker
+                ctx.font=sz+'px serif';
+                try{ctx.fillText(ov.text,cx,cy);}catch(err){}
+              }else{
+                // text overlay
+                ctx.font='900 '+sz+'px Inter,Arial,sans-serif';
+                ctx.lineWidth=Math.max(2,sz*0.08);
+                ctx.strokeStyle='rgba(0,0,0,.8)';ctx.fillStyle='#fff';
+                try{ctx.strokeText(ov.text,cx,cy);ctx.fillText(ov.text,cx,cy);}catch(err){}
+              }
+            });
+            can.toBlob(b=>resolve(b||blobToUpload),'image/jpeg',0.93);
+          };
+          img.onerror=()=>{URL.revokeObjectURL(objUrl);resolve(blobToUpload);};
+          img.src=objUrl;
+        });
+      }catch(e){console.warn('Story bake overlays failed:',e);finalBlob=blobToUpload;}
+    }
+
+    // Build caption field — for videos embed filter+overlay meta so viewer can re-apply them
+    const hasMeta=isVideo&&(filterStr||overlays.length);
+    const captionField=hasMeta
+      ?JSON.stringify({text:captionText||null,filter:filterStr||null,overlays:overlays.map(o=>({text:o.text,x:o.x,y:o.y,size:o.size}))})
+      :(captionText||null);
+    const finalMime=finalBlob.type||mimeType;
 
     // 1. Close camera immediately — go back to feed
     _fcClose();
@@ -22032,17 +22097,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     }
 
     try{
-      // Get auth token for storage upload
       const {data:{session}}=await sb.auth.getSession();
       const token=(session&&session.access_token)||SKEY;
 
-      // Determine file extension from mime type
       const ext=isVideo
-        ?(mimeType.includes('mp4')||mimeType.includes('quicktime')?'mp4':mimeType.includes('webm')?'webm':'mp4')
+        ?(finalMime.includes('mp4')||finalMime.includes('quicktime')?'mp4':finalMime.includes('webm')?'webm':'mp4')
         :'jpg';
       const storagePath=`stories/${u.id}/${Date.now()}.${ext}`;
 
-      // Upload via XHR so we get progress events
       await new Promise((res,rej)=>{
         const xhr=new XMLHttpRequest();
         xhr.upload.onprogress=e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*95));};
@@ -22052,25 +22114,27 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
         xhr.timeout=180000;
         xhr.open('POST',SURL+'/storage/v1/object/forte-media/'+storagePath);
         xhr.setRequestHeader('Authorization','Bearer '+token);
-        xhr.setRequestHeader('Content-Type',mimeType);
+        xhr.setRequestHeader('Content-Type',finalMime);
         xhr.setRequestHeader('x-upsert','true');
-        xhr.send(blobToUpload);
+        xhr.send(finalBlob);
       });
 
       setProgress(100);
 
-      // Get public URL and insert story record
       const {data:{publicUrl}}=sb.storage.from('forte-media').getPublicUrl(storagePath);
       const expires=new Date(Date.now()+24*60*60*1000).toISOString();
       const {error}=await sb.from('stories').insert({
         user_id:u.id,
         media_url:publicUrl,
         media_type:isVideo?'video':'image',
-        caption:caption||null,
+        caption:captionField,
         created_at:new Date().toISOString(),
         expires_at:expires
       });
       if(error) throw error;
+
+      // Track story expiry locally — instant bubble can show gradient ring immediately on next load
+      try{localStorage.setItem('forte_my_story_expires',expires);}catch(e){}
 
       toast('Story posted! 🔥');
       try{loadStories();}catch(e){}
@@ -22654,9 +22718,15 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       const avHtml = p.avatar_url
         ? `<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`
         : `<div style="font-size:17px;font-weight:700;color:var(--accent)">${((p.full_name||p.username||'?')[0]||'?').toUpperCase()}</div>`;
+      /* Check if user has an active story from the last post (stored in localStorage) */
+      const _myExp = localStorage.getItem('forte_my_story_expires');
+      const _hasMyStory = _myExp && new Date(_myExp) > new Date();
+      const _ringBg = _hasMyStory ? 'linear-gradient(135deg,var(--accent),#ff9500)' : 'var(--bg3)';
+      /* If a story is active use openStoryViewer(0) — falls back to openAddStory inside if data not yet loaded */
+      const _bubbleClick = _hasMyStory ? 'openStoryViewer(0)' : 'openAddStory()';
       row.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
-        <div style="position:relative" onclick="openAddStory()">
-          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:var(--bg3)">
+        <div style="position:relative" onclick="${_bubbleClick}">
+          <div style="width:58px;height:58px;border-radius:50%;padding:2px;background:${_ringBg}">
             <div style="width:100%;height:100%;border-radius:50%;border:2px solid var(--bg);overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">${avHtml}</div>
           </div>
           <button onclick="event.stopPropagation();openAddStory()" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--accent);border-radius:50%;border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;line-height:1">+</button>
@@ -22668,6 +22738,77 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     /* Then load full list from server (re-renders with everyone's stories) */
     if(typeof _orig === 'function') await _orig();
   };
+})();
+</script>
+
+<script>
+/* ── Story meta: apply filter + overlays stored in caption JSON when viewing ── */
+(function(){
+  if(window.__forteStoryMeta) return;
+  window.__forteStoryMeta = true;
+
+  const _origShow = window.showStory || (typeof showStory !== 'undefined' ? showStory : null);
+  if(!_origShow) return;
+
+  window.showStory = function(groupIdx, storyIdx){
+    _origShow.apply(this, arguments);
+
+    const group = (typeof storyGroups !== 'undefined' ? storyGroups : null)?.[groupIdx];
+    const story = group?.stories?.[storyIdx];
+    if(!story) return;
+
+    /* Parse caption: may be plain text OR JSON metadata with {text, filter, overlays} */
+    let displayCaption = story.caption;
+    let storyFilter = null;
+    let storyOverlays = [];
+    if(story.caption){
+      try{
+        const meta = JSON.parse(story.caption);
+        if(meta && typeof meta === 'object' && ('filter' in meta || 'overlays' in meta)){
+          displayCaption = meta.text || null;
+          storyFilter = meta.filter || null;
+          storyOverlays = Array.isArray(meta.overlays) ? meta.overlays : [];
+        }
+      }catch(e){ /* plain text caption — no action needed */ }
+    }
+
+    /* Fix caption display (replace raw JSON with the human-readable text) */
+    const capEl = document.getElementById('story-caption');
+    if(capEl){
+      if(displayCaption){ capEl.textContent = displayCaption; capEl.style.display = 'block'; }
+      else { capEl.style.display = 'none'; }
+    }
+
+    /* Apply CSS filter to the media element (works for both images and videos) */
+    const imgEl = document.getElementById('story-img');
+    const vidEl = document.getElementById('story-video');
+    const filterVal = storyFilter || '';
+    if(imgEl) imgEl.style.filter = filterVal;
+    if(vidEl) vidEl.style.filter = filterVal;
+
+    /* Render text/emoji overlays as positioned HTML elements */
+    let overlayWrap = document.getElementById('_forte_story_overlays');
+    if(!overlayWrap){
+      overlayWrap = document.createElement('div');
+      overlayWrap.id = '_forte_story_overlays';
+      overlayWrap.style.cssText = 'position:absolute;inset:0;z-index:16;pointer-events:none;overflow:hidden';
+      const viewer = document.getElementById('story-viewer');
+      if(viewer) viewer.appendChild(overlayWrap);
+    }
+    overlayWrap.innerHTML = '';
+    storyOverlays.forEach(ov => {
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;left:${ov.x||50}%;top:${ov.y||40}%;transform:translate(-50%,-50%);pointer-events:none;white-space:nowrap;`;
+      if((ov.size||28) >= 48){
+        el.style.fontSize = '52px';
+      }else{
+        el.style.cssText += 'color:#fff;font-size:28px;font-weight:900;text-shadow:0 2px 8px rgba(0,0,0,.8);';
+      }
+      el.textContent = ov.text || '';
+      overlayWrap.appendChild(el);
+    });
+  };
+  try{ showStory = window.showStory; }catch(e){}
 })();
 </script>
 
