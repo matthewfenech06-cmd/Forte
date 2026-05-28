@@ -22947,6 +22947,41 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     from { background: rgba(0,0,0,0); }
     to   { background: rgba(0,0,0,.75); }
   }
+
+  /* 6. Screen transitions — subtle fade + lift on every tab switch */
+  .screen.active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 180ms var(--ease-out-strong), transform 180ms var(--ease-out-strong);
+  }
+  @starting-style {
+    .screen.active {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  /* 7. Workout mini-bar slide up from behind nav */
+  #workout-mini-bar.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    transition: transform 350ms var(--ease-drawer), opacity 280ms ease;
+  }
+  @starting-style {
+    #workout-mini-bar.visible {
+      transform: translateX(-50%) translateY(calc(100% + 20px));
+      opacity: 0;
+    }
+  }
+
+  /* 8. Feed cards: tighter + stronger easing (override base .fade-up) */
+  .fade-up  { animation: forte-fade-up 260ms var(--ease-out-strong) both !important; }
+  .fade-up-2{ animation: forte-fade-up 260ms var(--ease-out-strong) 70ms both !important; }
+  .fade-up-3{ animation: forte-fade-up 260ms var(--ease-out-strong) 140ms both !important; }
+  @keyframes forte-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 }
 </style>
 
@@ -23031,6 +23066,94 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     if(!id) return;
     try{ await sb.from('notifications').update({read:true}).eq('id', id); }catch(e){}
     loadNotifications();
+  };
+})();
+
+/* ── SET COMPLETION PULSE ───────────────────────────────────────────── */
+(function(){
+  if(typeof toggleDone !== 'function') return;
+  const _orig = toggleDone;
+  toggleDone = function(ei, si){
+    _orig(ei, si);
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    /* Find the newly-done checkmark after renderExBlocks re-renders */
+    requestAnimationFrame(function(){
+      try{
+        const blocks = document.querySelectorAll('.exercise-block');
+        const block  = blocks[ei];
+        if(!block) return;
+        const rows = block.querySelectorAll('.set-row');
+        const row  = rows[si];
+        if(!row) return;
+        const btn  = row.querySelector('.set-check.done');
+        if(!btn) return;
+        btn.animate(
+          [{ transform:'scale(1)' }, { transform:'scale(1.35)' }, { transform:'scale(0.92)' }, { transform:'scale(1)' }],
+          { duration: 280, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+        );
+      }catch(e){}
+    });
+  };
+})();
+
+/* ── PROFILE STAT COUNT-UP ──────────────────────────────────────────── */
+(function(){
+  function forteCountUp(el, target, duration){
+    if(!el || !target) return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ el.textContent = target; return; }
+    const t0 = performance.now();
+    const tick = function(now){
+      const p = Math.min((now - t0) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3); /* ease-out cubic */
+      el.textContent = Math.round(target * eased);
+      if(p < 1) requestAnimationFrame(tick);
+      else el.textContent = target;
+    };
+    el.textContent = 0;
+    requestAnimationFrame(tick);
+  }
+  window.forteCountUp = forteCountUp;
+
+  /* Patch syncProfile to animate pts + streak */
+  if(typeof syncProfile === 'function'){
+    const _origSync = syncProfile;
+    syncProfile = function(){
+      _origSync();
+      const ptsEl    = document.getElementById('profile-pts');
+      const strEl    = document.getElementById('profile-streak');
+      if(ptsEl) forteCountUp(ptsEl,    parseInt(ptsEl.textContent)    || 0, 700);
+      if(strEl) forteCountUp(strEl,    parseInt(strEl.textContent)    || 0, 600);
+    };
+  }
+
+  /* Patch loadWkCount to animate workouts count */
+  if(typeof loadWkCount === 'function'){
+    const _origWk = loadWkCount;
+    loadWkCount = async function(){
+      await _origWk();
+      const wkEl = document.getElementById('profile-workouts-count');
+      if(wkEl) forteCountUp(wkEl, parseInt(wkEl.textContent) || 0, 700);
+    };
+  }
+})();
+
+/* ── LEADERBOARD STAGGER ────────────────────────────────────────────── */
+(function(){
+  if(typeof renderLBList !== 'function') return;
+  const _orig = renderLBList;
+  renderLBList = function(list){
+    _orig(list);
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const items = document.querySelectorAll('#lb-list .lb-item');
+    items.forEach(function(item, i){
+      item.style.opacity   = '0';
+      item.style.transform = 'translateY(12px)';
+      setTimeout(function(){
+        item.style.transition = 'opacity 250ms var(--ease-out-strong), transform 250ms var(--ease-out-strong)';
+        item.style.opacity    = '1';
+        item.style.transform  = 'translateY(0)';
+      }, i * 50);
+    });
   };
 })();
 
