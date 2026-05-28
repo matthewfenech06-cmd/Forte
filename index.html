@@ -21989,48 +21989,92 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   window._fcUpload=async function(){
-    if(!_blob){toast('Nothing to share'); return;}
-    const postBtn=document.querySelector('#_fcPost button:last-child');
-    const resetBtn=()=>{if(postBtn){postBtn.textContent='Post';postBtn.disabled=false;}};
-    if(postBtn){postBtn.textContent='Posting...';postBtn.disabled=true;}
-    const caption=document.getElementById('_fcCap').value.trim();
+    if(!_blob){toast('Nothing to share');return;}
     const u=window.user||(typeof user!=='undefined'?user:null);
-    if(!u){toast('Sign in first');resetBtn();return;}
+    if(!u){toast('Sign in first');return;}
 
-    let mediaUrl=null;
-    let mediaType='image';
-
+    const caption=document.getElementById('_fcCap').value.trim();
     const isVideo=_blob.type&&_blob.type.startsWith('video/');
 
-    if(isVideo){
-      /* Read video directly as data URL — fast, no transcoding needed */
-      mediaUrl=await new Promise(res=>{
-        const fr=new FileReader();
-        fr.onerror=()=>res(null);
-        fr.onload=()=>res(fr.result&&fr.result.length>100?fr.result:null);
-        fr.readAsDataURL(_blob);
-      });
-      if(!mediaUrl){toast('Could not read video');resetBtn();return;}
-      mediaType='video';
-    } else {
-      /* Convert image to data URL */
-      mediaUrl=await _blobToDataURL(_blob);
-      if(!mediaUrl){toast('Could not process photo');resetBtn();return;}
-      mediaType='image';
+    // 1. Close camera immediately — go back to feed
+    _fcClose();
+    if(typeof showScreen==='function') try{showScreen('feed');}catch(e){}
+
+    // 2. Show progress ring in stories row
+    const row=document.getElementById('stories-row');
+    const p=typeof profile!=='undefined'?profile:null;
+    const avHtml=p&&p.avatar_url
+      ?`<img src="${p.avatar_url}" style="width:100%;height:100%;object-fit:cover">`
+      :`<div style="font-size:17px;font-weight:700;color:var(--accent)">${((p&&(p.full_name||p.username)||'?')[0]||'?').toUpperCase()}</div>`;
+    if(row){
+      row.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex-shrink:0">
+        <div style="position:relative;width:62px;height:62px">
+          <svg width="62" height="62" style="position:absolute;top:0;left:0;transform:rotate(-90deg)">
+            <circle cx="31" cy="31" r="28" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3"/>
+            <circle id="_ftArc" cx="31" cy="31" r="28" fill="none" stroke="#ff0090" stroke-width="3" stroke-dasharray="175.9" stroke-dashoffset="175.9" style="transition:stroke-dashoffset .2s"/>
+          </svg>
+          <div style="position:absolute;inset:4px;border-radius:50%;overflow:hidden;background:var(--bg3);display:flex;align-items:center;justify-content:center">${avHtml}</div>
+          <div id="_ftPct" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#ff0090;background:rgba(0,0,0,.35);border-radius:50%">0%</div>
+        </div>
+        <div style="font-size:11px;color:var(--text2)">Uploading...</div>
+      </div>`;
+    }
+
+    function setProgress(pct){
+      const arc=document.getElementById('_ftArc');
+      const pctEl=document.getElementById('_ftPct');
+      if(arc) arc.setAttribute('stroke-dashoffset',String(175.9-(175.9*pct/100)));
+      if(pctEl) pctEl.textContent=pct+'%';
     }
 
     try{
-      const row={user_id:u.id,media_url:mediaUrl,media_type:mediaType,caption,created_at:new Date().toISOString()};
-      const {error}=await Promise.race([
-        sb.from('stories').insert(row),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timed out')),15000))
-      ]);
+      // Get auth token for storage upload
+      const {data:{session}}=await sb.auth.getSession();
+      const token=(session&&session.access_token)||SKEY;
+
+      // Determine mime type and file extension
+      const mimeType=_blob.type||(isVideo?'video/mp4':'image/jpeg');
+      const ext=isVideo
+        ?(mimeType.includes('mp4')||mimeType.includes('quicktime')?'mp4':mimeType.includes('webm')?'webm':'mp4')
+        :'jpg';
+      const storagePath=`stories/${u.id}/${Date.now()}.${ext}`;
+
+      // Upload via XHR so we get progress events
+      await new Promise((res,rej)=>{
+        const xhr=new XMLHttpRequest();
+        xhr.upload.onprogress=e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*95));};
+        xhr.onload=()=>xhr.status>=200&&xhr.status<300?res():rej(new Error('Upload failed ('+xhr.status+')'));
+        xhr.onerror=()=>rej(new Error('Network error'));
+        xhr.ontimeout=()=>rej(new Error('Upload timed out'));
+        xhr.timeout=180000;
+        xhr.open('POST',SURL+'/storage/v1/object/forte-media/'+storagePath);
+        xhr.setRequestHeader('Authorization','Bearer '+token);
+        xhr.setRequestHeader('Content-Type',mimeType);
+        xhr.setRequestHeader('x-upsert','true');
+        xhr.send(_blob);
+      });
+
+      setProgress(100);
+
+      // Get public URL and insert story record
+      const {data:{publicUrl}}=sb.storage.from('forte-media').getPublicUrl(storagePath);
+      const expires=new Date(Date.now()+24*60*60*1000).toISOString();
+      const {error}=await sb.from('stories').insert({
+        user_id:u.id,
+        media_url:publicUrl,
+        media_type:isVideo?'video':'image',
+        caption:caption||null,
+        created_at:new Date().toISOString(),
+        expires_at:expires
+      });
       if(error) throw error;
-      _fcClose(); toast('Story posted! 🔥');
+
+      toast('Story posted! 🔥');
       try{loadStories();}catch(e){}
     }catch(err){
-      toast('Could not post: '+(err.message||'unknown error'));
-      resetBtn();
+      console.error('Story upload failed:',err);
+      toast('Could not post story: '+(err.message||'unknown error'));
+      try{loadStories();}catch(e){}
     }
   };
 
