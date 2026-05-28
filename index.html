@@ -22891,6 +22891,65 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 </script>
 
+<style>
+/* ── FORTE MOTION UPGRADE — Emil Kowalski design-eng skill ─────────── */
+
+/* 1. Custom easing tokens */
+:root {
+  --ease-out-strong:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer:        cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* 2. Replace transition:all — only animate what actually changes */
+.btn-primary   { transition: transform 160ms var(--ease-out-strong) !important; }
+.btn-secondary { transition: transform 160ms var(--ease-out-strong) !important; }
+.icon-btn      { transition: transform 130ms var(--ease-out-strong), background-color 130ms ease !important; }
+.cat-card      { transition: transform 130ms var(--ease-out-strong), border-color 130ms ease !important; }
+.ob-option     { transition: border-color 150ms ease, background-color 150ms ease, transform 100ms ease !important; }
+.lb-filter     { transition: background-color 150ms ease, color 150ms ease !important; }
+.set-check     { transition: background-color 150ms ease, transform 100ms var(--ease-out-strong) !important; }
+.vote-btn      { transition: background-color 150ms ease, color 150ms ease !important; }
+.feed-mode-tab { transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease !important; }
+.feed-qtab     { transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease !important; }
+.feed-top-icon { transition: transform 150ms var(--ease-out-strong), border-color 150ms ease, box-shadow 200ms ease !important; }
+.auth-tab      { transition: background-color 150ms ease, color 150ms ease !important; }
+.ex-item       { transition: border-color 130ms ease, transform 120ms var(--ease-out-strong) !important; }
+.nav-item      { transition: color 150ms ease !important; }
+
+/* 3. Toast: stronger ease-out, snappier entry */
+.toast {
+  transition: transform 260ms var(--ease-out-strong), opacity 180ms ease !important;
+}
+
+/* 4. Progress bars: better easing (keep width for compatibility, upgrade curve) */
+.prog-fill     { transition: width 500ms var(--ease-out-strong) !important; }
+#ex-steps-bar  { transition: width 550ms var(--ease-out-strong) !important; }
+#ex-weekly-bar { transition: width 500ms var(--ease-out-strong) !important; }
+
+/* 5. Drawer slide-in: iOS-like curve with @starting-style */
+@media (prefers-reduced-motion: no-preference) {
+  .modal-overlay.open .modal {
+    transform: translateY(0);
+    transition: transform 380ms var(--ease-drawer);
+  }
+  @starting-style {
+    .modal-overlay.open .modal {
+      transform: translateY(100%);
+    }
+  }
+
+  /* Backdrop fade-in */
+  .modal-overlay.open {
+    animation: forte-backdrop-in 300ms ease forwards;
+  }
+  @keyframes forte-backdrop-in {
+    from { background: rgba(0,0,0,0); }
+    to   { background: rgba(0,0,0,.75); }
+  }
+}
+</style>
+
 <script>
 /* ── NOTIFICATIONS REDESIGN ─────────────────────────────────────────── */
 (function(){
@@ -22972,6 +23031,34 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     if(!id) return;
     try{ await sb.from('notifications').update({read:true}).eq('id', id); }catch(e){}
     loadNotifications();
+  };
+})();
+
+/* ── DRAWER SLIDE-OUT (closes with same curve as slide-in) ──────────── */
+(function(){
+  if(typeof closeModal !== 'function') return;
+  const _orig = closeModal;
+
+  closeModal = function(id){
+    /* Skip animation if user prefers reduced motion */
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return _orig(id);
+    const overlay = document.getElementById(id);
+    if(!overlay || !overlay.classList.contains('open')) return _orig(id);
+    const modal = overlay.querySelector('.modal');
+    if(!modal) return _orig(id);
+
+    /* Slide the sheet down, fade the backdrop */
+    modal.style.transition  = 'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)';
+    modal.style.transform   = 'translateY(110%)';
+    overlay.style.transition = 'background 280ms ease';
+    overlay.style.background = 'rgba(0,0,0,0)';
+
+    setTimeout(function(){
+      _orig(id);
+      /* Clean up so @starting-style fires fresh on next open */
+      if(modal)  { modal.style.transition = ''; modal.style.transform = ''; }
+      if(overlay){ overlay.style.transition = ''; overlay.style.background = ''; }
+    }, 265);
   };
 })();
 </script>
