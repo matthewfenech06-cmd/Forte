@@ -25279,6 +25279,207 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     window.open('/terms', '_blank', 'noopener');
   };
 })();
+
+/* ═══════════════════════════════════════════════════════════════
+   SIGNUP: ToS consent + age gate
+   Injects checkbox before submit, blocks signup if unchecked.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* Inject consent row into signup form */
+  const signupForm = document.getElementById('signup-form');
+  if (signupForm) {
+    const btn = signupForm.querySelector('.btn-primary');
+    if (btn) {
+      const row = document.createElement('div');
+      row.id = 'forte-consent-row';
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;margin-bottom:6px;padding:2px 0';
+      row.innerHTML =
+        '<input type="checkbox" id="forte-tos-cb" style="margin-top:3px;accent-color:#ff0090;'
+        +'flex-shrink:0;width:16px;height:16px;cursor:pointer">'
+        +'<label for="forte-tos-cb" style="font-size:12px;color:var(--text3);line-height:1.55;cursor:pointer">'
+        +'I am 17 or older and agree to the '
+        +'<a href="/terms" target="_blank" rel="noopener" style="color:#ff0090;text-decoration:none;font-weight:600">Terms of Service</a>'
+        +' and '
+        +'<a href="/privacy" target="_blank" rel="noopener" style="color:#ff0090;text-decoration:none;font-weight:600">Privacy Policy</a>'
+        +'</label>';
+      signupForm.insertBefore(row, btn);
+    }
+  }
+
+  /* Gate handleSignup on checkbox */
+  const _origHS = window.handleSignup;
+  window.handleSignup = async function() {
+    const cb = document.getElementById('forte-tos-cb');
+    if (cb && !cb.checked) {
+      const fn = window.forteShowAuthMessage || window.forteAuthMsg
+        || function(m){ const el=document.getElementById('auth-error'); if(el){el.textContent=m;el.style.display='block';} };
+      fn('Please confirm you are 17 or older and agree to our Terms');
+      /* Shake the checkbox row for feedback */
+      const row = document.getElementById('forte-consent-row');
+      if (row) {
+        row.style.transition = 'transform 60ms ease';
+        row.style.transform = 'translateX(6px)';
+        setTimeout(()=>{ row.style.transform='translateX(-6px)'; },60);
+        setTimeout(()=>{ row.style.transform='translateX(0)'; },120);
+      }
+      return;
+    }
+    if (typeof _origHS === 'function') return _origHS();
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   FORGOT PASSWORD — bottom sheet + Supabase reset + new-password
+   screen on recovery redirect. Apple reviewers always test this.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* Inject "Forgot password?" link below the password field */
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) {
+    const passGroup = loginForm.querySelector('#login-pass')?.closest('.input-group');
+    if (passGroup) {
+      const link = document.createElement('div');
+      link.style.cssText = 'text-align:right;margin-top:-8px;margin-bottom:4px';
+      link.innerHTML = '<button onclick="forteForgotPw()" style="background:none;border:none;'
+        +'font-size:13px;font-weight:600;color:var(--text3);cursor:pointer;padding:4px 0;'
+        +'-webkit-tap-highlight-color:transparent">Forgot password?</button>';
+      passGroup.after(link);
+    }
+  }
+
+  /* ── Forgot password sheet ──────────────────────────────────── */
+  window.forteForgotPw = function() {
+    if (document.getElementById('forte-fp-overlay')) return;
+    const ov = document.createElement('div');
+    ov.id = 'forte-fp-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:5000;'
+      +'background:rgba(0,0,0,.65);display:flex;align-items:flex-end;'
+      +'animation:_fpFade 180ms ease forwards';
+    ov.innerHTML =
+      '<style>@keyframes _fpFade{from{opacity:0}to{opacity:1}}</style>'
+      +'<div style="width:100%;background:var(--bg2);border-radius:22px 22px 0 0;'
+        +'padding:14px 24px calc(env(safe-area-inset-bottom,0px)+24px);'
+        +'box-shadow:0 -8px 40px rgba(0,0,0,.5);'
+        +'animation:_fpUp 280ms cubic-bezier(.34,1.2,.64,1) forwards">'
+        +'<style>@keyframes _fpUp{from{transform:translateY(40px)}to{transform:translateY(0)}}</style>'
+        +'<div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);margin:0 auto 22px"></div>'
+        +'<div style="font-size:22px;font-weight:900;color:var(--text);letter-spacing:-.025em;margin-bottom:6px">Reset password</div>'
+        +'<div style="font-size:14px;color:var(--text2);margin-bottom:20px">We\'ll send a reset link to your email.</div>'
+        +'<input class="inp" id="forte-fp-email" type="email" placeholder="your@email.com"'
+          +' style="margin-bottom:14px" autocomplete="email">'
+        +'<button class="btn-primary" id="forte-fp-btn" onclick="forteSendReset()" style="margin-top:0">Send reset link</button>'
+        +'<button onclick="document.getElementById(\'forte-fp-overlay\').remove()" style="background:none;border:none;'
+          +'width:100%;font-size:14px;font-weight:600;color:var(--text3);cursor:pointer;padding:14px 0 4px">'
+          +'Cancel</button>'
+      +'</div>';
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    setTimeout(()=> document.getElementById('forte-fp-email')?.focus(), 120);
+  };
+
+  window.forteSendReset = async function() {
+    const emailEl = document.getElementById('forte-fp-email');
+    const email = emailEl?.value?.trim();
+    if (!email) { emailEl?.focus(); return; }
+    const btn = document.getElementById('forte-fp-btn');
+    if (btn) { btn.textContent = 'Sending...'; btn.disabled = true; }
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    document.getElementById('forte-fp-overlay')?.remove();
+    const toast = typeof fpToast==='function'?fpToast : typeof showToast==='function'?showToast : function(m){alert(m);};
+    toast(error ? 'Could not send reset link. Check the address.' : 'Reset link sent. Check your inbox.');
+  };
+
+  /* ── New-password screen (shown on recovery redirect) ────── */
+  window.forteShowNewPasswordScreen = function() {
+    if (document.getElementById('forte-np-screen')) return;
+    const sc = document.createElement('div');
+    sc.id = 'forte-np-screen';
+    sc.style.cssText = 'position:fixed;inset:0;z-index:6000;background:var(--bg);'
+      +'display:flex;align-items:center;justify-content:center;padding:28px;';
+    sc.innerHTML =
+      '<div style="width:100%;max-width:360px">'
+        +'<svg viewBox="0 0 96 32" width="60" height="20" style="margin-bottom:32px">'
+          +'<text y="26" font-size="28" font-weight="900" fill="#f0f0f0"'
+            +' font-family="Inter,-apple-system,sans-serif" letter-spacing="-1">'
+            +'forte<tspan fill="#ff0090">.</tspan></text>'
+        +'</svg>'
+        +'<div style="font-size:28px;font-weight:900;letter-spacing:-.03em;color:var(--text);margin-bottom:8px">Set new password</div>'
+        +'<div style="font-size:14px;color:var(--text2);margin-bottom:28px">Choose a strong password for your account.</div>'
+        +'<input class="inp" id="forte-np-p1" type="password" placeholder="New password (min 6 chars)" style="margin-bottom:12px">'
+        +'<input class="inp" id="forte-np-p2" type="password" placeholder="Confirm password" style="margin-bottom:18px">'
+        +'<button class="btn-primary" id="forte-np-btn" onclick="forteSubmitNewPw()" style="margin-top:0">Update password</button>'
+        +'<div id="forte-np-err" style="color:#ff4466;font-size:13px;margin-top:12px;text-align:center;min-height:18px"></div>'
+      +'</div>';
+    document.body.appendChild(sc);
+    setTimeout(()=> document.getElementById('forte-np-p1')?.focus(), 100);
+  };
+
+  window.forteSubmitNewPw = async function() {
+    const p1 = document.getElementById('forte-np-p1')?.value;
+    const p2 = document.getElementById('forte-np-p2')?.value;
+    const err = document.getElementById('forte-np-err');
+    if (!p1 || p1.length < 6) { if(err) err.textContent='Password must be at least 6 characters'; return; }
+    if (p1 !== p2)             { if(err) err.textContent='Passwords do not match'; return; }
+    const btn = document.getElementById('forte-np-btn');
+    if (btn) { btn.textContent='Updating...'; btn.disabled=true; }
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    document.getElementById('forte-np-screen')?.remove();
+    const toast = typeof fpToast==='function'?fpToast : typeof showToast==='function'?showToast : function(m){alert(m);};
+    toast(error ? 'Could not update password. Try again.' : 'Password updated. You\'re signed in.');
+  };
+
+  /* Detect Supabase PASSWORD_RECOVERY event */
+  try {
+    sb.auth.onAuthStateChange(function(event) {
+      if (event === 'PASSWORD_RECOVERY') forteShowNewPasswordScreen();
+    });
+  } catch(e) {}
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   OFFLINE BANNER — thin bar at top when no internet connection.
+   Auto-hides when connection returns.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  const style = document.createElement('style');
+  style.textContent =
+    '#forte-offline-bar{'
+      +'position:fixed;top:0;left:0;right:0;z-index:9995;'
+      +'background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.08);'
+      +'padding:env(safe-area-inset-top,0px) 20px 0;'
+      +'display:flex;align-items:center;justify-content:center;gap:8px;'
+      +'height:calc(env(safe-area-inset-top,0px) + 42px);'
+      +'transform:translateY(-100%);pointer-events:none;'
+      +'transition:transform 280ms cubic-bezier(0.4,0,0.2,1);}'
+    +'#forte-offline-bar.visible{transform:translateY(0);}'
+    +'@media(prefers-reduced-motion:reduce){#forte-offline-bar{transition:none}}';
+  document.head.appendChild(style);
+
+  const bar = document.createElement('div');
+  bar.id = 'forte-offline-bar';
+  bar.innerHTML =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff0090" stroke-width="2">'
+      +'<line x1="1" y1="1" x2="23" y2="23"/>'
+      +'<path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.56 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>'
+    +'</svg>'
+    +'<span style="font-size:12px;font-weight:600;color:var(--text2)">No internet connection</span>';
+  document.body.appendChild(bar);
+
+  function syncBar() {
+    bar.classList.toggle('visible', !navigator.onLine);
+  }
+  window.addEventListener('offline', syncBar);
+  window.addEventListener('online', syncBar);
+  syncBar();
+})();
 </script>
 
 </html>
