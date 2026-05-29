@@ -23737,6 +23737,457 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
 })();
+
+/* ══════════════════════════════════════════════════════════════════════
+   FORTE MODERATION + SAFETY
+   report post/user · block user · delete account · privacy/ToS
+   ══════════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  const _toast = ()=> typeof fpToast==='function' ? fpToast : showToast;
+
+  /* ── 1. REPORT SHEET ─────────────────────────────────────────────── */
+  window.forteShowReportSheet = function(type, id){
+    const existing = document.getElementById('forte-report-overlay');
+    if(existing) existing.remove();
+    const reasons = [
+      {id:'spam',          label:'Spam or misleading'},
+      {id:'inappropriate', label:'Inappropriate or offensive'},
+      {id:'harassment',    label:'Harassment or bullying'},
+      {id:'fake',          label:'Fake account or impersonation'},
+      {id:'other',         label:'Something else'},
+    ];
+    const el = document.createElement('div');
+    el.className='overlay'; el.id='forte-report-overlay';
+    el.innerHTML=`<div class="modal" style="padding:0;border-radius:22px 22px 0 0;max-width:480px">
+      <div style="width:40px;height:4px;background:var(--border);border-radius:999px;margin:12px auto 0"></div>
+      <div style="padding:16px 20px 8px">
+        <div style="font-size:17px;font-weight:700;color:var(--text)">Report ${type}</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:4px">Anonymous. We review every report.</div>
+      </div>
+      <div style="padding:0 12px 8px">
+        ${reasons.map(r=>`<button onclick="forteSubmitReport('${type}','${id}','${r.id}')" style="display:flex;align-items:center;width:100%;padding:14px 12px;background:none;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:500;color:var(--text);cursor:pointer;text-align:left;transition:background .12s" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='none'">${r.label}</button>`).join('')}
+      </div>
+      <div style="padding:0 12px 32px">
+        <button onclick="document.getElementById('forte-report-overlay').remove()" style="width:100%;padding:14px;background:var(--bg3);border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;color:var(--text2);cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+    el.addEventListener('click', e=>{ if(e.target===el) el.remove(); });
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('open'));
+  };
+
+  window.forteSubmitReport = async function(type, id, reason){
+    document.getElementById('forte-report-overlay')?.remove();
+    const u = typeof user!=='undefined'?user:null; if(!u) return;
+    try{
+      await sb.from('reports').insert({reporter_id:u.id,target_type:type,target_id:id,reason,status:'pending',created_at:new Date().toISOString()});
+      _toast()('Report submitted. Thanks for keeping Forte safe.');
+    }catch(e){
+      _toast()('Could not submit — run this SQL in Supabase:\nCREATE TABLE reports (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, reporter_id uuid REFERENCES profiles(id) ON DELETE CASCADE, target_type text NOT NULL, target_id uuid NOT NULL, reason text, status text DEFAULT \'pending\', created_at timestamptz DEFAULT now());');
+    }
+  };
+
+  /* ── 2. BLOCK USER ───────────────────────────────────────────────── */
+  window.forteBlockUser = async function(targetId, targetName, btn){
+    const u = typeof user!=='undefined'?user:null; if(!u||targetId===u.id) return;
+    if(!confirm(`Block ${targetName||'this user'}? You won't see their content and they can't see yours.`)) return;
+    try{
+      await sb.from('blocked_users').insert({blocker_id:u.id,blocked_id:targetId,created_at:new Date().toISOString()});
+      document.querySelectorAll(`[data-author-id="${targetId}"]`).forEach(el=>el.remove());
+      if(typeof closeModal==='function') closeModal('profile-view-overlay');
+      _toast()(`${targetName||'User'} blocked.`);
+    }catch(e){
+      _toast()('Run this SQL in Supabase first:\nCREATE TABLE blocked_users (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, blocker_id uuid REFERENCES profiles(id) ON DELETE CASCADE, blocked_id uuid REFERENCES profiles(id) ON DELETE CASCADE, created_at timestamptz DEFAULT now(), UNIQUE(blocker_id, blocked_id));');
+    }
+  };
+
+  window.forteUnblockUser = async function(targetId, targetName){
+    const u = typeof user!=='undefined'?user:null; if(!u) return;
+    try{
+      await sb.from('blocked_users').delete().eq('blocker_id',u.id).eq('blocked_id',targetId);
+      _toast()(`${targetName||'User'} unblocked.`);
+    }catch(e){ _toast()('Could not unblock. Try again.'); }
+  };
+
+  /* ── 3. EXTEND viewProfile WITH BLOCK + REPORT ───────────────────── */
+  const _prevVP = typeof viewProfile==='function' ? viewProfile : null;
+  viewProfile = async function(userId){
+    if(_prevVP) await _prevVP(userId);
+    const u = typeof user!=='undefined'?user:null;
+    if(!u||userId===u.id) return;
+    const content = document.getElementById('profile-view-content');
+    if(!content||document.getElementById('forte-mod-btns')) return;
+    let isBlocked=false;
+    try{
+      const {data}=await sb.from('blocked_users').select('id').eq('blocker_id',u.id).eq('blocked_id',userId).maybeSingle();
+      isBlocked=!!data;
+    }catch(e){}
+    const nameEl=content.querySelector('[style*="font-weight:800"],[style*="font-weight:700"],[style*="font-size:20"]');
+    const tName=(nameEl?.textContent||'this user').trim().replace(/'/g,"\\'");
+    const wrap=document.createElement('div');
+    wrap.id='forte-mod-btns'; wrap.style.cssText='display:flex;gap:8px;margin-bottom:12px;padding:0 20px';
+    wrap.innerHTML=`
+      <button onclick="forteShowReportSheet('user','${userId}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        Report
+      </button>
+      <button id="forte-block-btn-${userId}" onclick="${isBlocked?`forteUnblockUser('${userId}','${tName}')`:`forteBlockUser('${userId}','${tName}',this)`}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:${isBlocked?'rgba(255,79,79,.1)':'var(--bg3)'};border:1.5px solid ${isBlocked?'rgba(255,79,79,.3)':'var(--border)'};border-radius:var(--radius-sm);padding:11px;font-size:13px;font-weight:600;color:${isBlocked?'#ff4f4f':'var(--text2)'};cursor:pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        ${isBlocked?'Unblock':'Block'}
+      </button>`;
+    content.appendChild(wrap);
+  };
+
+  /* ── 4. INJECT REPORT BUTTONS ON FEED POSTS (non-own) ───────────── */
+  function injectPostReportBtn(postEl){
+    if(postEl.__forte_report) return;
+    const u = typeof user!=='undefined'?user:null; if(!u) return;
+    const authorId = postEl.dataset.authorId || postEl.getAttribute('data-user-id');
+    if(!authorId||authorId===u.id) return;
+    postEl.__forte_report=true;
+    const btn=document.createElement('button');
+    btn.title='Report post';
+    btn.style.cssText='position:absolute;top:10px;right:10px;background:rgba(0,0,0,.45);border:none;border-radius:8px;padding:6px 8px;cursor:pointer;display:flex;align-items:center;color:rgba(255,255,255,.7);z-index:5;backdrop-filter:blur(8px);transition:opacity .15s';
+    btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>';
+    btn.onclick=e=>{ e.stopPropagation(); forteShowReportSheet('post', postEl.id||postEl.dataset.postId||'unknown'); };
+    const wrapper=postEl.querySelector('[style*="position:relative"],[style*="position: relative"]')||postEl;
+    if(getComputedStyle(wrapper).position==='static') wrapper.style.position='relative';
+    wrapper.appendChild(btn);
+  }
+
+  function scanFeedForReportBtns(){
+    document.querySelectorAll('[data-author-id],[data-user-id],[data-post-id]').forEach(injectPostReportBtn);
+  }
+
+  const feedEl = document.getElementById('feed-posts');
+  if(feedEl){
+    new MutationObserver(scanFeedForReportBtns).observe(feedEl,{childList:true,subtree:true});
+  }
+  /* Also scan on tab switch */
+  document.addEventListener('forte-tab-change', scanFeedForReportBtns);
+  setTimeout(scanFeedForReportBtns, 3000);
+
+  /* ── 5. OVERRIDE confirmDeleteAccount WITH RICH FLOW ─────────────── */
+  confirmDeleteAccount = function(){
+    const el = document.createElement('div');
+    el.className='overlay'; el.id='forte-del-acc-overlay';
+    el.innerHTML=`<div class="modal" style="padding:24px 20px;max-width:400px;border-radius:var(--radius)">
+      <div style="font-size:36px;text-align:center;margin-bottom:14px">⚠️</div>
+      <div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:8px;color:var(--text)">Delete Account</div>
+      <div style="font-size:13px;color:var(--text2);text-align:center;line-height:1.6;margin-bottom:20px">Your profile, workouts, nutrition logs, posts, and messages will be permanently removed. This cannot be undone.</div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Type DELETE to confirm</div>
+        <input id="forte-del-input" type="text" placeholder="DELETE" autocomplete="off" style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;font-size:15px;font-weight:700;color:var(--text);outline:none;font-family:var(--fd);letter-spacing:.04em"
+          oninput="const ok=this.value==='DELETE';document.getElementById('forte-del-btn').disabled=!ok;document.getElementById('forte-del-btn').style.opacity=ok?1:.4">
+      </div>
+      <button id="forte-del-btn" disabled onclick="forteConfirmDelete()" style="width:100%;padding:14px;background:#ff4f4f;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;color:white;cursor:pointer;opacity:.4;transition:opacity .15s;margin-bottom:10px">Delete My Account</button>
+      <button onclick="document.getElementById('forte-del-acc-overlay').remove()" style="width:100%;padding:14px;background:var(--bg3);border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;color:var(--text2);cursor:pointer">Cancel</button>
+    </div>`;
+    el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('open'));
+  };
+
+  window.forteConfirmDelete = async function(){
+    const u = typeof user!=='undefined'?user:null; if(!u) return;
+    const btn=document.getElementById('forte-del-btn');
+    if(btn){ btn.textContent='Deleting...'; btn.disabled=true; }
+    const uid=u.id;
+    await Promise.all([
+      sb.from('posts').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('nutrition_logs').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('workouts').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('personal_records').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('notifications').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('follow_notifications').delete().eq('user_id',uid).catch(()=>{}),
+      sb.from('blocked_users').delete().or(`blocker_id.eq.${uid},blocked_id.eq.${uid}`).catch(()=>{}),
+    ]);
+    await sb.from('profiles').update({full_name:'Deleted User',username:`deleted_${uid.slice(0,8)}`,avatar_url:null,bio:null}).eq('id',uid).catch(()=>{});
+    await sb.auth.signOut().catch(()=>{});
+    document.getElementById('forte-del-acc-overlay')?.remove();
+    document.body.innerHTML=`<div style="min-height:100vh;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center"><div style="font-size:52px;margin-bottom:20px">👋</div><div style="font-size:22px;font-weight:800;color:#f0f0f0;margin-bottom:10px">Account deleted</div><div style="font-size:14px;color:#999;line-height:1.65;max-width:300px">Your data has been removed. Thanks for being part of Forte.</div></div>`;
+  };
+
+  /* ── 6. INJECT LEGAL + SIGN-OUT IN SETTINGS ──────────────────────── */
+  /* Add Privacy Policy + Terms above the existing account/danger-zone section */
+  (function injectLegalSettings(){
+    const sheet=document.getElementById('settings-sheet');
+    if(!sheet||document.getElementById('forte-legal-section')) return;
+    /* Find the last section div (Danger Zone at ~line 2097) */
+    const dangerDiv=Array.from(sheet.querySelectorAll('div[style*="padding:20px"]')).pop();
+    if(!dangerDiv) return;
+    const legal=document.createElement('div');
+    legal.id='forte-legal-section';
+    legal.style.cssText='padding:0 20px 16px';
+    legal.innerHTML=`<div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin-bottom:12px">Legal</div>
+      <div style="background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border);overflow:hidden">
+        <button onclick="forteShowPrivacyPolicy()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 16px;background:none;border:none;border-bottom:1px solid var(--border);font-size:14px;font-weight:500;color:var(--text);cursor:pointer;text-align:left">
+          Privacy Policy
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button onclick="forteShowTerms()" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:14px 16px;background:none;border:none;font-size:14px;font-weight:500;color:var(--text);cursor:pointer;text-align:left">
+          Terms of Service
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>`;
+    sheet.insertBefore(legal, dangerDiv);
+  })();
+
+  /* ── 7. PRIVACY POLICY ────────────────────────────────────────────── */
+  function _legalModal(title, bodyHTML){
+    const ex=document.getElementById('forte-legal-overlay'); if(ex) ex.remove();
+    const style=document.createElement('style');
+    style.textContent='#forte-legal-overlay h3{font-size:14px;font-weight:700;color:var(--text);margin:18px 0 6px}#forte-legal-overlay h3:first-child{margin-top:0}#forte-legal-overlay p{margin-bottom:10px}#forte-legal-overlay ul{margin:0 0 10px 18px}#forte-legal-overlay li{margin-bottom:4px}#forte-legal-overlay strong{color:var(--text);font-weight:600}';
+    document.head.appendChild(style);
+    const el=document.createElement('div');
+    el.className='overlay'; el.id='forte-legal-overlay';
+    el.innerHTML=`<div class="modal" style="padding:0;max-width:480px;max-height:88vh;display:flex;flex-direction:column;border-radius:var(--radius)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <div style="font-size:16px;font-weight:700;color:var(--text)">${title}</div>
+        <button onclick="document.getElementById('forte-legal-overlay').remove()" style="background:none;border:none;color:var(--text3);font-size:24px;cursor:pointer;padding:2px;line-height:1">×</button>
+      </div>
+      <div style="overflow-y:auto;padding:20px;flex:1;font-size:14px;line-height:1.7;color:var(--text2)">${bodyHTML}</div>
+    </div>`;
+    el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('open'));
+  }
+
+  window.forteShowPrivacyPolicy=function(){
+    _legalModal('Privacy Policy',`
+      <p style="color:var(--text3);font-size:12px;margin-bottom:18px">Last updated: May 2026</p>
+      <h3>What we collect</h3>
+      <ul>
+        <li><strong>Account info:</strong> email, display name, profile photo, bio</li>
+        <li><strong>Fitness data:</strong> workouts, exercises, sets, reps, weights, personal records</li>
+        <li><strong>Nutrition data:</strong> food logs, calories, macros, body weight, measurements</li>
+        <li><strong>Social data:</strong> posts, comments, likes, followers, messages, league activity</li>
+        <li><strong>Location:</strong> only while recording a run, to calculate distance and pace. Not used at any other time.</li>
+      </ul>
+      <h3>How we use it</h3>
+      <p>Your data powers the app. We use it to show your stats, send notifications you have opted into, and keep the platform safe. We do not sell your data and do not use your fitness data for advertising.</p>
+      <h3>Photos and posts</h3>
+      <p>Content you post is visible to other users. You can delete any post at any time. Deleting your account removes all your content immediately.</p>
+      <h3>Data sharing</h3>
+      <p>We store data with Supabase (supabase.com). We do not share personal data with third parties except where required by law.</p>
+      <h3>Your rights</h3>
+      <ul>
+        <li><strong>Access:</strong> your data is visible in the app</li>
+        <li><strong>Deletion:</strong> delete your account in Settings at any time. All data is removed immediately.</li>
+        <li><strong>Correction:</strong> edit your profile at any time</li>
+        <li><strong>Data export:</strong> contact support@forte.app to request a copy</li>
+      </ul>
+      <h3>Children</h3>
+      <p>Forte is not for users under 13. We do not knowingly collect data from children under 13. Contact support@forte.app if you believe a child has registered.</p>
+      <h3>Contact</h3>
+      <p>support@forte.app</p>
+    `);
+  };
+
+  window.forteShowTerms=function(){
+    _legalModal('Terms of Service',`
+      <p style="color:var(--text3);font-size:12px;margin-bottom:18px">Last updated: May 2026</p>
+      <h3>Acceptance</h3>
+      <p>By using Forte you agree to these terms. If you don't agree, don't use the app.</p>
+      <h3>Age requirement</h3>
+      <p>You must be at least 13 years old. By registering, you confirm you meet this requirement.</p>
+      <h3>Your account</h3>
+      <p>You are responsible for all activity on your account. Keep your credentials secure. You may not impersonate others or create accounts to evade a ban.</p>
+      <h3>Acceptable use</h3>
+      <p>Do not post content that is illegal, abusive, hateful, sexually explicit, or spam. Do not share someone else's private information without consent.</p>
+      <h3>Moderation</h3>
+      <p>We may remove content that violates these terms and suspend accounts that repeatedly do so. Use the Report button on any post or profile to flag content for review.</p>
+      <h3>Your content</h3>
+      <p>You own what you post. By posting, you grant Forte a non-exclusive licence to display and distribute that content within the platform.</p>
+      <h3>Fitness disclaimer</h3>
+      <p>Forte provides fitness and nutrition tracking for informational purposes only. Always consult a qualified professional before starting a new exercise or diet programme. Forte is not liable for any injury or health outcome.</p>
+      <h3>Termination</h3>
+      <p>You can delete your account at any time in Settings. We may suspend accounts that violate these terms.</p>
+      <h3>Limitation of liability</h3>
+      <p>Forte is provided as-is. We are not liable for loss of data or any damages arising from use of the app.</p>
+      <h3>Contact</h3>
+      <p>support@forte.app</p>
+    `);
+  };
+
+})();
+
+/* ══════════════════════════════════════════════════════════════════════
+   FORTE RETENTION: BADGES + WEEKLY RECAP
+   ══════════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* ── BADGE DEFINITIONS ───────────────────────────────────────────── */
+  const BADGES=[
+    {id:'first_workout',  name:'First Rep',         desc:'Logged your first workout',      icon:'🏋️',col:'#ff0090'},
+    {id:'streak_3',       name:'On Fire',            desc:'3-day workout streak',           icon:'🔥',col:'#ff6b35'},
+    {id:'streak_7',       name:'Committed',          desc:'7-day workout streak',           icon:'⚡',col:'#ffca00'},
+    {id:'streak_14',      name:'Two Weeks Strong',   desc:'14-day workout streak',          icon:'💪',col:'#ff0090'},
+    {id:'streak_30',      name:'Iron Will',          desc:'30-day workout streak',          icon:'💎',col:'#4f9fff'},
+    {id:'first_pr',       name:'Personal Best',      desc:'Set your first PR',             icon:'🏆',col:'#f0a500'},
+    {id:'pr_5',           name:'Record Breaker',     desc:'5 personal records smashed',     icon:'⭐',col:'#f0a500'},
+    {id:'pr_10',          name:'Unbeatable',         desc:'10 personal records set',        icon:'👑',col:'#ffca00'},
+    {id:'workouts_10',    name:'Getting Started',    desc:'10 workouts logged',             icon:'💪',col:'#ff0090'},
+    {id:'workouts_25',    name:'Regular',            desc:'25 workouts logged',             icon:'📆',col:'#4f9fff'},
+    {id:'workouts_50',    name:'Grinder',            desc:'50 workouts logged',             icon:'🔱',col:'#a259ff'},
+    {id:'workouts_100',   name:'Century',            desc:'100 workouts logged',            icon:'🎖️',col:'#ffca00'},
+    {id:'nutrition_7',    name:'Fuelled',            desc:'7 consecutive days of nutrition',icon:'🥗',col:'#4caf50'},
+    {id:'nutrition_30',   name:'Macro Master',       desc:'30 days of nutrition logged',   icon:'📊',col:'#4caf50'},
+    {id:'social_follow',  name:'Connected',          desc:'Someone followed you',           icon:'👥',col:'#4f9fff'},
+  ];
+  window.FORTE_BADGES=BADGES;
+
+  /* ── BADGE UNLOCK SHEET (slides up from bottom) ───────────────────── */
+  window.forteShowBadgeUnlock=function(badge){
+    const ex=document.getElementById('forte-badge-unlock'); if(ex) ex.remove();
+    const el=document.createElement('div');
+    el.id='forte-badge-unlock';
+    el.style.cssText='position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-end;justify-content:center;pointer-events:none';
+    el.innerHTML=`<div style="pointer-events:all;background:var(--bg3);border:1px solid var(--border);border-radius:22px 22px 0 0;padding:32px 24px 44px;text-align:center;width:100%;max-width:420px;transform:translateY(100%);transition:transform 320ms cubic-bezier(0.23,1,0.32,1)">
+      <div style="width:80px;height:80px;border-radius:24px;background:${badge.col}22;border:2px solid ${badge.col}44;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px">${badge.icon}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:${badge.col};margin-bottom:6px">Badge Unlocked</div>
+      <div style="font-size:22px;font-weight:900;color:var(--text);margin-bottom:6px;letter-spacing:-.02em">${badge.name}</div>
+      <div style="font-size:14px;color:var(--text2);margin-bottom:28px">${badge.desc}</div>
+      <button onclick="document.getElementById('forte-badge-unlock').remove()" style="background:#ff0090;border:none;border-radius:var(--radius-sm);padding:14px 40px;font-size:15px;font-weight:700;color:white;cursor:pointer">Keep Going</button>
+    </div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      el.querySelector('div').style.transform='translateY(0)';
+    }));
+    setTimeout(()=>el?.remove(),8000);
+  };
+
+  /* ── CHECK + AWARD BADGES ─────────────────────────────────────────── */
+  window.forteCheckBadges=async function(){
+    const u=typeof user!=='undefined'?user:null; if(!u) return;
+    try{
+      const {data:earned}=await sb.from('user_badges').select('badge_id').eq('user_id',u.id).catch(()=>({data:[]}));
+      const have=new Set((earned||[]).map(b=>b.badge_id));
+
+      const [wkR,prR,profR,nutR]=await Promise.all([
+        sb.from('workouts').select('id',{count:'exact',head:true}).eq('user_id',u.id).catch(()=>({count:0})),
+        sb.from('personal_records').select('id',{count:'exact',head:true}).eq('user_id',u.id).catch(()=>({count:0})),
+        sb.from('profiles').select('current_streak,followers_count').eq('id',u.id).single().catch(()=>({data:null})),
+        sb.from('nutrition_logs').select('log_date').eq('user_id',u.id).order('log_date',{ascending:false}).limit(35).catch(()=>({data:[]})),
+      ]);
+      const wk=wkR.count||0, pr=prR.count||0;
+      const streak=profR.data?.current_streak||0;
+      const followers=profR.data?.followers_count||0;
+
+      /* Nutrition streak */
+      const nutSet=new Set((nutR.data||[]).map(n=>n.log_date));
+      let nutStreak=0;
+      for(let i=0;i<35;i++){
+        const d=new Date(); d.setDate(d.getDate()-i);
+        if(nutSet.has(d.toISOString().split('T')[0])) nutStreak++;
+        else break;
+      }
+
+      const toAward=[];
+      if(wk>=1   &&!have.has('first_workout')) toAward.push('first_workout');
+      if(wk>=10  &&!have.has('workouts_10'))   toAward.push('workouts_10');
+      if(wk>=25  &&!have.has('workouts_25'))   toAward.push('workouts_25');
+      if(wk>=50  &&!have.has('workouts_50'))   toAward.push('workouts_50');
+      if(wk>=100 &&!have.has('workouts_100'))  toAward.push('workouts_100');
+      if(pr>=1   &&!have.has('first_pr'))      toAward.push('first_pr');
+      if(pr>=5   &&!have.has('pr_5'))          toAward.push('pr_5');
+      if(pr>=10  &&!have.has('pr_10'))         toAward.push('pr_10');
+      if(streak>=3  &&!have.has('streak_3'))   toAward.push('streak_3');
+      if(streak>=7  &&!have.has('streak_7'))   toAward.push('streak_7');
+      if(streak>=14 &&!have.has('streak_14'))  toAward.push('streak_14');
+      if(streak>=30 &&!have.has('streak_30'))  toAward.push('streak_30');
+      if(followers>=1&&!have.has('social_follow')) toAward.push('social_follow');
+      if(nutStreak>=7 &&!have.has('nutrition_7'))  toAward.push('nutrition_7');
+      if(nutStreak>=30&&!have.has('nutrition_30')) toAward.push('nutrition_30');
+
+      if(!toAward.length) return;
+      await Promise.all(toAward.map(bid=>sb.from('user_badges').insert({user_id:u.id,badge_id:bid,earned_at:new Date().toISOString()}).catch(()=>{})));
+      const defs=toAward.map(bid=>BADGES.find(b=>b.id===bid)).filter(Boolean);
+      defs.forEach((b,i)=>setTimeout(()=>forteShowBadgeUnlock(b),i*4000));
+    }catch(e){}
+  };
+
+  /* Hook badge check into saveWorkout */
+  const _swPrev=typeof saveWorkout==='function'?saveWorkout:null;
+  if(_swPrev){
+    saveWorkout=async function(){
+      await _swPrev.apply(this,arguments);
+      setTimeout(forteCheckBadges,2500);
+    };
+  }
+
+  /* ── WEEKLY RECAP ─────────────────────────────────────────────────── */
+  window.forteShowWeeklyRecap=async function(){
+    const u=typeof user!=='undefined'?user:null; if(!u) return;
+    const now=new Date();
+    const wStart=new Date(now); wStart.setDate(now.getDate()-7);
+    const ws=wStart.toISOString(), we=now.toISOString();
+
+    const [wkR,nutR,prR]=await Promise.all([
+      sb.from('workouts').select('id,name,created_at').eq('user_id',u.id).gte('created_at',ws).catch(()=>({data:[]})),
+      sb.from('nutrition_logs').select('calories,protein,log_date').eq('user_id',u.id).gte('log_date',wStart.toISOString().split('T')[0]).catch(()=>({data:[]})),
+      sb.from('personal_records').select('exercise_name').eq('user_id',u.id).gte('updated_at',ws).order('updated_at',{ascending:false}).limit(4).catch(()=>({data:[]})),
+    ]);
+    const workouts=wkR.data||[], nuts=nutR.data||[], prs=prR.data||[];
+    const avgPro=nuts.length?Math.round(nuts.reduce((a,n)=>a+(n.protein||0),0)/nuts.length):0;
+    const daysLogged=new Set(nuts.map(n=>n.log_date)).size;
+
+    const el=document.createElement('div');
+    el.className='overlay'; el.id='forte-recap-overlay';
+    el.innerHTML=`<div class="modal" style="padding:0;max-width:400px;border-radius:var(--radius)">
+      <div style="padding:24px 20px 0">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#ff0090;margin-bottom:4px">Weekly Recap</div>
+        <div style="font-size:22px;font-weight:900;color:var(--text);letter-spacing:-.03em">This week</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:3px">${wStart.toLocaleDateString('en-GB',{month:'short',day:'numeric'})} – ${now.toLocaleDateString('en-GB',{month:'short',day:'numeric'})}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 20px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:32px;font-weight:900;color:var(--text);line-height:1">${workouts.length}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Workouts</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:32px;font-weight:900;color:var(--text);line-height:1">${prs.length}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">New PRs</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:32px;font-weight:900;color:var(--text);line-height:1">${daysLogged}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Days Logged</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:32px;font-weight:900;color:var(--text);line-height:1">${avgPro?avgPro+'g':'--'}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Avg Protein</div>
+        </div>
+      </div>
+      ${prs.length?`<div style="padding:0 20px 16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Personal Records</div>
+        ${prs.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border)"><span style="font-size:15px">⚡</span><span style="font-size:13px;font-weight:600;color:var(--text)">${p.exercise_name}</span></div>`).join('')}
+      </div>`:''}
+      <div style="padding:8px 20px 28px">
+        <button onclick="document.getElementById('forte-recap-overlay').remove()" style="width:100%;padding:14px;background:#ff0090;border:none;border-radius:var(--radius-sm);font-size:15px;font-weight:700;color:white;cursor:pointer">Keep training</button>
+      </div>
+    </div>`;
+    el.addEventListener('click',e=>{ if(e.target===el) el.remove(); });
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('open'));
+  };
+
+  /* Show recap on Monday morning once per week */
+  (function checkRecap(){
+    setTimeout(()=>{
+      const u=typeof user!=='undefined'?user:null;
+      if(!u){ setTimeout(checkRecap,3000); return; }
+      const now=new Date();
+      const key=`forte_recap_${now.getFullYear()}_W${Math.ceil(now.getDate()/7)}`;
+      if(now.getDay()===1&&now.getHours()>=7&&now.getHours()<12&&!localStorage.getItem(key)){
+        localStorage.setItem(key,'1');
+        setTimeout(forteShowWeeklyRecap,3500);
+      }
+    },5000);
+  })();
+
+})();
 </script>
 
 </html>
