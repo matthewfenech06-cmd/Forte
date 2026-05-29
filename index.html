@@ -23370,8 +23370,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
 
   loadNotifications = async function(){
-    const u = typeof user!=='undefined'?user:null;
-    if(!u) return;
+    if(!user) return;
     const el = document.getElementById('notif-list');
     if(!el) return;
 
@@ -23380,10 +23379,21 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
         border-radius:50%;animation:forte-spin .75s linear infinite;margin:0 auto 12px"></div>
       <div style="font-size:13px;color:var(--text3)">Loading</div></div>`;
 
-    const {data} = await sb.from('notifications')
-      .select('*').eq('user_id',u.id)
-      .order('created_at',{ascending:false}).limit(50)
-      .catch(()=>({data:null}));
+    let data, fetchErr;
+    try {
+      const res = await sb.from('notifications')
+        .select('*').eq('user_id', user.id)
+        .order('created_at',{ascending:false}).limit(50);
+      data = res.data;
+      fetchErr = res.error;
+    } catch(e) {
+      fetchErr = e;
+    }
+
+    if(fetchErr){
+      el.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">Could not load notifications</div>`;
+      return;
+    }
 
     const notifs = data||[];
     const unread = notifs.filter(n=>!n.read).length;
@@ -23399,39 +23409,45 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       return;
     }
 
-    /* Group by day */
-    const groups={};
-    notifs.forEach(n=>{ const k=_dayLabel(n.created_at); (groups[k]=groups[k]||[]).push(n); });
+    /* Group by day — wrapped in try/catch so a bad row never freezes the spinner */
+    try {
+      const groups={};
+      notifs.forEach(n=>{ const k=_dayLabel(n.created_at); (groups[k]=groups[k]||[]).push(n); });
 
-    let html='';
-    Object.entries(groups).forEach(([day,items])=>{
-      html+=`<div style="padding:10px 20px 5px;font-size:10px;font-weight:700;text-transform:uppercase;
-        letter-spacing:.1em;color:var(--text3)">${day}</div>`;
-      items.forEach(n=>{
-        const c=_gc2(n.type);
-        const ul=!n.read;
-        html+=`<div data-nid="${n.id}" onclick="forteMarkNotifRead('${n.id}',this)"
-          style="display:flex;gap:12px;align-items:flex-start;padding:12px 18px 12px 14px;
-            border-left:3px solid ${ul?'#ff0090':'transparent'};
-            background:${ul?'rgba(255,0,144,.04)':'transparent'};
-            cursor:pointer;transition:background .15s,border-left-color .15s">
-          <div style="width:44px;height:44px;border-radius:14px;background:${c.bg};
-            display:flex;align-items:center;justify-content:center;font-size:19px;
-            flex-shrink:0;position:relative">
-            ${c.e}
-            ${ul?`<div style="position:absolute;top:1px;right:1px;width:8px;height:8px;
-              border-radius:50%;background:#ff0090;border:2px solid var(--bg)"></div>`:''}
-          </div>
-          <div style="flex:1;min-width:0;padding-top:2px">
-            <div style="font-size:14px;font-weight:${ul?700:500};line-height:1.35;
-              color:var(--text);margin-bottom:3px">${n.title||''}</div>
-            ${n.body?`<div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:4px">${n.body}</div>`:''}
-            <div style="font-size:11px;color:${c.col};font-weight:600">${_rel(n.created_at)}</div>
-          </div>
-        </div>`;
+      let html='';
+      Object.entries(groups).forEach(([day,items])=>{
+        html+=`<div style="padding:10px 20px 5px;font-size:10px;font-weight:700;text-transform:uppercase;
+          letter-spacing:.1em;color:var(--text3)">${day}</div>`;
+        items.forEach(n=>{
+          try {
+            const c=_gc2(n.type);
+            const ul=!n.read;
+            html+=`<div data-nid="${n.id}" onclick="forteMarkNotifRead('${n.id}',this)"
+              style="display:flex;gap:12px;align-items:flex-start;padding:12px 18px 12px 14px;
+                border-left:3px solid ${ul?'#ff0090':'transparent'};
+                background:${ul?'rgba(255,0,144,.04)':'transparent'};
+                cursor:pointer;transition:background .15s,border-left-color .15s">
+              <div style="width:44px;height:44px;border-radius:14px;background:${c.bg};
+                display:flex;align-items:center;justify-content:center;font-size:19px;
+                flex-shrink:0;position:relative">
+                ${c.e}
+                ${ul?`<div style="position:absolute;top:1px;right:1px;width:8px;height:8px;
+                  border-radius:50%;background:#ff0090;border:2px solid var(--bg)"></div>`:''}
+              </div>
+              <div style="flex:1;min-width:0;padding-top:2px">
+                <div style="font-size:14px;font-weight:${ul?700:500};line-height:1.35;
+                  color:var(--text);margin-bottom:3px">${n.title||''}</div>
+                ${n.body?`<div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:4px">${n.body}</div>`:''}
+                <div style="font-size:11px;color:${c.col};font-weight:600">${_rel(n.created_at)}</div>
+              </div>
+            </div>`;
+          } catch(rowErr) { /* skip malformed row */ }
+        });
       });
-    });
-    el.innerHTML=html;
+      el.innerHTML = html || `<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">No notifications</div>`;
+    } catch(renderErr) {
+      el.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:14px">Could not display notifications</div>`;
+    }
   };
 
   window.forteMarkNotifRead = async function(id, row){
