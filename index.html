@@ -23318,12 +23318,25 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   }
   window.forteNotifPing = forteNotifPing;
 
-  /* Patch openNotifications to play ping */
-  const _origOpenN = typeof openNotifications==='function' ? openNotifications : null;
+  /* openNotifications: just open the panel cleanly — no sound on tap.
+     Sound fires when a NEW notification arrives while the app is open (see checkUnreadNotifications patch below). */
   openNotifications = function(){
-    forteNotifPing();
-    if(_origOpenN) _origOpenN();
-    else { loadNotifications(); document.getElementById('notif-panel')?.classList.add('open'); }
+    loadNotifications();
+    const panel = document.getElementById('notif-panel');
+    if(panel) panel.classList.add('open');
+  };
+
+  /* Play ping when unread count increases while app is in foreground */
+  let _lastUnreadCount = 0;
+  const _origCUN = typeof checkUnreadNotifications==='function' ? checkUnreadNotifications : null;
+  checkUnreadNotifications = async function(){
+    if(_origCUN) await _origCUN();
+    const badge = document.getElementById('notif-unread-badge');
+    const current = parseInt(badge?.textContent || '0') || 0;
+    if(current > _lastUnreadCount && _lastUnreadCount >= 0 && document.visibilityState === 'visible'){
+      forteNotifPing();
+    }
+    _lastUnreadCount = current;
   };
 
   /* 2. REDESIGNED NOTIFICATION LIST ────────────────────────────────── */
