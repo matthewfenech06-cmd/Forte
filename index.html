@@ -24217,6 +24217,481 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   })();
 
 })();
+
+
+/* ── ONBOARDING V2: redesigned 7-step flow with slide transitions ───── */
+(function(){
+  'use strict';
+
+  /* ── 1. INJECT CSS ───────────────────────────────────────────────── */
+  const css = document.createElement('style');
+  css.textContent = `
+    .ob2-slide {
+      position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+      transition:transform 280ms cubic-bezier(0.4,0,0.2,1),opacity 220ms ease;
+      will-change:transform;
+    }
+    @media(prefers-reduced-motion:reduce){.ob2-slide{transition:opacity 150ms ease;}}
+    .ob2-slide.ob2-hidden-right{transform:translateX(100%);opacity:0;pointer-events:none;}
+    .ob2-slide.ob2-hidden-left {transform:translateX(-100%);opacity:0;pointer-events:none;}
+    .ob2-slide.ob2-active      {transform:translateX(0);opacity:1;}
+
+    .ob2-card {
+      display:flex;align-items:center;gap:14px;
+      background:var(--bg2);border:1.5px solid var(--border);
+      border-radius:var(--radius);padding:16px 18px;cursor:pointer;
+      transition:border-color 180ms ease,background 180ms ease;
+      -webkit-tap-highlight-color:transparent;
+      position:relative;
+    }
+    .ob2-card.selected {
+      border-color:#ff0090;background:rgba(255,0,144,.07);
+    }
+    .ob2-card.selected .ob2-check {opacity:1;transform:scale(1);}
+    .ob2-check {
+      position:absolute;right:16px;top:50%;transform:translateY(-50%) scale(.6);
+      width:22px;height:22px;border-radius:50%;background:#ff0090;
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;transition:opacity 180ms ease,transform 200ms cubic-bezier(0.34,1.56,0.64,1);
+      flex-shrink:0;
+    }
+    .ob2-freq-tile {
+      width:100%;aspect-ratio:1;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      background:var(--bg2);border:1.5px solid var(--border);
+      border-radius:var(--radius);cursor:pointer;
+      transition:border-color 180ms ease,background 180ms ease;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .ob2-freq-tile.selected{border-color:#ff0090;background:rgba(255,0,144,.07);}
+    .ob2-focus-tile {
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:6px;padding:14px 8px;
+      background:var(--bg2);border:1.5px solid var(--border);
+      border-radius:var(--radius-sm);cursor:pointer;
+      transition:border-color 180ms ease,background 180ms ease;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .ob2-focus-tile.selected{border-color:#ff0090;background:rgba(255,0,144,.07);}
+    .ob2-icon-box {
+      width:52px;height:52px;border-radius:14px;
+      background:var(--bg3);display:flex;align-items:center;
+      justify-content:center;font-size:24px;flex-shrink:0;
+    }
+    .ob2-progress-seg {
+      flex:1;height:3px;border-radius:2px;background:var(--bg3);
+      transition:background 300ms ease;
+    }
+    .ob2-progress-seg.done{background:#ff0090;}
+  `;
+  document.head.appendChild(css);
+
+  /* ── 2. REPLACE ONBOARDING HTML ───────────────────────────────────── */
+  const OB = document.getElementById('onboarding-screen');
+  if(!OB) return;
+  OB.style.cssText = 'display:none;position:fixed;inset:0;background:var(--bg);z-index:400;overflow:hidden';
+
+  const TOTAL = 7;
+
+  OB.innerHTML = `
+    <!-- Fixed top chrome -->
+    <div id="ob2-chrome" style="position:absolute;top:0;left:0;right:0;z-index:10;
+      padding:env(safe-area-inset-top,52px) 24px 0;background:var(--bg)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;min-height:36px">
+        <button id="ob2-back" onclick="ob2Back()" style="display:none;background:none;border:none;
+          color:var(--text2);font-size:22px;cursor:pointer;padding:4px 0;line-height:1;
+          font-family:var(--fd)">←</button>
+        <div style="flex:1"></div>
+        <button id="ob2-skip" onclick="ob2Skip()" style="display:none;background:none;border:none;
+          color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;padding:4px 0">Skip</button>
+      </div>
+      <div id="ob2-bar" style="display:flex;gap:5px;margin-bottom:4px">
+        ${Array.from({length:TOTAL},(_,i)=>`<div class="ob2-progress-seg" id="ob2-seg-${i+1}"></div>`).join('')}
+      </div>
+    </div>
+
+    <!-- STEP 1: Welcome -->
+    <div class="ob2-slide ob2-active" id="ob2-1"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 120px">
+      <div style="padding:0 28px">
+        <svg viewBox="0 0 96 32" width="72" height="24" style="margin-bottom:32px;display:block">
+          <text y="26" font-size="28" font-weight="900" fill="#f0f0f0"
+            font-family="Inter,-apple-system,sans-serif" letter-spacing="-1">forte<tspan fill="#ff0090">.</tspan></text>
+        </svg>
+        <div style="font-size:36px;font-weight:900;line-height:1.1;letter-spacing:-.03em;
+          color:var(--text);margin-bottom:14px">Train smarter.<br>Compete harder.</div>
+        <div style="font-size:15px;color:var(--text2);line-height:1.6;margin-bottom:40px;max-width:300px">
+          The fitness app that actually keeps you accountable. Workouts, nutrition, leagues, all in one place.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:40px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:6px;height:6px;border-radius:50%;background:#ff0090;flex-shrink:0"></div>
+            <span style="font-size:14px;font-weight:600;color:var(--text)">Log every workout, track every PR</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:6px;height:6px;border-radius:50%;background:#ff0090;flex-shrink:0"></div>
+            <span style="font-size:14px;font-weight:600;color:var(--text)">Hit your macros, calculate your targets</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:6px;height:6px;border-radius:50%;background:#ff0090;flex-shrink:0"></div>
+            <span style="font-size:14px;font-weight:600;color:var(--text)">Compete in weekly leagues with friends</span>
+          </div>
+        </div>
+      </div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:20px 28px calc(env(safe-area-inset-bottom,20px) + 12px);background:linear-gradient(transparent,var(--bg) 40%)">
+        <button class="btn-primary" onclick="ob2Go(2)" style="margin-top:0">Build my profile</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Goal -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-2"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px">
+      <div style="padding:0 24px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff0090;margin-bottom:10px">Step 1 of 6</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:8px;line-height:1.1">What's your<br>main goal?</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:28px">We personalise everything around this.</div>
+        <div style="display:flex;flex-direction:column;gap:10px" id="ob2-goals">
+          ${[
+            ['lose','🔥','Lose fat','Cut body fat and get lean'],
+            ['gain','💪','Build muscle','Gain size and strength'],
+            ['tone','⚡','Get toned','Lean, defined muscles'],
+            ['health','❤️','Stay healthy','Feel better, move more'],
+          ].map(([v,e,t,d])=>`
+          <div class="ob2-card" data-val="${v}" onclick="ob2Select('goal',this)">
+            <div class="ob2-icon-box">${e}</div>
+            <div style="flex:1">
+              <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:2px">${t}</div>
+              <div style="font-size:13px;color:var(--text3)">${d}</div>
+            </div>
+            <div class="ob2-check"><svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 12px);background:linear-gradient(transparent,var(--bg) 40%)">
+        <button class="btn-primary" onclick="ob2Go(3)" style="margin-top:0">Continue</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Experience -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-3"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px">
+      <div style="padding:0 24px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff0090;margin-bottom:10px">Step 2 of 6</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:8px;line-height:1.1">How long have you<br>been training?</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:28px">Be honest, we won't judge.</div>
+        <div style="display:flex;flex-direction:column;gap:10px" id="ob2-exp">
+          ${[
+            ['beginner','🌱','Just getting started','Less than 1 year'],
+            ['intermediate','💪','Getting serious','1 to 3 years'],
+            ['advanced','🔥','Experienced','3+ years, I know my stuff'],
+          ].map(([v,e,t,d])=>`
+          <div class="ob2-card" data-val="${v}" onclick="ob2Select('exp',this)">
+            <div class="ob2-icon-box">${e}</div>
+            <div style="flex:1">
+              <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:2px">${t}</div>
+              <div style="font-size:13px;color:var(--text3)">${d}</div>
+            </div>
+            <div class="ob2-check"><svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 12px);background:linear-gradient(transparent,var(--bg) 40%)">
+        <button class="btn-primary" onclick="ob2Go(4)" style="margin-top:0">Continue</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Frequency -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-4"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px">
+      <div style="padding:0 24px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff0090;margin-bottom:10px">Step 3 of 6</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:8px;line-height:1.1">How many days<br>do you train?</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:28px">Per week on average.</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px" id="ob2-freq">
+          ${[2,3,4,5,6,7].map(n=>`
+          <div class="ob2-freq-tile" data-val="${n}" onclick="ob2Select('freq',this)">
+            <div style="font-size:32px;font-weight:900;color:var(--text);line-height:1">${n}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">day${n>1?'s':''}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 12px);background:linear-gradient(transparent,var(--bg) 40%)">
+        <button class="btn-primary" onclick="ob2Go(5)" style="margin-top:0">Continue</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: Focus areas -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-5"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px">
+      <div style="padding:0 24px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff0090;margin-bottom:10px">Step 4 of 6</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:8px;line-height:1.1">What do you want<br>to focus on?</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:24px">Pick up to 3 areas.</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px" id="ob2-focus">
+          ${[
+            ['chest','💪','Chest'],
+            ['back','🔙','Back'],
+            ['shoulders','🎯','Shoulders'],
+            ['arms','💎','Arms'],
+            ['core','⚡','Core'],
+            ['legs','🦵','Legs'],
+            ['glutes','🔥','Glutes'],
+            ['cardio','🏃','Cardio'],
+            ['full','🌟','Full body'],
+          ].map(([v,e,t])=>`
+          <div class="ob2-focus-tile" data-val="${v}" onclick="ob2ToggleFocus(this)">
+            <div style="font-size:26px">${e}</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text);text-align:center">${t}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div style="position:fixed;bottom:0;left:0;right:0;padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 12px);background:linear-gradient(transparent,var(--bg) 40%)">
+        <button class="btn-primary" onclick="ob2Go(6)" style="margin-top:0">Continue</button>
+      </div>
+    </div>
+
+    <!-- STEP 6: Body stats -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-6"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px;overflow-y:auto">
+      <div style="padding:0 24px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff0090;margin-bottom:10px">Step 5 of 6</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:8px;line-height:1.1">Tell us about<br>yourself</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:28px">Used to calculate your calorie targets.</div>
+
+        <!-- Sex toggle -->
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Biological sex</div>
+          <div style="display:flex;gap:8px" id="ob2-sex-btns">
+            <button onclick="ob2SetSex('male',this)" style="flex:1;padding:13px;background:#ff0090;border:1.5px solid #ff0090;border-radius:var(--radius-sm);font-size:14px;font-weight:700;color:white;cursor:pointer;transition:all .15s">Male</button>
+            <button onclick="ob2SetSex('female',this)" style="flex:1;padding:13px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-weight:700;color:var(--text2);cursor:pointer;transition:all .15s">Female</button>
+          </div>
+        </div>
+
+        <!-- Stats grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Age</div>
+            <input class="inp" id="ob2-age" type="number" placeholder="25" min="13" max="100"
+              style="width:100%;text-align:center;font-size:18px;font-weight:700;padding:13px 8px"
+              oninput="ob2AutoMacros()">
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Weight (kg)</div>
+            <input class="inp" id="ob2-weight" type="number" placeholder="75" min="30" max="300"
+              style="width:100%;text-align:center;font-size:18px;font-weight:700;padding:13px 8px"
+              oninput="ob2AutoMacros()">
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Height (cm)</div>
+            <input class="inp" id="ob2-height" type="number" placeholder="176" min="100" max="250"
+              style="width:100%;text-align:center;font-size:18px;font-weight:700;padding:13px 8px"
+              oninput="ob2AutoMacros()">
+          </div>
+        </div>
+
+        <!-- Activity level -->
+        <div style="margin-bottom:20px">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Activity level</div>
+          <select class="inp" id="ob2-activity" onchange="ob2AutoMacros()" style="font-size:14px;font-weight:500">
+            <option value="1.2">Mostly sedentary</option>
+            <option value="1.375">Light (1-3x/week)</option>
+            <option value="1.55" selected>Moderate (3-5x/week)</option>
+            <option value="1.725">Very active (6-7x/week)</option>
+            <option value="1.9">Athlete (2x/day)</option>
+          </select>
+        </div>
+
+        <!-- Macro preview -->
+        <div id="ob2-macro-card" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px 18px;transition:opacity .2s">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#ff0090;margin-bottom:12px">Your daily targets</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
+            <div>
+              <div style="font-size:22px;font-weight:900;color:var(--text)" id="ob2-cal-res">0</div>
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:2px">kcal</div>
+            </div>
+            <div>
+              <div style="font-size:22px;font-weight:900;color:#ff0090" id="ob2-pro-res">0g</div>
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:2px">protein</div>
+            </div>
+            <div>
+              <div style="font-size:22px;font-weight:900;color:var(--text)" id="ob2-carb-res">0g</div>
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:2px">carbs</div>
+            </div>
+            <div>
+              <div style="font-size:22px;font-weight:900;color:var(--text)" id="ob2-fat-res">0g</div>
+              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:2px">fats</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 80px)">
+        <button class="btn-primary" onclick="ob2SaveStats()" style="margin-top:0">See my targets</button>
+      </div>
+    </div>
+
+    <!-- STEP 7: Notifications -->
+    <div class="ob2-slide ob2-hidden-right" id="ob2-7"
+      style="padding:calc(env(safe-area-inset-top,52px) + 80px) 0 140px;display:flex;flex-direction:column">
+      <div style="padding:0 24px;flex:1;display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:64px;margin-bottom:24px">🔔</div>
+        <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);margin-bottom:10px;line-height:1.1">Stay<br>accountable.</div>
+        <div style="font-size:15px;color:var(--text2);line-height:1.65;margin-bottom:40px;max-width:280px">
+          Morning motivations, nutrition reminders, and alerts when friends hit PRs. All off by default, turn on what you want.
+        </div>
+        <button class="btn-primary" onclick="ob2EnableNotifs()" style="margin-top:0;margin-bottom:12px">Turn on notifications</button>
+        <button onclick="ob2FinishFlow()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--text3);cursor:pointer;padding:14px">Skip for now</button>
+      </div>
+    </div>
+  `;
+
+  /* ── 3. STATE ─────────────────────────────────────────────────────── */
+  let _ob2Step = 1;
+  let _ob2Dir  = 1; // 1 = forward, -1 = back
+  const _ob2State = { goal: null, exp: null, freq: null, focus: [], sex: 'male' };
+
+  /* ── 4. NAVIGATION ────────────────────────────────────────────────── */
+  function ob2UpdateChrome(n){
+    document.getElementById('ob2-back').style.display = n > 1 ? '' : 'none';
+    document.getElementById('ob2-skip').style.display = (n >= 2 && n <= 5) ? '' : 'none';
+    for(let i = 1; i <= TOTAL; i++){
+      const seg = document.getElementById('ob2-seg-'+i);
+      if(seg) seg.classList.toggle('done', i <= n);
+    }
+  }
+
+  window.ob2Go = function(n){
+    if(n === _ob2Step) return;
+    _ob2Dir = n > _ob2Step ? 1 : -1;
+    const from = document.getElementById('ob2-' + _ob2Step);
+    const to   = document.getElementById('ob2-' + n);
+    if(!from || !to) return;
+
+    to.classList.remove('ob2-hidden-right','ob2-hidden-left','ob2-active');
+    to.classList.add(_ob2Dir > 0 ? 'ob2-hidden-right' : 'ob2-hidden-left');
+
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      from.classList.remove('ob2-active');
+      from.classList.add(_ob2Dir > 0 ? 'ob2-hidden-left' : 'ob2-hidden-right');
+      to.classList.remove('ob2-hidden-right','ob2-hidden-left');
+      to.classList.add('ob2-active');
+    }));
+
+    _ob2Step = n;
+    ob2UpdateChrome(n);
+
+    // Scroll the incoming slide to top
+    setTimeout(()=>{ to.scrollTop = 0; }, 50);
+  };
+
+  window.ob2Back = function(){ if(_ob2Step > 1) ob2Go(_ob2Step - 1); };
+  window.ob2Skip = function(){ ob2Go(_ob2Step + 1); };
+
+  /* ── 5. SELECTION HELPERS ─────────────────────────────────────────── */
+  window.ob2Select = function(type, el){
+    const container = el.parentNode;
+    container.querySelectorAll('.ob2-card,.ob2-freq-tile').forEach(c=>c.classList.remove('selected'));
+    el.classList.add('selected');
+    _ob2State[type === 'goal' ? 'goal' : type === 'exp' ? 'exp' : 'freq'] = el.dataset.val;
+    if(type === 'goal') obGoal = el.dataset.val; // keep compatibility
+  };
+
+  window.ob2ToggleFocus = function(el){
+    if(el.classList.contains('selected')){
+      el.classList.remove('selected');
+      _ob2State.focus = _ob2State.focus.filter(v=>v!==el.dataset.val);
+    } else {
+      if(_ob2State.focus.length >= 3){
+        const toast = typeof fpToast==='function'?fpToast:showToast;
+        toast('Pick up to 3 areas'); return;
+      }
+      el.classList.add('selected');
+      _ob2State.focus.push(el.dataset.val);
+    }
+  };
+
+  window.ob2SetSex = function(val, btn){
+    _ob2State.sex = val;
+    const btns = document.getElementById('ob2-sex-btns').querySelectorAll('button');
+    btns.forEach(b=>{
+      const active = b === btn;
+      b.style.background = active ? '#ff0090' : 'var(--bg2)';
+      b.style.borderColor = active ? '#ff0090' : 'var(--border)';
+      b.style.color       = active ? 'white' : 'var(--text2)';
+    });
+    ob2AutoMacros();
+  };
+
+  /* Auto-calculate macros when any stats input changes */
+  window.ob2AutoMacros = function(){
+    const age = parseInt(document.getElementById('ob2-age')?.value)||0;
+    const wt  = parseFloat(document.getElementById('ob2-weight')?.value)||0;
+    const ht  = parseFloat(document.getElementById('ob2-height')?.value)||0;
+    const act = parseFloat(document.getElementById('ob2-activity')?.value)||1.55;
+    if(!age || !wt || !ht) return;
+    const bmr = _ob2State.sex==='male'
+      ? (10*wt)+(6.25*ht)-(5*age)+5
+      : (10*wt)+(6.25*ht)-(5*age)-161;
+    const tdee = Math.round(bmr*act);
+    const adj  = (_ob2State.goal==='lose'||obGoal==='lose')?-400:(_ob2State.goal==='gain'||obGoal==='gain')?300:0;
+    const cal  = Math.max(1200, tdee+adj);
+    const pro  = Math.round(wt*2.2);
+    const fat  = Math.round((cal*.25)/9);
+    const carb = Math.round((cal-(pro*4)-(fat*9))/4);
+    obMacros = {cal, pro, carb, fat};
+    document.getElementById('ob2-cal-res').textContent  = cal.toLocaleString();
+    document.getElementById('ob2-pro-res').textContent  = pro+'g';
+    document.getElementById('ob2-carb-res').textContent = carb+'g';
+    document.getElementById('ob2-fat-res').textContent  = fat+'g';
+    const card = document.getElementById('ob2-macro-card');
+    if(card) card.style.display = 'block';
+  };
+
+  window.ob2SaveStats = async function(){
+    if(!user) { ob2Go(7); return; }
+    const updates = {
+      weight_kg: parseFloat(document.getElementById('ob2-weight')?.value)||null,
+      height_cm: parseFloat(document.getElementById('ob2-height')?.value)||null,
+      goal: _ob2State.goal || obGoal,
+      experience_level: _ob2State.exp || null,
+      training_days: parseInt(_ob2State.freq)||null,
+      focus_areas: _ob2State.focus.length ? _ob2State.focus : null,
+    };
+    if(obMacros){
+      updates.calorie_goal = obMacros.cal;
+      updates.protein_goal = obMacros.pro;
+      updates.carb_goal    = obMacros.carb;
+      updates.fat_goal     = obMacros.fat;
+    }
+    await sb.from('profiles').update(updates).eq('id', user.id).catch(()=>{});
+    if(profile) Object.assign(profile, updates);
+    ob2Go(7);
+  };
+
+  window.ob2EnableNotifs = async function(){
+    const granted = await (typeof requestNotificationPermission==='function'
+      ? requestNotificationPermission() : Promise.resolve(false));
+    if(granted && typeof scheduleDailyReminder==='function') scheduleDailyReminder();
+    ob2FinishFlow();
+  };
+
+  window.ob2FinishFlow = async function(){
+    if(typeof hideOnboarding==='function') hideOnboarding();
+    await sb.from('profiles').update({onboarding_done:true}).eq('id',user?.id||'').catch(()=>{});
+    if(profile) profile.onboarding_done = true;
+    const toast = typeof fpToast==='function'?fpToast:showToast;
+    toast('Welcome to Forte. Let\'s get to work 🔥');
+    if(typeof loadFeedPosts==='function') loadFeedPosts();
+  };
+
+  /* ── 6. OVERRIDE obStep / obNext to use new system ───────────────── */
+  obStep = function(n){ ob2Go(n); };
+  obNext = function(n){ ob2Go(n); };
+  obFinish = ob2FinishFlow;
+
+  /* Init chrome */
+  ob2UpdateChrome(1);
+
+})();
 </script>
 
 </html>
