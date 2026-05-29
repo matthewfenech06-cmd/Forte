@@ -24873,24 +24873,41 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   };
 
   window.ob2SaveStats = async function(){
-    if(!user) { ob2Go(7); return; }
-    const updates = {
-      weight_kg: parseFloat(document.getElementById('ob2-weight')?.value)||null,
-      height_cm: parseFloat(document.getElementById('ob2-height')?.value)||null,
-      goal: _ob2State.goal || obGoal,
-      experience_level: _ob2State.exp || null,
-      training_days: parseInt(_ob2State.freq)||null,
-      focus_areas: _ob2State.focus.length ? _ob2State.focus : null,
-    };
-    if(obMacros){
-      updates.calorie_goal = obMacros.cal;
-      updates.protein_goal = obMacros.pro;
-      updates.carb_goal    = obMacros.carb;
-      updates.fat_goal     = obMacros.fat;
+    try {
+      if(user && user.id){
+        /* ── Safe columns that always exist in DB ─────────────── */
+        const safe = {};
+        const wt = parseFloat(document.getElementById('ob2-weight')?.value);
+        const ht = parseFloat(document.getElementById('ob2-height')?.value);
+        if(wt > 0) safe.weight_kg = wt;
+        if(ht > 0) safe.height_cm = ht;
+        // Guard obGoal in case it was never declared in original code
+        const goal = _ob2State.goal || (typeof obGoal !== 'undefined' ? obGoal : null);
+        if(goal) safe.goal = goal;
+        if(typeof obMacros !== 'undefined' && obMacros){
+          safe.calorie_goal = obMacros.cal;
+          safe.protein_goal = obMacros.pro;
+          safe.carb_goal    = obMacros.carb;
+          safe.fat_goal     = obMacros.fat;
+        }
+        if(Object.keys(safe).length){
+          const {error: e1} = await sb.from('profiles').update(safe).eq('id', user.id);
+          if(!e1 && profile) Object.assign(profile, safe);
+        }
+        /* ── New columns — may not exist until SQL migration ──── */
+        const extra = {};
+        if(_ob2State.exp)  extra.experience_level = _ob2State.exp;
+        if(_ob2State.freq) extra.training_days    = parseInt(_ob2State.freq) || null;
+        if(_ob2State.focus && _ob2State.focus.length) extra.focus_areas = _ob2State.focus;
+        if(Object.keys(extra).length){
+          await sb.from('profiles').update(extra).eq('id', user.id).catch(()=>{});
+        }
+      }
+    } catch(err){
+      console.warn('[ob2SaveStats]', err);
+    } finally {
+      ob2Go(7); // always navigate, no matter what
     }
-    await sb.from('profiles').update(updates).eq('id', user.id).catch(()=>{});
-    if(profile) Object.assign(profile, updates);
-    ob2Go(7);
   };
 
   window.ob2EnableNotifs = async function(){
