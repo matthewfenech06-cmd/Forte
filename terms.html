@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0e0e0e">
+  <title>Terms of Service — Forte</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #0e0e0e;
+      --bg2:    #1a1a1a;
+      --bg3:    #222;
+      --border: rgba(255,255,255,.08);
+      --text:   #f0f0f0;
+      --text2:  #999;
+      --text3:  #666;
+      --accent: #ff0090;
+      --radius: 16px;
+    }
+    html { background: var(--bg); color: var(--text); font-family: Inter, -apple-system, sans-serif; }
+    body { max-width: 680px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    .wordmark {
+      display: inline-flex; align-items: baseline; gap: 1px;
+      font-size: 22px; font-weight: 900; letter-spacing: -.04em;
+      color: var(--text); text-decoration: none; margin-bottom: 48px;
+    }
+    .wordmark span { color: var(--accent); }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 36px; font-weight: 900; letter-spacing: -.03em;
+      line-height: 1.1; color: var(--text); margin-bottom: 10px;
+    }
+    .meta { font-size: 14px; color: var(--text3); margin-bottom: 40px; }
+
+    .divider { height: 1px; background: var(--border); margin: 40px 0; }
+
+    h2 {
+      font-size: 18px; font-weight: 700; color: var(--text);
+      letter-spacing: -.01em; margin-bottom: 14px; margin-top: 36px;
+    }
+    h2:first-of-type { margin-top: 0; }
+
+    p { font-size: 15px; color: var(--text2); line-height: 1.7; margin-bottom: 14px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul { padding-left: 0; list-style: none; margin-bottom: 14px; }
+    ul li {
+      font-size: 15px; color: var(--text2); line-height: 1.7;
+      padding: 6px 0 6px 20px; position: relative;
+    }
+    ul li::before {
+      content: '';
+      position: absolute; left: 0; top: 15px;
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .warning {
+      background: rgba(255,0,144,.06);
+      border: 1.5px solid rgba(255,0,144,.25);
+      border-radius: var(--radius); padding: 22px 24px; margin: 24px 0;
+    }
+    .warning .warning-label {
+      font-size: 11px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
+    }
+    .warning p { color: var(--text); font-size: 14px; line-height: 1.65; margin-bottom: 0; }
+
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px; margin: 16px 0;
+    }
+    .card p { margin-bottom: 0; }
+
+    .highlight {
+      border-left: 3px solid var(--accent); padding-left: 16px; margin: 20px 0;
+    }
+    .highlight p { color: var(--text); font-size: 14px; line-height: 1.6; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 14px; font-weight: 600; color: var(--text3);
+      text-decoration: none; margin-bottom: 40px; transition: color .15s;
+    }
+    .back:hover { color: var(--text); text-decoration: none; }
+
+    .contact-card {
+      background: linear-gradient(135deg, rgba(255,0,144,.06), rgba(255,0,144,.02));
+      border: 1.5px solid rgba(255,0,144,.2);
+      border-radius: var(--radius); padding: 24px; margin-top: 24px;
+    }
+    .contact-card p { margin-bottom: 6px; }
+    .contact-card p:last-child { margin-bottom: 0; }
+
+    /* Community guidelines table */
+    .rules-grid {
+      display: grid; gap: 10px; margin: 16px 0;
+    }
+    .rule {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+      display: flex; align-items: flex-start; gap: 12px;
+    }
+    .rule-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+    .rule-text { flex: 1; }
+    .rule-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .rule-body { font-size: 13px; color: var(--text2); line-height: 1.5; }
+
+    @media (max-width: 480px) {
+      body { padding: 28px 18px 60px; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="/" class="back">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+    Back to Forte
+  </a>
+
+  <a href="/" class="wordmark">forte<span>.</span></a>
+
+  <div class="tag">Legal</div>
+  <h1>Terms of Service</h1>
+  <p class="meta">Last updated: 29 May 2026</p>
+
+  <div class="highlight">
+    <p>By creating a Forte account or using the app, you agree to these terms. Please read them. If you disagree with any part, you should not use Forte.</p>
+  </div>
+
+  <!-- ── MEDICAL DISCLAIMER — most prominent section ── -->
+  <div class="warning" id="medical">
+    <div class="warning-label">Important health notice</div>
+    <p>Forte provides general fitness and nutrition information only. <strong>It is not a medical service and nothing in the app constitutes medical advice, diagnosis, or treatment.</strong> Calorie and macro targets are mathematical estimates — they are not prescriptions. Always consult a qualified healthcare professional before starting any new exercise programme, making significant changes to your diet, or if you have any existing health conditions. By using Forte, you accept full responsibility for how you apply the information provided.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <h2>1. Acceptance of terms</h2>
+  <p>These Terms of Service ("Terms") govern your access to and use of Forte, operated by <strong>INSERT_YOUR_NAME_OR_COMPANY</strong> ("we", "us", "our"). By creating an account, you confirm you have read, understood, and agree to be bound by these Terms and our <a href="/privacy">Privacy Policy</a>.</p>
+
+  <h2>2. Eligibility</h2>
+  <p>You must be at least <strong>17 years old</strong> to use Forte. By using the app, you represent that you meet this age requirement. If you are under 17, do not create an account. We reserve the right to terminate accounts that we reasonably believe belong to underage users.</p>
+
+  <h2>3. Your account</h2>
+  <ul>
+    <li>You are responsible for keeping your password secure and for all activity that occurs under your account.</li>
+    <li>You must provide accurate information when registering. Fake or impersonation accounts are prohibited.</li>
+    <li>You may not share your account with others.</li>
+    <li>Notify us immediately at <a href="mailto:INSERT_YOUR_EMAIL">INSERT_YOUR_EMAIL</a> if you suspect unauthorised access to your account.</li>
+    <li>You may delete your account at any time via Settings in the app.</li>
+  </ul>
+
+  <h2>4. User-generated content</h2>
+  <p>Forte lets you post workouts, photos, comments, and other content ("User Content"). You retain ownership of your User Content.</p>
+  <p>By posting User Content, you grant Forte a non-exclusive, worldwide, royalty-free licence to display, reproduce, and distribute that content within the app for the purpose of providing the service. This licence ends when you delete the content or close your account.</p>
+  <p>You are solely responsible for your User Content. You represent that you own it or have the rights to share it, and that it does not violate any law or third-party rights.</p>
+
+  <h2>5. Community standards</h2>
+  <p>Forte is built around positive motivation. The following content and behaviour is prohibited:</p>
+
+  <div class="rules-grid">
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Harassment and abuse</div>
+        <div class="rule-body">Targeting, threatening, or intimidating any user. Zero tolerance.</div>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Harmful health content</div>
+        <div class="rule-body">Promoting extreme dieting, disordered eating, dangerous supplements, or exercise practices that could cause injury.</div>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Spam and fake accounts</div>
+        <div class="rule-body">Automated posting, follow/unfollow bots, impersonation, or creating multiple accounts to evade a ban.</div>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Illegal content</div>
+        <div class="rule-body">Anything that violates applicable law, including content that infringes copyright, depicts illegal activity, or constitutes fraud.</div>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Explicit or hateful content</div>
+        <div class="rule-body">Nudity, sexual content, hate speech based on race, gender, religion, disability, or any other protected characteristic.</div>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="rule-icon">🚫</div>
+      <div class="rule-text">
+        <div class="rule-title">Unsolicited promotion</div>
+        <div class="rule-body">Spamming other users with promotions, affiliate links, or commercial solicitation without their consent.</div>
+      </div>
+    </div>
+  </div>
+
+  <p>Violations may result in content removal, temporary suspension, or permanent account termination at our discretion. You can report violations using the in-app report feature.</p>
+
+  <h2>6. DMCA and intellectual property</h2>
+  <p>We respect intellectual property rights and expect users to do the same. If you believe your copyrighted work has been posted on Forte without authorisation, please contact our designated DMCA agent at <a href="mailto:INSERT_YOUR_EMAIL">INSERT_YOUR_EMAIL</a> with (a) identification of the copyrighted work, (b) identification of the infringing content, (c) your contact information, and (d) a statement that you have a good faith belief the use is not authorised.</p>
+  <p>The Forte name, logo, and design are our intellectual property. You may not use them without written permission.</p>
+
+  <h2>7. Fitness and nutrition disclaimer</h2>
+  <div class="warning">
+    <div class="warning-label">Fitness disclaimer</div>
+    <p>Exercise carries inherent risk of injury. Forte does not assess your individual fitness level, medical history, or physical condition. Workout suggestions and nutrition targets are general in nature. We are not responsible for any injury, illness, or adverse health outcome resulting from the use of Forte. Consult a doctor before beginning any exercise programme, especially if you have a pre-existing condition.</p>
+  </div>
+
+  <h2>8. Prohibited technical use</h2>
+  <ul>
+    <li>Reverse engineering, decompiling, or attempting to extract the app's source code</li>
+    <li>Using automated tools to scrape, crawl, or extract data from Forte</li>
+    <li>Attempting to gain unauthorised access to any part of the service or its infrastructure</li>
+    <li>Introducing malware, viruses, or any harmful code</li>
+    <li>Using the service in a way that could damage, disable, or impair it</li>
+  </ul>
+
+  <h2>9. Termination</h2>
+  <p>We may suspend or terminate your account at any time if we believe you have violated these Terms. You may close your account at any time via Settings. Upon termination, your right to use Forte ceases immediately. Content you have posted may remain visible temporarily until our deletion process completes (up to 30 days).</p>
+
+  <h2>10. Disclaimers</h2>
+  <p>Forte is provided "as is" and "as available" without any warranties, express or implied. We do not warrant that the service will be uninterrupted, error-free, or free from harmful components. To the fullest extent permitted by law, we disclaim all warranties including fitness for a particular purpose and non-infringement.</p>
+
+  <h2>11. Limitation of liability</h2>
+  <p>To the maximum extent permitted by applicable law, INSERT_YOUR_NAME_OR_COMPANY shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of profits, data, or goodwill, arising from your use of or inability to use Forte, even if we have been advised of the possibility of such damages. Our total aggregate liability to you for any claims arising from your use of Forte shall not exceed the amount you paid us in the 12 months preceding the claim (if applicable).</p>
+
+  <h2>12. Governing law</h2>
+  <p>These Terms are governed by the laws of <strong>INSERT_YOUR_COUNTRY / JURISDICTION</strong>, without regard to conflict-of-law principles. Any disputes shall be resolved in the courts of that jurisdiction, and you consent to the personal jurisdiction of those courts.</p>
+
+  <h2>13. Changes to these terms</h2>
+  <p>We may update these Terms from time to time. If we make material changes, we will notify you via the app or email at least 7 days before the changes take effect. Your continued use of Forte after that date constitutes your acceptance of the revised Terms.</p>
+
+  <h2>14. Contact us</h2>
+
+  <div class="contact-card">
+    <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#ff0090;margin-bottom:12px">Questions about these terms</p>
+    <p>Email: <a href="mailto:INSERT_YOUR_EMAIL">INSERT_YOUR_EMAIL</a></p>
+    <p>Operator: INSERT_YOUR_NAME_OR_COMPANY</p>
+    <p>DMCA / content removal: <a href="mailto:INSERT_YOUR_EMAIL">INSERT_YOUR_EMAIL</a></p>
+  </div>
+
+  <div class="divider"></div>
+  <p style="font-size:13px;color:var(--text3);text-align:center">
+    <a href="/privacy">Privacy Policy</a> &nbsp;·&nbsp;
+    <a href="/">Back to Forte</a>
+  </p>
+
+</body>
+</html>

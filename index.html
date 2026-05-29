@@ -24748,6 +24748,14 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
               <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-top:2px">fats</div>
             </div>
           </div>
+          <!-- Medical disclaimer — required for App Store -->
+          <div style="margin-top:14px;padding:11px 14px;background:rgba(255,255,255,.03);
+            border-radius:10px;border-left:2px solid rgba(255,0,144,.35)">
+            <div style="font-size:11px;color:var(--text3);line-height:1.55">
+              Estimates only, based on the Mifflin-St Jeor formula. Forte is not a medical service.
+              Consult a healthcare professional before changing your diet or exercise routine.
+            </div>
+          </div>
         </div>
       </div>
       <div style="padding:20px 24px calc(env(safe-area-inset-bottom,20px) + 80px)">
@@ -25255,6 +25263,21 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   /* ── Dev helper ───────────────────────────────────────────── */
   window.forteLaunchTutorial = launchTutorial;
 
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   LEGAL PAGES — open /privacy and /terms as full pages
+   Overrides the old inline modals so Apple reviewers get real URLs
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  // Open the hosted legal page in the same tab (back button returns to app)
+  window.forteShowPrivacyPolicy = function(){
+    window.open('/privacy', '_blank', 'noopener');
+  };
+  window.forteShowTerms = function(){
+    window.open('/terms', '_blank', 'noopener');
+  };
 })();
 </script>
 
