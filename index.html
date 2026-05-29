@@ -24219,6 +24219,232 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 })();
 
 
+/* ── FORTE ANIMATIONS ────────────────────────────────────────────────── */
+(function(){
+  'use strict';
+
+  /* ── CSS keyframes ───────────────────────────────────────────────── */
+  const kf = document.createElement('style');
+  kf.textContent = `
+    @media(prefers-reduced-motion:no-preference){
+      @keyframes forte-heart-pop{
+        0%  {transform:scale(1)}
+        25% {transform:scale(1.65)}
+        55% {transform:scale(.88)}
+        80% {transform:scale(1.12)}
+        100%{transform:scale(1)}
+      }
+      @keyframes forte-check-in{
+        0%  {transform:scale(0) rotate(-15deg);opacity:0}
+        60% {transform:scale(1.15) rotate(3deg);opacity:1}
+        100%{transform:scale(1) rotate(0deg);opacity:1}
+      }
+      @keyframes forte-slide-up{
+        from{transform:translateY(14px);opacity:0}
+        to  {transform:translateY(0);opacity:1}
+      }
+    }
+  `;
+  document.head.appendChild(kf);
+
+  /* ════════════════════════════════════════════════════════════════
+     1. CONFETTI ENGINE
+     forteConfetti(x?, y?)  — canvas overlay, ~80 particles, 3 s
+  ════════════════════════════════════════════════════════════════ */
+  window.forteConfetti = function(ox, oy){
+    const W = window.innerWidth, H = window.innerHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    canvas.style.cssText = 'position:fixed;inset:0;z-index:10001;pointer-events:none';
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const COLS = ['#ff0090','#ffffff','#ff66bb','#ffca00','rgba(255,0,144,.65)'];
+    const cx = ox ?? W * .5, cy = oy ?? H * .38;
+
+    const P = Array.from({length:82},()=>({
+      x: cx + (Math.random()-.5)*60,
+      y: cy,
+      vx:(Math.random()-.5)*14,
+      vy:(Math.random()*-12) - 3,
+      rot:Math.random()*360,
+      rv:(Math.random()-.5)*9,
+      col:COLS[Math.floor(Math.random()*COLS.length)],
+      w: Math.random()*7+3,
+      h: Math.random()*4+2,
+      op:1,
+    }));
+
+    let frame = 0;
+    function tick(){
+      ctx.clearRect(0,0,W,H);
+      P.forEach(p=>{
+        p.x+=p.vx; p.y+=p.vy; p.vy+=.22; p.vx*=.99;
+        p.rot+=p.rv; p.op -= .0055;
+        if(p.op<=0) return;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0,p.op);
+        ctx.translate(p.x,p.y);
+        ctx.rotate(p.rot*Math.PI/180);
+        ctx.fillStyle = p.col;
+        ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      });
+      if(++frame < 200) requestAnimationFrame(tick);
+      else canvas.remove();
+    }
+    requestAnimationFrame(tick);
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+     2. LIKE HEART BURST
+     Overrides toggleLike to spring-animate the heart + sparkles
+  ════════════════════════════════════════════════════════════════ */
+  function _heartBurst(el){
+    if(window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    const svg = el.querySelector('svg');
+    if(!svg) return;
+    svg.style.animation = 'none';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      svg.style.animation = 'forte-heart-pop 360ms cubic-bezier(.34,1.56,.64,1) forwards';
+    }));
+    // 8 sparkle dots
+    const r = el.getBoundingClientRect();
+    const cx = r.left+r.width/2, cy = r.top+r.height/2;
+    for(let i=0;i<8;i++){
+      const ang = (i/8)*Math.PI*2;
+      const dist = 26+Math.random()*12;
+      const dot = document.createElement('div');
+      dot.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;
+        width:5px;height:5px;border-radius:50%;background:#ff0090;
+        pointer-events:none;z-index:9999;
+        transform:translate(-50%,-50%);
+        transition:transform 380ms cubic-bezier(.25,.46,.45,.94),opacity 350ms ease;`;
+      document.body.appendChild(dot);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        dot.style.transform=`translate(calc(-50% + ${Math.cos(ang)*dist}px),calc(-50% + ${Math.sin(ang)*dist}px)) scale(0)`;
+        dot.style.opacity='0';
+      }));
+      setTimeout(()=>dot.remove(),420);
+    }
+  }
+
+  const _prevTL = typeof toggleLike==='function'?toggleLike:null;
+  toggleLike = async function(postId, el){
+    if(el) _heartBurst(el);
+    if(_prevTL) return _prevTL(postId, el);
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+     3. FEED POST STAGGER ENTRANCE
+     MutationObserver watches #feed-posts; cascades each new card in
+  ════════════════════════════════════════════════════════════════ */
+  (function initStagger(){
+    const feed = document.getElementById('feed-posts');
+    if(!feed) return;
+    if(window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    let idx = 0, batchTimer;
+    new MutationObserver(muts=>{
+      clearTimeout(batchTimer);
+      muts.forEach(m=>m.addedNodes.forEach(node=>{
+        if(node.nodeType!==1) return;
+        const delay = Math.min(idx*55, 300);
+        idx++;
+        node.style.opacity='0';
+        node.style.transform='translateY(18px)';
+        node.style.transition=`opacity 280ms ease ${delay}ms,transform 260ms cubic-bezier(.4,0,.2,1) ${delay}ms`;
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          node.style.opacity='1';
+          node.style.transform='translateY(0)';
+        }));
+        setTimeout(()=>{node.style.transition='';node.style.opacity='';node.style.transform='';},delay+300);
+      }));
+      batchTimer=setTimeout(()=>{idx=0;},600);
+    }).observe(feed,{childList:true});
+  })();
+
+  /* ════════════════════════════════════════════════════════════════
+     4. WORKOUT COMPLETION CELEBRATION
+     Shows a 2.5 s full-screen overlay with confetti after saving
+  ════════════════════════════════════════════════════════════════ */
+  window.forteWorkoutCelebration = function(name, exCount, setCount){
+    const el = document.createElement('div');
+    el.style.cssText = `position:fixed;inset:0;z-index:9996;background:var(--bg);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      text-align:center;padding:40px 28px;opacity:0;
+      transition:opacity 220ms ease;pointer-events:none`;
+    el.innerHTML = `
+      <div style="width:88px;height:88px;border-radius:50%;
+        background:rgba(255,0,144,.14);border:2px solid #ff0090;
+        display:flex;align-items:center;justify-content:center;
+        font-size:40px;margin-bottom:24px;color:#ff0090;font-weight:900;
+        animation:forte-check-in 420ms cubic-bezier(.34,1.56,.64,1) .1s both">✓</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;
+        color:#ff0090;margin-bottom:10px;
+        animation:forte-slide-up 300ms ease .2s both">Workout complete</div>
+      <div style="font-size:30px;font-weight:900;letter-spacing:-.02em;color:var(--text);
+        line-height:1.1;margin-bottom:10px;
+        animation:forte-slide-up 300ms ease .28s both">${name||'Great session'}</div>
+      <div style="font-size:15px;color:var(--text2);
+        animation:forte-slide-up 300ms ease .36s both">
+        ${exCount||0} exercise${exCount!==1?'s':''} · ${setCount||0} sets
+      </div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ el.style.opacity='1'; }));
+    setTimeout(()=>{
+      forteConfetti(window.innerWidth/2, window.innerHeight*.35);
+    },280);
+    setTimeout(()=>{
+      el.style.opacity='0';
+      setTimeout(()=>el.remove(),250);
+    },2600);
+  };
+
+  /* Hook into saveWorkout */
+  const _prevSW = typeof saveWorkout==='function'?saveWorkout:null;
+  saveWorkout = async function(){
+    /* Snapshot exercise/set counts before saving */
+    const snap = window.pendingWorkoutSnapshot||[];
+    const exCount = snap.length;
+    const setCount = snap.reduce((a,ex)=>a+(ex.sets?.length||0),0);
+    const wTitle = document.getElementById('workout-title')?.value ||
+                   document.getElementById('wk-name')?.value || 'Session';
+    if(_prevSW) await _prevSW.apply(this,arguments);
+    if(exCount > 0) forteWorkoutCelebration(wTitle, exCount, setCount);
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+     5. NAV TAB MICRO-BOUNCE
+     Each .nav-item tap springs its icon down then back up
+  ════════════════════════════════════════════════════════════════ */
+  (function initNavBounce(){
+    if(window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    document.querySelectorAll('.nav-item').forEach(item=>{
+      item.addEventListener('click',function(){
+        const icon = this.querySelector('svg');
+        if(!icon) return;
+        icon.style.transition='transform 80ms ease';
+        icon.style.transform='scale(.72)';
+        setTimeout(()=>{
+          icon.style.transition='transform 300ms cubic-bezier(.34,1.56,.64,1)';
+          icon.style.transform='scale(1)';
+          setTimeout(()=>{icon.style.transition='';icon.style.transform='';},320);
+        },80);
+      });
+    });
+  })();
+
+  /* Also fire confetti from forteShowBadgeUnlock if it exists */
+  const _prevBU = typeof forteShowBadgeUnlock==='function'?forteShowBadgeUnlock:null;
+  if(_prevBU){
+    forteShowBadgeUnlock = function(badge){
+      _prevBU(badge);
+      setTimeout(()=>forteConfetti(window.innerWidth/2, window.innerHeight*.5),400);
+    };
+  }
+
+})();
+
 /* ── ONBOARDING V2: redesigned 7-step flow with slide transitions ───── */
 (function(){
   'use strict';
