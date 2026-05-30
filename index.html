@@ -821,7 +821,7 @@ body.light .exercise-start-card.workout{color:#fff}
     <div id="feed-quick-tabs" class="feed-quick-tabs">
       <button class="feed-qtab active" onclick="openFeedQuickSection('leagues')">🏆 Leagues</button>
       <button class="feed-qtab" onclick="openFeedQuickSection('recipes')">🍽️ Recipes</button>
-      <button class="feed-qtab" onclick="openExplore()">🗺️ Explore</button>
+      <button class="feed-qtab" id="explore-qtab" onclick="openExplore()">🗺️ Explore</button>
     </div>
   </div>
   <div id="feed-mode-tabs" style="display:flex;gap:8px;padding:12px 20px 0">
@@ -24979,6 +24979,12 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       icon:  '📱',
       title: 'Your social feed',
       body:  'See workouts from people you follow. React, comment, and stay motivated.',
+    },
+    {
+      id:    'explore-qtab',
+      icon:  '🗺️',
+      title: 'Explore Malta',
+      body:  'Find macro-friendly restaurants and healthy spots near you, rated by the Forte community.',
     },
     {
       id:    'log-fab',
