@@ -2,12 +2,22 @@
   "name": "Forte",
   "short_name": "Forte",
   "description": "Train. Eat. Compete. Repeat.",
+  "id": "com.forte.app",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
   "orientation": "portrait",
+  "categories": ["health", "fitness", "social"],
+  "lang": "en",
   "icons": [
+    {
+      "src": "/forte-apple-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/forte-icon.svg",
       "sizes": "192x192",
@@ -18,7 +28,29 @@
       "src": "/forte-icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/forte-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Log Workout",
+      "short_name": "Workout",
+      "description": "Log a new workout",
+      "url": "/?action=log-workout",
+      "icons": [{ "src": "/forte-icon.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Log Meal",
+      "short_name": "Nutrition",
+      "description": "Log a meal",
+      "url": "/?action=log-meal",
+      "icons": [{ "src": "/forte-icon.svg", "sizes": "96x96" }]
     }
   ]
 }

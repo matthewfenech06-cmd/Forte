@@ -17,6 +17,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Forte</title>
+<!-- PWA + iOS home screen -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Forte">
+<link rel="apple-touch-icon" sizes="180x180" href="/forte-apple-icon.png">
+<!-- SEO / social sharing -->
+<meta name="description" content="Train. Eat. Compete. Repeat. The fitness social app that keeps you accountable.">
+<meta property="og:title" content="Forte">
+<meta property="og:description" content="Workouts, nutrition, and social accountability in one app.">
+<meta property="og:type" content="website">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -25278,6 +25290,208 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   window.forteShowTerms = function(){
     window.open('/terms', '_blank', 'noopener');
   };
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   FEED DISCOVERY — replace empty feed with "Who to follow" cards
+   so new users (and Apple reviewers) see value immediately.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  async function getSuggested() {
+    if (!window.user) return [];
+    try {
+      /* Get active profiles, exclude self */
+      const { data } = await sb.from('profiles')
+        .select('id,username,full_name,avatar_url')
+        .neq('id', window.user.id)
+        .not('username', 'is', null)
+        .limit(8);
+      return data || [];
+    } catch(e) { return []; }
+  }
+
+  function suggestionRow(u) {
+    const initials = ((u.full_name||u.username||'?')[0]).toUpperCase();
+    const avatar = u.avatar_url
+      ? `<img src="${u.avatar_url}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0">`
+      : `<div style="width:44px;height:44px;border-radius:50%;background:rgba(255,0,144,.15);`
+        +`border:1.5px solid rgba(255,0,144,.3);display:flex;align-items:center;justify-content:center;`
+        +`font-size:17px;font-weight:700;color:#ff0090;flex-shrink:0">${initials}</div>`;
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 0;
+        border-bottom:1px solid var(--border)" data-uid="${u.id}">
+        <div onclick="viewProfile && viewProfile('${u.id}')" style="cursor:pointer">${avatar}</div>
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="viewProfile && viewProfile('${u.id}')">
+          <div style="font-size:14px;font-weight:700;color:var(--text);
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${u.full_name || u.username || 'Forte user'}</div>
+          <div style="font-size:12px;color:var(--text3)">@${u.username||''}</div>
+        </div>
+        <button onclick="forteSugFollow('${u.id}',this)"
+          style="background:rgba(255,0,144,.1);border:1.5px solid rgba(255,0,144,.35);
+          border-radius:20px;padding:7px 16px;font-size:12px;font-weight:700;
+          color:#ff0090;cursor:pointer;flex-shrink:0;white-space:nowrap;
+          transition:all .15s;-webkit-tap-highlight-color:transparent">
+          Follow
+        </button>
+      </div>`;
+  }
+
+  window.forteSugFollow = async function(uid, btn) {
+    btn.textContent = 'Following';
+    btn.style.background = 'rgba(255,0,144,.2)';
+    btn.disabled = true;
+    if (typeof quickFollow === 'function') {
+      await quickFollow(uid, btn);
+    } else {
+      await sb.from('friendships').upsert({
+        requester_id: window.user?.id, addressee_id: uid, status: 'accepted'
+      }).catch(()=>{});
+    }
+  };
+
+  /* Wrap loadFeedPosts — inject discovery UI when feed is empty */
+  const _origLFP = window.loadFeedPosts;
+  window.loadFeedPosts = async function() {
+    if (typeof _origLFP === 'function') await _origLFP();
+
+    setTimeout(async function() {
+      const container = document.getElementById('feed-posts');
+      if (!container) return;
+      /* Detect empty state: no .workout-post children */
+      if (container.querySelector('.workout-post')) return;
+
+      const users = await getSuggested();
+      if (!users.length) return;
+
+      container.innerHTML =
+        '<div style="padding:28px 20px 0">'
+          +'<div style="font-size:22px;font-weight:900;letter-spacing:-.025em;'
+            +'color:var(--text);margin-bottom:6px">Find people to follow</div>'
+          +'<div style="font-size:14px;color:var(--text2);margin-bottom:4px">'
+            +'Your feed fills up as you follow others.</div>'
+        +'</div>'
+        +'<div style="padding:0 20px">'
+          + users.map(suggestionRow).join('')
+        +'</div>'
+        +'<div style="padding:20px">'
+          +'<button onclick="if(typeof showScreen===\'function\')showScreen(\'feed\')" '
+            +'style="width:100%;background:var(--bg3);border:1.5px solid var(--border);'
+            +'border-radius:var(--radius-sm);padding:14px;font-size:14px;font-weight:700;'
+            +'color:var(--text2);cursor:pointer;transition:all .15s">'
+            +'Browse community posts</button>'
+        +'</div>';
+    }, 200);
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   ADD TO HOME SCREEN — iOS Safari install prompt.
+   Shows a bottom sheet on the 2nd visit with step-by-step
+   instructions. Only shown on iOS Safari outside standalone mode.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  const A2HS_KEY = 'forte_a2hs_v1';
+  const VISITS_KEY = 'forte_visits';
+
+  /* Only relevant on iOS Safari, not in standalone (already installed) */
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches;
+
+  if (!isIOS || isStandalone || localStorage.getItem(A2HS_KEY)) return;
+
+  /* Track visits */
+  const visits = parseInt(localStorage.getItem(VISITS_KEY) || '0') + 1;
+  localStorage.setItem(VISITS_KEY, visits);
+
+  /* Show on 2nd and 5th visit (in case they dismissed the first time) */
+  if (visits !== 2 && visits !== 5) return;
+
+  function showPrompt() {
+    if (document.getElementById('forte-a2hs') || localStorage.getItem(A2HS_KEY)) return;
+
+    const sheet = document.createElement('div');
+    sheet.id = 'forte-a2hs';
+    sheet.style.cssText =
+      'position:fixed;bottom:0;left:0;right:0;z-index:9980;'
+      +'background:var(--bg2,#1a1a1a);border-radius:22px 22px 0 0;'
+      +'padding:14px 20px calc(env(safe-area-inset-bottom,0px)+24px);'
+      +'box-shadow:0 -12px 48px rgba(0,0,0,.6);'
+      +'transform:translateY(100%);'
+      +'transition:transform 340ms cubic-bezier(.34,1.1,.64,1)';
+
+    sheet.innerHTML =
+      '<div style="width:40px;height:4px;border-radius:2px;'
+        +'background:rgba(255,255,255,.12);margin:0 auto 20px"></div>'
+      +'<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">'
+        +'<div style="width:52px;height:52px;border-radius:14px;overflow:hidden;flex-shrink:0;'
+          +'background:#0a0a0a;border:1px solid rgba(255,255,255,.08)">'
+          +'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="52" height="52">'
+            +'<rect width="192" height="192" fill="#0a0a0a"/>'
+            +'<rect x="28" y="132" width="24" height="38" rx="6" fill="#ff0090" opacity=".2"/>'
+            +'<rect x="62" y="102" width="24" height="68" rx="6" fill="#ff0090" opacity=".45"/>'
+            +'<rect x="96" y="72" width="24" height="98" rx="6" fill="#ff0090" opacity=".7"/>'
+            +'<rect x="130" y="36" width="24" height="134" rx="6" fill="#ff0090"/>'
+          +'</svg>'
+        +'</div>'
+        +'<div>'
+          +'<div style="font-size:18px;font-weight:900;color:var(--text,#f0f0f0);'
+            +'letter-spacing:-.02em;margin-bottom:4px">Add Forte to your<br>Home Screen</div>'
+          +'<div style="font-size:13px;color:var(--text3,#666)">Faster launch, full screen, no browser bar</div>'
+        +'</div>'
+      +'</div>'
+      /* Steps */
+      +'<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">'
+        +'<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;'
+          +'background:rgba(255,255,255,.04);border-radius:12px">'
+          +'<div style="width:28px;height:28px;border-radius:8px;background:rgba(255,0,144,.12);'
+            +'border:1px solid rgba(255,0,144,.25);display:flex;align-items:center;'
+            +'justify-content:center;flex-shrink:0;font-size:13px;font-weight:700;color:#ff0090">1</div>'
+          +'<div style="font-size:13px;color:var(--text2,#999)">Tap the'
+            +' <svg style="display:inline;vertical-align:middle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>'
+            +' <strong style="color:var(--text,#f0f0f0)">Share</strong> button at the bottom of Safari</div>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;'
+          +'background:rgba(255,255,255,.04);border-radius:12px">'
+          +'<div style="width:28px;height:28px;border-radius:8px;background:rgba(255,0,144,.12);'
+            +'border:1px solid rgba(255,0,144,.25);display:flex;align-items:center;'
+            +'justify-content:center;flex-shrink:0;font-size:13px;font-weight:700;color:#ff0090">2</div>'
+          +'<div style="font-size:13px;color:var(--text2,#999)">Scroll down and tap'
+            +' <strong style="color:var(--text,#f0f0f0)">Add to Home Screen</strong></div>'
+        +'</div>'
+      +'</div>'
+      +'<button onclick="window._a2hsDismiss(true)" style="width:100%;background:#ff0090;'
+        +'color:#fff;border:none;border-radius:var(--radius-sm,12px);padding:14px;'
+        +'font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px">Got it</button>'
+      +'<button onclick="window._a2hsDismiss(false)" style="width:100%;background:none;'
+        +'border:none;color:var(--text3,#666);font-size:14px;font-weight:600;cursor:pointer;'
+        +'padding:10px">Not now</button>';
+
+    document.body.appendChild(sheet);
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        sheet.style.transform = 'translateY(0)';
+      });
+    });
+  }
+
+  window._a2hsDismiss = function(permanent) {
+    if (permanent) localStorage.setItem(A2HS_KEY, '1');
+    const sheet = document.getElementById('forte-a2hs');
+    if (sheet) {
+      sheet.style.transition = 'transform 240ms cubic-bezier(0.4,0,0.2,1)';
+      sheet.style.transform = 'translateY(100%)';
+      setTimeout(function(){ sheet.remove(); }, 250);
+    }
+  };
+
+  /* Wait until app is loaded and user is settled */
+  setTimeout(showPrompt, 4000);
 })();
 
 /* ═══════════════════════════════════════════════════════════════
