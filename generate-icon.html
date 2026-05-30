@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forte Icon Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0a; color: #f0f0f0; font-family: Inter, -apple-system, sans-serif;
+      min-height: 100vh; padding: 40px 24px; }
+    h1 { font-size: 28px; font-weight: 900; letter-spacing: -.03em; margin-bottom: 6px; }
+    h1 span { color: #ff0090; }
+    .sub { font-size: 14px; color: #666; margin-bottom: 40px; line-height: 1.6; }
+    .row { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 40px; align-items: flex-end; }
+    .preview { text-align: center; }
+    .preview canvas { border-radius: 22.5%; display: block; margin-bottom: 10px; }
+    .preview .label { font-size: 12px; color: #666; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; margin-bottom: 8px; }
+    .btn { display: block; background: #ff0090; color: white; border: none; font-size: 13px;
+      font-weight: 700; cursor: pointer; padding: 10px 18px; border-radius: 10px;
+      transition: opacity .15s; font-family: Inter, sans-serif; }
+    .btn:hover { opacity: .85; }
+    .step { background: #1a1a1a; border: 1px solid rgba(255,255,255,.08); border-radius: 16px;
+      padding: 20px 22px; margin-bottom: 12px; }
+    .step-num { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+      color: #ff0090; margin-bottom: 6px; }
+    .step-title { font-size: 15px; font-weight: 700; color: #f0f0f0; margin-bottom: 4px; }
+    .step-body { font-size: 13px; color: #666; line-height: 1.6; }
+    code { background: #222; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #ff0090; }
+    h2 { font-size: 18px; font-weight: 700; letter-spacing: -.01em; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+
+<div style="max-width:600px;margin:0 auto">
+  <div style="font-size:20px;font-weight:900;letter-spacing:-.04em;margin-bottom:6px">
+    forte<span style="color:#ff0090">.</span>
+  </div>
+  <h1>Icon<span style="color:var(--text,#f0f0f0)"> Generator</span></h1>
+  <p class="sub">Download the app icon in every size you need for App Store submission and iOS home screen.</p>
+
+  <!-- Preview row -->
+  <h2>Previews + Downloads</h2>
+  <div class="row" id="previews"></div>
+
+  <!-- Instructions -->
+  <h2 style="margin-top:8px">How to use</h2>
+
+  <div class="step">
+    <div class="step-num">Step 1</div>
+    <div class="step-title">Download 1024x1024</div>
+    <div class="step-body">This is your App Store icon. Save it as <code>forte-icon-1024.png</code>. No alpha channel required (it has a solid background already).</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">Step 2</div>
+    <div class="step-title">Download 180x180 (iPhone)</div>
+    <div class="step-body">Rename it <code>forte-apple-icon.png</code> and drop it in your Forte project folder. This is the home screen icon for iOS Safari.</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">Step 3</div>
+    <div class="step-title">App Store Connect</div>
+    <div class="step-body">In App Store Connect, upload the 1024x1024 PNG to App Information. Xcode / PWABuilder will handle the other sizes automatically from this source.</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">Step 4</div>
+    <div class="step-title">Add to project</div>
+    <div class="step-body">After saving <code>forte-apple-icon.png</code> to the Forte folder, commit it:<br>
+      <code>git add forte-apple-icon.png &amp;&amp; git commit -m "add apple touch icon" &amp;&amp; git push origin main</code>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SIZES = [
+    { label: '1024x1024', desc: 'App Store', size: 1024, display: 160 },
+    { label: '512x512',   desc: 'PWABuilder', size: 512, display: 120 },
+    { label: '192x192',   desc: 'Manifest', size: 192, display: 96 },
+    { label: '180x180',   desc: 'iPhone touch', size: 180, display: 90 },
+    { label: '120x120',   desc: 'iPhone 2x', size: 120, display: 70 },
+  ];
+
+  function drawIcon(ctx, size) {
+    const s = size;
+
+    /* Background */
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, s, s);
+
+    /* Bars — proportional to original 192x192 SVG */
+    const bars = [
+      { x:28, y:132, w:24, h:38,  op:0.2 },
+      { x:62, y:102, w:24, h:68,  op:0.45 },
+      { x:96, y:72,  w:24, h:98,  op:0.7 },
+      { x:130,y:36,  w:24, h:134, op:1.0 },
+    ];
+
+    const scale = s / 192;
+
+    bars.forEach(function(b) {
+      const x = b.x * scale, y = b.y * scale;
+      const w = b.w * scale, h = b.h * scale;
+      const r = Math.max(2, 6 * scale);
+
+      ctx.fillStyle = 'rgba(255,0,144,' + b.op + ')';
+      ctx.beginPath();
+      ctx.moveTo(x+r, y);
+      ctx.lineTo(x+w-r, y);
+      ctx.quadraticCurveTo(x+w, y,   x+w, y+r);
+      ctx.lineTo(x+w, y+h-r);
+      ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+      ctx.lineTo(x+r, y+h);
+      ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+      ctx.lineTo(x, y+r);
+      ctx.quadraticCurveTo(x, y, x+r, y);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  function makePreview(cfg) {
+    const wrap = document.createElement('div');
+    wrap.className = 'preview';
+
+    /* Display canvas (scaled for preview) */
+    const display = document.createElement('canvas');
+    display.width  = cfg.display;
+    display.height = cfg.display;
+    display.style.width  = cfg.display + 'px';
+    display.style.height = cfg.display + 'px';
+    const dctx = display.getContext('2d');
+
+    /* Full-res offscreen canvas */
+    const full = document.createElement('canvas');
+    full.width  = cfg.size;
+    full.height = cfg.size;
+    drawIcon(full.getContext('2d'), cfg.size);
+    dctx.drawImage(full, 0, 0, cfg.display, cfg.display);
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = cfg.label;
+
+    const desc = document.createElement('div');
+    desc.style.cssText = 'font-size:11px;color:#444;margin-bottom:8px';
+    desc.textContent = cfg.desc;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = 'Download';
+    btn.onclick = function() {
+      const a = document.createElement('a');
+      a.download = 'forte-icon-' + cfg.size + 'x' + cfg.size + '.png';
+      a.href = full.toDataURL('image/png');
+      a.click();
+    };
+
+    wrap.appendChild(display);
+    wrap.appendChild(label);
+    wrap.appendChild(desc);
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  const container = document.getElementById('previews');
+  SIZES.forEach(function(cfg) { container.appendChild(makePreview(cfg)); });
+</script>
+</body>
+</html>
