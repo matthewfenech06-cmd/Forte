@@ -26257,6 +26257,385 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     }
   });
 })();
+
+/* ═══════════════════════════════════════════════════════════════
+   UNIVERSAL WATCH SYNC — Strava + File Upload
+   Replaces brand-specific device cards with a universal approach:
+   • Strava OAuth  — covers Garmin, WHOOP, Polar, Suunto, Fitbit,
+                     Apple Watch, Wahoo, Coros, and everything else
+   • File upload   — .FIT or .GPX from any device/app, no accounts
+   • Apple Watch   — direct iOS Shortcuts path (already built)
+
+   USER SETUP (one-time):
+   1. Go to strava.com/settings/api and create a free app
+   2. Set Authorization Callback Domain to your Forte production domain
+   3. Replace INSERT_STRAVA_CLIENT_ID below with your Client ID
+   4. Create Supabase Edge Function "forte-strava-exchange" (code below)
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* ── Update this with your Strava app Client ID ─────────────
+     Get it free at: strava.com/settings/api (takes 2 minutes)
+     ────────────────────────────────────────────────────────── */
+  var STRAVA_CLIENT_ID = 'INSERT_STRAVA_CLIENT_ID';
+
+  /* ── Edge Function code to paste into Supabase dashboard ─────
+     Name: forte-strava-exchange
+     ─────────────────────────────────────────────────────────────
+     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+     Deno.serve(async (req) => {
+       const { code, user_id } = await req.json()
+       const resp = await fetch('https://www.strava.com/oauth/token', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           client_id: Deno.env.get('STRAVA_CLIENT_ID'),
+           client_secret: Deno.env.get('STRAVA_CLIENT_SECRET'),
+           code, grant_type: 'authorization_code'
+         })
+       })
+       const tokens = await resp.json()
+       if (tokens.errors) return new Response(JSON.stringify(tokens), { status: 400 })
+       const sb = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
+       await sb.from('device_connections').upsert({
+         user_id, device_type: 'strava',
+         metadata: { access_token: tokens.access_token, refresh_token: tokens.refresh_token,
+                     expires_at: tokens.expires_at, athlete: tokens.athlete },
+         connected_at: new Date().toISOString(), last_sync: new Date().toISOString()
+       }, { onConflict: 'user_id,device_type' })
+       return new Response(JSON.stringify({ ok: true, athlete: tokens.athlete }), {
+         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+       })
+     })
+     ─────────────────────────────────────────────────────────── */
+
+  function uid(){ return window.user?.id||''; }
+  function sbUrl(){ try{ return window.sb?.supabaseUrl||''; }catch(e){ return ''; } }
+  function toast(m){ (typeof fpToast==='function'?fpToast:typeof showToast==='function'?showToast:function(){})(m); }
+
+  /* ── Detect Strava OAuth callback on page load ───────────── */
+  (function(){
+    var p = new URLSearchParams(window.location.search);
+    var code = p.get('code'), scope = p.get('scope'), state = p.get('state');
+    if(!code || !scope || state !== 'forte_strava') return;
+    try{ history.replaceState({}, '', '/'); }catch(e){}
+    // Wait for app to init, then handle
+    var t = setInterval(function(){
+      if(window.user && window.sb){
+        clearInterval(t);
+        handleStravaCallback(code);
+      }
+    }, 200);
+    setTimeout(function(){ clearInterval(t); }, 10000);
+  })();
+
+  async function handleStravaCallback(code){
+    toast('Connecting Strava...');
+    try{
+      var res = await sb.functions.invoke('forte-strava-exchange', {
+        body: { code: code, user_id: uid() }
+      });
+      if(res.error) throw res.error;
+      var athlete = res.data?.athlete;
+      var name = athlete ? (athlete.firstname+' '+athlete.lastname) : 'your account';
+      toast('Strava connected — welcome, '+name+' 🏃');
+    }catch(e){
+      console.error('Strava exchange error:', e);
+      toast('Could not connect Strava. Check the Edge Function is deployed.');
+    }
+  }
+
+  /* ── Override forteShowDevices with universal UI ─────────── */
+  var _prevShowDevices = window.forteShowDevices;
+
+  window.forteShowDevices = async function(){
+    /* Load connection state */
+    var conns = new Map();
+    if(window.user){
+      try{
+        var r = await sb.from('device_connections').select('device_type,last_sync,metadata')
+          .eq('user_id', uid());
+        (r.data||[]).forEach(function(d){ conns.set(d.device_type, d); });
+      }catch(e){}
+    }
+
+    var stravaConn   = conns.get('strava');
+    var appleConn    = conns.get('apple_health');
+
+    var ov = document.createElement('div');
+    ov.id = 'forte-dev-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:5500;background:rgba(0,0,0,.72);display:flex;align-items:flex-end';
+
+    var sh = document.createElement('div');
+    sh.style.cssText = 'width:100%;background:var(--bg,#0e0e0e);border-radius:22px 22px 0 0;'
+      +'max-height:90vh;overflow-y:auto;padding:14px 20px calc(env(safe-area-inset-bottom,0px)+28px);'
+      +'transform:translateY(100%);transition:transform 320ms cubic-bezier(.34,1.1,.64,1)';
+
+    function connectedChip(conn){
+      var ls = conn && conn.last_sync ? new Date(conn.last_sync).toLocaleDateString() : null;
+      return '<div style="text-align:right;flex-shrink:0">'
+        +'<div style="display:flex;align-items:center;gap:5px;color:#4caf7d;font-size:12px;font-weight:700;justify-content:flex-end;margin-bottom:2px">'
+          +'<div style="width:6px;height:6px;border-radius:50%;background:#4caf7d"></div>Connected</div>'
+        +(ls?'<div style="font-size:11px;color:var(--text3,#666)">Synced '+ls+'</div>':'')
+      +'</div>';
+    }
+
+    function card(icon, title, subtitle, desc, action, border){
+      return '<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;'
+        +'background:var(--bg2,#1a1a1a);border:1.5px solid '+(border||'var(--border,rgba(255,255,255,.08))')+';'
+        +'border-radius:var(--radius,16px)">'
+          +'<div style="width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.05);'
+            +'display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">'+icon+'</div>'
+          +'<div style="flex:1;min-width:0">'
+            +'<div style="font-size:15px;font-weight:700;color:var(--text,#f0f0f0);margin-bottom:1px">'+title+'</div>'
+            +'<div style="font-size:11px;font-weight:600;color:#ff0090;margin-bottom:3px">'+subtitle+'</div>'
+            +'<div style="font-size:12px;color:var(--text3,#666);line-height:1.4">'+desc+'</div>'
+          +'</div>'
+          + action
+      +'</div>';
+    }
+
+    var stravaAction = stravaConn
+      ? connectedChip(stravaConn)
+      : (STRAVA_CLIENT_ID === 'INSERT_STRAVA_CLIENT_ID'
+          ? '<div style="font-size:11px;font-weight:700;color:rgba(255,165,0,.7);background:rgba(255,165,0,.08);'
+              +'border-radius:8px;padding:6px 10px;white-space:nowrap;flex-shrink:0">Needs setup</div>'
+          : '<button onclick="forteStravaConnect()" style="background:#fc4c02;color:#fff;border:none;'
+              +'border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;'
+              +'white-space:nowrap;flex-shrink:0">Connect</button>');
+
+    var appleAction = appleConn
+      ? connectedChip(appleConn)
+      : '<button onclick="forteDeviceSetup(\'apple_health\')" style="background:#ff0090;color:#fff;border:none;'
+          +'border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;'
+          +'white-space:nowrap;flex-shrink:0">Set up</button>';
+
+    sh.innerHTML =
+      '<div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);margin:0 auto 22px"></div>'
+      +'<div style="font-size:22px;font-weight:900;color:var(--text,#f0f0f0);letter-spacing:-.025em;margin-bottom:4px">Connected Devices</div>'
+      +'<div style="font-size:14px;color:var(--text2,#999);margin-bottom:6px">Sync workout data from any wearable.</div>'
+
+      /* Strava banner */
+      +'<div style="background:rgba(252,76,2,.08);border:1px solid rgba(252,76,2,.2);border-radius:12px;'
+        +'padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:10px">'
+        +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fc4c02" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+        +'<div style="font-size:12px;color:var(--text2,#999);line-height:1.5;flex:1">'
+          +'<strong style="color:var(--text,#f0f0f0)">Strava works for every watch brand.</strong> '
+          +'Garmin, WHOOP, Polar, Suunto, Fitbit, Wahoo, Coros and more all auto-sync to Strava. Connect once, all watches sync.'
+        +'</div>'
+      +'</div>'
+
+      +'<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">'
+        + card('🟠', 'Strava', 'Recommended — works with every watch',
+            'Connect your Strava account and any watch that syncs to Strava will automatically appear in Forte.',
+            stravaAction, stravaConn ? 'rgba(76,175,125,.3)' : null)
+        + card('⌚', 'Apple Watch', 'iOS Shortcuts — no Strava needed',
+            'Direct sync from Apple Watch or Apple Health. Best for iPhone users who don\'t use Strava.',
+            appleAction, appleConn ? 'rgba(76,175,125,.3)' : null)
+        + card('📁', 'Upload a file', '.FIT or .GPX from any device',
+            'Export a workout file from Garmin Connect, Polar Flow, Suunto App, or any fitness platform and import it here.',
+            '<button onclick="forteFileUpload()" style="background:rgba(255,255,255,.08);color:var(--text,#f0f0f0);'
+              +'border:1px solid var(--border,rgba(255,255,255,.08));border-radius:10px;padding:9px 14px;'
+              +'font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">Upload</button>', null)
+      +'</div>'
+
+      /* Strava setup note */
+      +(STRAVA_CLIENT_ID === 'INSERT_STRAVA_CLIENT_ID'
+        ? '<div style="background:rgba(255,165,0,.06);border:1px solid rgba(255,165,0,.2);border-radius:12px;'
+            +'padding:12px 14px;margin-bottom:14px">'
+            +'<div style="font-size:12px;font-weight:700;color:rgba(255,165,0,.8);margin-bottom:4px">Developer setup needed</div>'
+            +'<div style="font-size:12px;color:var(--text3,#666);line-height:1.55">'
+              +'Create a free Strava app at <strong style="color:var(--text2,#999)">strava.com/settings/api</strong>, '
+              +'then update STRAVA_CLIENT_ID in the code to enable this button.</div>'
+          +'</div>'
+        : '')
+
+      +'<button onclick="document.getElementById(\'forte-dev-ov\').remove()" '
+        +'style="width:100%;background:none;border:none;color:var(--text3,#666);'
+        +'font-size:14px;font-weight:600;cursor:pointer;padding:14px 0 4px">Close</button>';
+
+    ov.appendChild(sh);
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ sh.style.transform='translateY(0)'; }); });
+  };
+
+  /* ── Strava OAuth redirect ────────────────────────────────── */
+  window.forteStravaConnect = function(){
+    var redirectUri = encodeURIComponent(window.location.origin + '/');
+    var url = 'https://www.strava.com/oauth/authorize'
+      +'?client_id='+STRAVA_CLIENT_ID
+      +'&response_type=code'
+      +'&redirect_uri='+redirectUri
+      +'&approval_prompt=auto'
+      +'&scope=activity:read_all'
+      +'&state=forte_strava';
+    window.location.href = url;
+  };
+
+  /* ── File upload (.FIT / .GPX) ───────────────────────────── */
+  window.forteFileUpload = function(){
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.gpx,.fit,.tcx';
+    input.style.display = 'none';
+    input.onchange = function(e){
+      var file = e.target.files[0];
+      if(!file) return;
+      var ext = file.name.split('.').pop().toLowerCase();
+      var reader = new FileReader();
+      if(ext === 'gpx'){
+        reader.onload = function(ev){ parseAndImportGPX(ev.target.result, file.name); };
+        reader.readAsText(file);
+      } else if(ext === 'fit'){
+        reader.onload = function(ev){ parseAndImportFIT(ev.target.result, file.name); };
+        reader.readAsArrayBuffer(file);
+      } else {
+        toast('Supported formats: .gpx and .fit');
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+    setTimeout(function(){ input.remove(); }, 5000);
+  };
+
+  /* ── GPX parser ──────────────────────────────────────────── */
+  function parseAndImportGPX(text, filename){
+    try{
+      var doc = new DOMParser().parseFromString(text, 'text/xml');
+      var name = doc.querySelector('name')?.textContent
+              || filename.replace('.gpx','') || 'Imported workout';
+      var startEl = doc.querySelector('time');
+      var startTime = startEl ? startEl.textContent : new Date().toISOString();
+
+      var trkpts = Array.from(doc.querySelectorAll('trkpt'));
+      var hrVals = [];
+      var totalDist = 0;
+      var prevLat, prevLon;
+
+      trkpts.forEach(function(pt){
+        var lat = parseFloat(pt.getAttribute('lat'));
+        var lon = parseFloat(pt.getAttribute('lon'));
+        var hr  = pt.querySelector('hr, HeartRateBpm Value, value')?.textContent;
+        if(hr) hrVals.push(parseInt(hr));
+        if(prevLat !== undefined){
+          /* Haversine */
+          var R = 6371000, dLat = (lat-prevLat)*Math.PI/180, dLon = (lon-prevLon)*Math.PI/180;
+          var a = Math.sin(dLat/2)*Math.sin(dLat/2)
+            + Math.cos(prevLat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+          totalDist += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+        prevLat = lat; prevLon = lon;
+      });
+
+      /* Try to get duration from first/last trkpt time */
+      var times = Array.from(doc.querySelectorAll('trkpt time'));
+      var durationSec = 0;
+      if(times.length >= 2){
+        durationSec = Math.round(
+          (new Date(times[times.length-1].textContent) - new Date(times[0].textContent)) / 1000
+        );
+      }
+
+      var hrAvg = hrVals.length ? Math.round(hrVals.reduce(function(a,b){return a+b;},0)/hrVals.length) : null;
+      var hrMax = hrVals.length ? Math.max.apply(null, hrVals) : null;
+
+      importParsedWorkout({
+        title: name,
+        startTime: startTime,
+        durationSec: durationSec,
+        distanceM: Math.round(totalDist),
+        heartRateAvg: hrAvg,
+        heartRateMax: hrMax,
+        source: 'gpx_upload',
+      });
+    }catch(err){
+      console.error('GPX parse error', err);
+      toast('Could not read that GPX file. Check the format and try again.');
+    }
+  }
+
+  /* ── FIT parser (loads library from CDN) ────────────────── */
+  function parseAndImportFIT(buffer, filename){
+    toast('Reading .FIT file...');
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/fit-file-parser@1.9.1/dist/fit-file-parser.min.js';
+    script.onload = function(){
+      try{
+        var parser = new FitParser({ force: true, speedUnit: 'm/s', lengthUnit: 'm', elapsedRecordField: true, mode: 'both' });
+        parser.parse(buffer, function(err, data){
+          if(err){ toast('Could not read .FIT file: '+err.message); return; }
+          var sessions = (data.activity && data.activity.sessions) || [];
+          if(!sessions.length){ toast('No workout sessions found in this file.'); return; }
+          var s = sessions[0];
+          importParsedWorkout({
+            title: (s.sport ? s.sport.charAt(0).toUpperCase()+s.sport.slice(1) : 'Workout')
+              +' — '+filename.replace('.fit',''),
+            startTime: s.start_time || new Date().toISOString(),
+            durationSec: Math.round(s.total_elapsed_time || s.total_timer_time || 0),
+            distanceM: Math.round(s.total_distance || 0),
+            calories: s.total_calories || null,
+            heartRateAvg: s.avg_heart_rate || null,
+            heartRateMax: s.max_heart_rate || null,
+            source: 'fit_upload',
+          });
+        });
+      }catch(e){ toast('Could not parse .FIT file.'); }
+    };
+    script.onerror = function(){
+      toast('Could not load FIT parser. Check your connection.');
+    };
+    document.head.appendChild(script);
+  }
+
+  /* ── Save parsed workout to Supabase ─────────────────────── */
+  async function importParsedWorkout(d){
+    if(!window.user){ toast('Sign in to import workouts'); return; }
+    var km = d.distanceM ? (d.distanceM/1000).toFixed(1) : null;
+    var mins = d.durationSec ? Math.round(d.durationSec/60) : null;
+    var title = d.title || 'Imported workout';
+    if(km && parseFloat(km) > 0) title += ' · '+km+'km';
+
+    var healthData = {
+      heart_rate_avg: d.heartRateAvg||null,
+      heart_rate_max: d.heartRateMax||null,
+      calories_burned: d.calories||null,
+      distance_meters: d.distanceM||null,
+      duration_seconds: d.durationSec||null,
+    };
+
+    try{
+      var res = await sb.from('workouts').insert({
+        user_id: user.id,
+        title: title,
+        is_public: true,
+        points_earned: Math.min(100, Math.round((mins||30)*1.5)),
+        created_at: d.startTime || new Date().toISOString(),
+        sync_source: d.source,
+        health_data: healthData,
+      }).select().single();
+
+      if(res.error) throw res.error;
+      document.getElementById('forte-dev-ov')?.remove();
+
+      var stats = [];
+      if(km && parseFloat(km)>0) stats.push(km+'km');
+      if(d.heartRateAvg) stats.push(d.heartRateAvg+' bpm avg');
+      if(d.calories) stats.push(d.calories+' kcal');
+      toast('Workout imported'+(stats.length?' — '+stats.join(' · '):'')+' 💪');
+
+      /* Refresh feed / profile if visible */
+      if(typeof loadFeedPosts === 'function') setTimeout(loadFeedPosts, 500);
+      if(typeof forteCheckBadges === 'function') setTimeout(forteCheckBadges, 1500);
+
+    }catch(err){
+      console.error('Import error', err);
+      toast('Could not save workout. Try again.');
+    }
+  }
+
+})();
 </script>
 
 </html>
