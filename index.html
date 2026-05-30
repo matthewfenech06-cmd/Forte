@@ -26205,6 +26205,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
     document.getElementById('forte-aw-setup')?.remove();
     document.getElementById('forte-dev-ov')?.remove();
     toast('Apple Watch connected ⌚');
+    if(typeof window._forteRefreshWatchDot==='function') window._forteRefreshWatchDot();
   };
 
   /* ── Health data badge (shown on synced workout cards) ────── */
@@ -26340,6 +26341,7 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
       var athlete = res.data?.athlete;
       var name = athlete ? (athlete.firstname+' '+athlete.lastname) : 'your account';
       toast('Strava connected — welcome, '+name+' 🏃');
+      if(typeof window._forteRefreshWatchDot==='function') window._forteRefreshWatchDot();
     }catch(e){
       console.error('Strava exchange error:', e);
       toast('Could not connect Strava. Check the Edge Function is deployed.');
@@ -26348,6 +26350,57 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   /* ── Override forteShowDevices with universal UI ─────────── */
   var _prevShowDevices = window.forteShowDevices;
+
+  /* ── Watch button in profile topbar ─────────────────────── */
+  function injectWatchBtn(){
+    var actions = document.querySelector('#profile-screen .topbar-actions');
+    if(!actions || document.getElementById('forte-watch-btn')) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'forte-watch-btn';
+    btn.className = 'icon-btn';
+    btn.title = 'Connected devices';
+    btn.style.cssText = 'position:relative';
+    btn.onclick = window.forteShowDevices;
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" width="22" height="22">'
+        /* watch body */
+        +'<rect x="5" y="5" width="14" height="14" rx="3"/>'
+        /* strap top + bottom */
+        +'<path d="M9 5V3h6v2M9 19v2h6v-2" stroke-linecap="round"/>'
+        /* clock hand hint */
+        +'<polyline points="12 8 12 12 14.5 12" stroke-linecap="round" stroke-linejoin="round"/>'
+      +'</svg>'
+      /* green dot — shown when at least one device connected */
+      +'<span id="forte-watch-dot" style="display:none;position:absolute;top:4px;right:4px;'
+        +'width:7px;height:7px;border-radius:50%;background:#4caf7d;'
+        +'border:1.5px solid var(--bg,#0a0a0a)"></span>';
+
+    /* Insert before the existing settings button */
+    actions.insertBefore(btn, actions.firstChild);
+    refreshWatchDot();
+  }
+
+  async function refreshWatchDot(){
+    if(!window.user) return;
+    try{
+      var r = await sb.from('device_connections').select('id').eq('user_id',user.id).limit(1);
+      var dot = document.getElementById('forte-watch-dot');
+      if(dot) dot.style.display = (r.data && r.data.length) ? 'block' : 'none';
+    }catch(e){}
+  }
+
+  window._forteRefreshWatchDot = refreshWatchDot;
+
+  /* Inject on load + whenever profile tab is tapped */
+  setTimeout(injectWatchBtn, 900);
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if(t && (t.id==='nav-profile' || t.closest('#nav-profile') ||
+             (t.getAttribute&&t.getAttribute('onclick')||'').includes('profile'))){
+      setTimeout(injectWatchBtn, 350);
+    }
+  });
 
   window.forteShowDevices = async function(){
     /* Load connection state */
