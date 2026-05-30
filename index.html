@@ -25694,6 +25694,240 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
   window.addEventListener('online', syncBar);
   syncBar();
 })();
+
+/* ═══════════════════════════════════════════════════════════════
+   HOME SCREEN SHORTCUT HANDLER
+   Manifest shortcuts pass ?action= params. Handle them here so
+   "Log Workout" and "Log Meal" shortcuts actually do something.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  const action = new URLSearchParams(window.location.search).get('action');
+  if (!action) return;
+
+  /* Clean the URL immediately so it doesn't persist on reload */
+  try { history.replaceState({}, '', '/'); } catch(e){}
+
+  function whenReady(fn) {
+    /* Wait until the app has initialised (nav is visible) */
+    const t = setInterval(function(){
+      if (document.getElementById('bottom-nav') &&
+          document.getElementById('bottom-nav').offsetParent !== null) {
+        clearInterval(t);
+        fn();
+      }
+    }, 150);
+    setTimeout(function(){ clearInterval(t); }, 8000);
+  }
+
+  if (action === 'log-workout') {
+    whenReady(function(){
+      const fab = document.getElementById('log-fab');
+      if (fab) fab.click();
+    });
+  } else if (action === 'log-meal') {
+    whenReady(function(){
+      if (typeof showScreen === 'function') showScreen('nutrition');
+      /* Small delay then try to open the add-meal sheet */
+      setTimeout(function(){
+        const addBtn = document.querySelector('[onclick*="addMeal"],[onclick*="logMeal"],[onclick*="add-food"]');
+        if (addBtn) addBtn.click();
+      }, 400);
+    });
+  }
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   RATE FORTE PROMPT
+   Shows once after the user logs their 3rd workout.
+   "Rate now" opens the App Store page.
+   Update STORE_URL once you have the App Store ID.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  const RATE_KEY  = 'forte_rate_v1';      /* 'done' | 'never' */
+  const COUNT_KEY = 'forte_wkt_count_v1'; /* workout count */
+  const STORE_URL = 'https://apps.apple.com/app/forte/idINSERT_APP_STORE_ID?action=write-review';
+
+  function showRatePrompt() {
+    if (document.getElementById('forte-rate-sheet')) return;
+
+    const sheet = document.createElement('div');
+    sheet.id = 'forte-rate-sheet';
+    sheet.style.cssText =
+      'position:fixed;bottom:0;left:0;right:0;z-index:9975;'
+      +'background:var(--bg2,#1a1a1a);border-radius:22px 22px 0 0;'
+      +'padding:14px 24px calc(env(safe-area-inset-bottom,0px)+24px);'
+      +'box-shadow:0 -12px 48px rgba(0,0,0,.6);'
+      +'transform:translateY(100%);'
+      +'transition:transform 340ms cubic-bezier(.34,1.1,.64,1)';
+
+    sheet.innerHTML =
+      '<div style="width:40px;height:4px;border-radius:2px;'
+        +'background:rgba(255,255,255,.12);margin:0 auto 20px"></div>'
+      +'<div style="text-align:center;margin-bottom:20px">'
+        +'<div style="font-size:40px;margin-bottom:10px">💪</div>'
+        +'<div style="font-size:20px;font-weight:900;color:var(--text,#f0f0f0);'
+          +'letter-spacing:-.025em;margin-bottom:8px">Enjoying Forte?</div>'
+        +'<div style="font-size:14px;color:var(--text2,#999);line-height:1.6;max-width:280px;margin:0 auto">'
+          +'A quick rating helps more people find the app and keeps us building.</div>'
+      +'</div>'
+      /* Stars */
+      +'<div id="forte-rate-stars" style="display:flex;justify-content:center;gap:8px;margin-bottom:20px">'
+        +[1,2,3,4,5].map(function(n){
+          return '<button onclick="window._forteSetStar('+n+')" data-star="'+n+'" '
+            +'style="background:none;border:none;font-size:32px;cursor:pointer;'
+            +'transition:transform .15s;-webkit-tap-highlight-color:transparent;padding:2px">☆</button>';
+        }).join('')
+      +'</div>'
+      +'<button id="forte-rate-submit" onclick="window._forteSubmitRate()" disabled '
+        +'style="width:100%;background:rgba(255,0,144,.3);color:rgba(255,255,255,.4);border:none;'
+        +'border-radius:var(--radius-sm,12px);padding:14px;font-size:15px;font-weight:700;'
+        +'cursor:default;margin-bottom:10px;transition:all .2s">Rate Forte</button>'
+      +'<div style="display:flex;gap:8px">'
+        +'<button onclick="window._forteRateDismiss(false)" style="flex:1;background:none;border:none;'
+          +'color:var(--text3,#666);font-size:14px;font-weight:600;cursor:pointer;padding:12px">Not now</button>'
+        +'<button onclick="window._forteRateDismiss(true)" style="flex:1;background:none;border:none;'
+          +'color:var(--text3,#666);font-size:14px;font-weight:600;cursor:pointer;padding:12px">Never ask again</button>'
+      +'</div>';
+
+    document.body.appendChild(sheet);
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      sheet.style.transform = 'translateY(0)';
+    }); });
+  }
+
+  let _selectedStar = 0;
+
+  window._forteSetStar = function(n) {
+    _selectedStar = n;
+    document.querySelectorAll('#forte-rate-stars button').forEach(function(btn){
+      btn.textContent = parseInt(btn.dataset.star) <= n ? '★' : '☆';
+      btn.style.transform = parseInt(btn.dataset.star) <= n ? 'scale(1.15)' : 'scale(1)';
+    });
+    const submit = document.getElementById('forte-rate-submit');
+    if (submit) {
+      submit.disabled = false;
+      submit.style.background = '#ff0090';
+      submit.style.color = '#fff';
+      submit.style.cursor = 'pointer';
+    }
+  };
+
+  window._forteSubmitRate = function() {
+    localStorage.setItem(RATE_KEY, 'done');
+    const sheet = document.getElementById('forte-rate-sheet');
+    if (sheet) { sheet.style.transform = 'translateY(100%)'; setTimeout(function(){ sheet.remove(); }, 300); }
+    if (_selectedStar >= 4) {
+      /* High rating — open App Store review page */
+      setTimeout(function(){ window.open(STORE_URL, '_blank', 'noopener'); }, 300);
+    } else {
+      /* Low rating — open support instead */
+      const toast = typeof fpToast==='function'?fpToast:typeof showToast==='function'?showToast:function(){};
+      toast('Thanks for the feedback. Email us at INSERT_YOUR_EMAIL');
+    }
+  };
+
+  window._forteRateDismiss = function(never) {
+    localStorage.setItem(RATE_KEY, never ? 'never' : 'later');
+    const sheet = document.getElementById('forte-rate-sheet');
+    if (sheet) { sheet.style.transform = 'translateY(100%)'; setTimeout(function(){ sheet.remove(); }, 300); }
+  };
+
+  /* Hook into saveWorkout — count workouts, trigger prompt on 3rd */
+  const _origSW = window.saveWorkout;
+  window.saveWorkout = async function() {
+    if (typeof _origSW === 'function') await _origSW();
+
+    const status = localStorage.getItem(RATE_KEY);
+    if (status === 'done' || status === 'never') return;
+
+    const count = parseInt(localStorage.getItem(COUNT_KEY) || '0') + 1;
+    localStorage.setItem(COUNT_KEY, count);
+
+    if (count === 3 || count === 10) {
+      setTimeout(showRatePrompt, 2500); /* after confetti / badge animations settle */
+    }
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   INVITE A FRIEND
+   Adds an "Invite friends" row to Settings and a floating CTA
+   on the profile screen after a user has 0 followers.
+   Uses Web Share API on iOS; falls back to clipboard copy.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  const INVITE_URL = window.location.origin;
+  const INVITE_MSG = 'Train with me on Forte — workouts, macros, weekly leagues. Join here: ' + INVITE_URL;
+
+  window.forteInviteFriend = async function() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join me on Forte',
+          text: INVITE_MSG,
+          url: INVITE_URL,
+        });
+        return;
+      } catch(e) {
+        if (e.name === 'AbortError') return; /* user cancelled — not an error */
+      }
+    }
+    /* Fallback: clipboard copy */
+    try {
+      await navigator.clipboard.writeText(INVITE_URL);
+      const toast = typeof fpToast==='function'?fpToast:typeof showToast==='function'?showToast:function(){};
+      toast('Link copied to clipboard');
+    } catch(e) {
+      prompt('Copy this link to share Forte:', INVITE_URL);
+    }
+  };
+
+  /* Inject "Invite friends" into Settings if the settings list exists */
+  function injectInviteRow() {
+    /* Look for the settings section that has Delete Account */
+    const delBtn = document.querySelector('[onclick*="deleteAccount"],[onclick*="forteConfirmDeleteAccount"]');
+    if (!delBtn) return;
+    const section = delBtn.closest('[id],[class]') || delBtn.parentNode;
+    if (!section || section.dataset.inviteInjected) return;
+    section.dataset.inviteInjected = '1';
+
+    const row = document.createElement('button');
+    row.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;width:100%;'
+      +'padding:14px 16px;background:none;border:none;border-bottom:1px solid var(--border);'
+      +'font-size:14px;font-weight:500;color:var(--text);cursor:pointer;text-align:left';
+    row.onclick = window.forteInviteFriend;
+    row.innerHTML =
+      '<span style="display:flex;align-items:center;gap:10px">'
+        +'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff0090" stroke-width="2">'
+          +'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>'
+          +'<circle cx="9" cy="7" r="4"/>'
+          +'<path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'
+          +'<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+        +'</svg>'
+        +'Invite friends'
+      +'</span>'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        +'<polyline points="9 18 15 12 9 6"/>'
+      +'</svg>';
+
+    section.insertBefore(row, delBtn.closest('button') || delBtn);
+  }
+
+  /* Try injecting immediately and again when profile screen opens */
+  setTimeout(injectInviteRow, 1000);
+  document.addEventListener('click', function(e){
+    const t = e.target;
+    if (t && (t.matches('[onclick*="profile"]') || t.closest('[onclick*="profile"]'))) {
+      setTimeout(injectInviteRow, 400);
+    }
+  });
+})();
 </script>
 
 </html>

@@ -1,0 +1,106 @@
+══════════════════════════════════════════════════════
+FORTE — APP STORE LISTING COPY
+Fill in INSERT_* fields before submitting.
+══════════════════════════════════════════════════════
+
+APP NAME (max 30 chars)
+───────────────────────
+Forte: Fitness & Nutrition
+
+SUBTITLE (max 30 chars)
+───────────────────────
+Train. Eat. Compete. Repeat.
+
+KEYWORDS (max 100 chars — comma-separated, no spaces after commas)
+──────────────────────────────────────────────────────────────────
+workout,fitness,nutrition,macros,gym,tracker,calories,strength,league,exercise,diet,social,PR,log
+
+DESCRIPTION (max 4000 chars)
+─────────────────────────────
+Forte is the fitness social app that actually keeps you accountable.
+
+Log workouts, track your macros, compete in weekly leagues, and share your progress with people who push you harder.
+
+TRAIN SMARTER
+• Log every workout in seconds — sets, reps, weight, and rest time
+• Forte detects your personal records automatically and celebrates them
+• Full exercise library with hundreds of movements
+• Build and save custom workout templates
+
+EAT BETTER
+• Log meals and track calories against your personalised daily targets
+• Macro targets calculated from your body stats and goals during setup
+• Calorie, protein, carb and fat tracking in one clean view
+
+COMPETE HARDER
+• Join weekly leagues with friends and compete for the top spot
+• New season every Monday — points earned by logging workouts
+• Create public or private leagues for your gym crew
+
+STAY SOCIAL
+• Share workout milestones and progress photos with your community
+• Follow friends, react to posts, and leave comments
+• A social feed that motivates instead of distracts
+
+EARN YOUR BADGES
+• 15+ achievement badges — from logging your first workout to setting 10 PRs
+• Maintain streaks to unlock harder badges
+• Weekly recap every Monday showing your stats for the week
+
+BUILT DIFFERENT
+• Dark, distraction-free design made for the gym
+• Works as a full-screen app — add to your Home Screen for the best experience
+• Your data stays yours — delete your account and all data at any time
+
+Forte is designed for people who are serious about their training. No fluff, no filler.
+
+PROMOTIONAL TEXT (170 chars, can be updated without resubmission)
+──────────────────────────────────────────────────────────────────
+Log workouts, track macros, and compete in weekly leagues. The fitness social app built for people who are serious about training.
+
+WHAT'S NEW (for first submission — use as version 1.0 release notes)
+─────────────────────────────────────────────────────────────────────
+Welcome to Forte.
+
+• Personalised onboarding — calorie and macro targets calculated from your stats and goals
+• Social feed with workouts, comments, and reactions
+• Weekly leagues — compete with friends, new season every Monday
+• Exercise library with personal record tracking
+• Badges and achievements for milestones
+• Weekly progress recap every Monday
+• Full-screen app — add to Home Screen for the best experience
+
+APP REVIEW INFORMATION
+──────────────────────
+Demo account email:    INSERT_REVIEWER_EMAIL
+Demo account password: INSERT_REVIEWER_PASSWORD
+
+Notes for reviewer:
+1. Sign in with the demo account above (already has sample content)
+2. The + button at the bottom of the screen logs workouts and meals
+3. The Feed tab shows the social feed — use the Community toggle to see all posts
+4. The Exercise tab shows the exercise library and personal records
+5. The Nutrition tab shows macro tracking
+6. Profile > Settings > Delete Account demonstrates account deletion
+7. Privacy Policy: https://INSERT_PROD_URL/privacy
+8. Terms of Service: https://INSERT_PROD_URL/terms
+9. Support: https://INSERT_PROD_URL/support
+
+APP INFORMATION
+───────────────
+Category (Primary):   Health & Fitness
+Category (Secondary): Social Networking
+Age Rating:           17+
+Price:                Free
+
+SCREENSHOT TITLES (use these as the text overlay on each screenshot)
+─────────────────────────────────────────────────────────────────────
+Screenshot 1: "Train smarter." — Feed with workout posts
+Screenshot 2: "Hit your macros." — Nutrition tracker with macro rings
+Screenshot 3: "Compete every week." — Leagues leaderboard
+Screenshot 4: "Track every PR." — Exercise library / workout log
+Screenshot 5: "Earn your badges." — Profile with badges and streak
+
+══════════════════════════════════════════════════════
+END OF LISTING COPY
+══════════════════════════════════════════════════════
