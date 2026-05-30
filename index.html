@@ -26519,7 +26519,8 @@ window.openCustomerReviews=async id=>{let c=db(),p=places.find(x=>x.id===id)||cu
 
   /* ── Strava OAuth redirect ────────────────────────────────── */
   window.forteStravaConnect = function(){
-    var redirectUri = encodeURIComponent(window.location.origin + '/');
+    /* redirect_uri must exactly match the domain registered in Strava API settings */
+    var redirectUri = encodeURIComponent(window.location.origin);
     var url = 'https://www.strava.com/oauth/authorize'
       +'?client_id='+STRAVA_CLIENT_ID
       +'&response_type=code'
